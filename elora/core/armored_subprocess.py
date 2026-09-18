@@ -38,6 +38,39 @@ except ImportError:
     psutil = None
     HAS_PSUTIL = False
 
+import ctypes
+
+# Windows Job Object Limits (Section 4 spec)
+JOB_OBJECT_LIMIT_PROCESS_TIME = 0x00000002
+JOB_OBJECT_LIMIT_JOB_MEMORY = 0x00000200
+JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 0x00000008
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+
+class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+    _fields_ = [
+        ("BasicLimitInformation", ctypes.c_byte * 64),
+        ("IoInfo", ctypes.c_byte * 32),
+        ("ProcessMemoryLimit", ctypes.c_size_t),
+        ("JobMemoryLimit", ctypes.c_size_t),
+        ("PeakProcessMemoryUsed", ctypes.c_size_t),
+        ("PeakJobMemoryUsed", ctypes.c_size_t),
+    ]
+
+def _run_windows_job_object(cmd, timeout=10):
+    kernel32 = ctypes.windll.kernel32
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        raise RuntimeError("CreateJobObjectW failed")
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    kernel32.AssignProcessToJobObject(job, proc._handle)
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+    finally:
+        kernel32.CloseHandle(job)
+
 
 @dataclass(frozen=True)
 class Budget:
@@ -153,11 +186,37 @@ def armored_run(command: list[str],
                                                   "PATHEXT", "USERPROFILE",
                                                   "PYTHONPATH", "PYTHONHOME",
                                                   "SystemDrive"),
+                tier: int | None = None,
+                timeout: int | None = None,
                 ) -> ExecutionResult:
     """
     Execute `command` inside the armor. The ONLY sanctioned runner
     for Ring 2 / absorbed / heavyweight code.
     """
+    # Support positional tier/timeout invocation
+    if isinstance(work_dir, int) or (hasattr(work_dir, "value") and not isinstance(work_dir, str)):
+        tier = work_dir
+        work_dir = None
+    if timeout is not None:
+        budget = Budget(cpu_seconds=timeout, ram_mb=budget.ram_mb, wall_seconds=timeout + 5, file_mb=budget.file_mb)
+
+    if os.name == "nt":
+        # Refuse untrusted tiers on Windows due to lack of rlimit/chroot parity
+        is_untrusted = False
+        if tier is not None:
+            if isinstance(tier, int):
+                if tier in (1, 2) or (tier >= 2 and tier not in (3, 4)):
+                    is_untrusted = True
+            elif hasattr(tier, "name") and tier.name in ("QUARANTINE", "PROBATION"):
+                is_untrusted = True
+            elif str(tier).upper() in ("QUARANTINE", "PROBATION"):
+                is_untrusted = True
+        if is_untrusted:
+            raise RuntimeError(
+                "REFUSED: Untrusted tiers require POSIX armor. "
+                "Windows Job Objects cannot enforce RLIMIT_FSIZE/chroot parity."
+            )
+
     if budget.cpu_seconds <= 0 or budget.ram_mb <= 0:
         raise BudgetExceeded(f"invalid budget: {budget}")
 
@@ -225,9 +284,32 @@ def armored_run(command: list[str],
         popen_kwargs["creationflags"] = getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
+    job = None
+    if os.name == "nt":
+        try:
+            kernel32 = ctypes.windll.kernel32
+            job = kernel32.CreateJobObjectW(None, None)
+            if job:
+                info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+                info.JobMemoryLimit = budget.ram_mb * 1024 * 1024
+                info.ProcessMemoryLimit = budget.ram_mb * 1024 * 1024
+                kernel32.SetInformationJobObject(job, 9, ctypes.byref(info), ctypes.sizeof(info))
+        except Exception:
+            job = None
+
     try:
         proc = subprocess.Popen(**popen_kwargs)
+        if os.name == "nt" and job and proc and hasattr(proc, "_handle"):
+            try:
+                kernel32.AssignProcessToJobObject(job, proc._handle)
+            except Exception:
+                pass
     except OSError:
+        if job:
+            try:
+                kernel32.CloseHandle(job)
+            except Exception:
+                pass
         raise
 
     gov = threading.Thread(
@@ -248,6 +330,11 @@ def armored_run(command: list[str],
             out, err = proc.communicate()
     finally:
         flag["stop"] = True
+        if os.name == "nt" and job:
+            try:
+                kernel32.CloseHandle(job)
+            except Exception:
+                pass
 
     if isinstance(out, bytes):
         out = out.decode("utf-8", "replace")

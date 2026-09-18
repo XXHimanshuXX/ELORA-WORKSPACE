@@ -259,7 +259,7 @@ class Broker:
         work_dir = token.workspace or os.getcwd()
         os.makedirs(work_dir, exist_ok=True)
         argv = cap.command_builder(args)
-        return armored_run(command=argv, work_dir=work_dir, budget=cap.budget)
+        return armored_run(command=argv, work_dir=work_dir, budget=cap.budget, tier=token.tier)
 
     def _execute_fs_write(self, token: SkillToken, args: dict) -> ExecutionResult:
         import hashlib

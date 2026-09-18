@@ -252,15 +252,35 @@ class Daemon:
 
     def tick(self) -> list[Task]:
         tasks = self.poll_inbox()
+        if not tasks:
+            return []
+
         tasks.sort(key=lambda t: t.event.urgency, reverse=True)
         for task in tasks:
-            self.handle_task(task)
-            if self.crystallizer is not None:
-                try:
-                    self.crystallizer.observe(task)
-                except Exception:
-                    pass
-            self._cleanup(task)
+            self.ledger.append(
+                organ="daemon", kind="task_started",
+                message=task.id, payload={"path": task.claimed_path},
+            )
+            try:
+                self.handle_task(task)
+                status = "ok" if task.state == TaskState.DONE else "failed"
+                self.ledger.append(
+                    organ="daemon", kind="task_finished",
+                    message=task.id, payload={"status": status},
+                )
+            except Exception as e:
+                self.ledger.append(
+                    organ="daemon", kind="task_finished",
+                    message=task.id, payload={"status": "error", "error": str(e)},
+                )
+                raise
+            finally:
+                if self.crystallizer is not None:
+                    try:
+                        self.crystallizer.observe(task)
+                    except Exception:
+                        pass
+                self._cleanup(task)
         return tasks
 
     def run_forever(self, poll_seconds: int | None = None):

@@ -56,10 +56,12 @@ class TestFullLoop:
         tasks = loop["daemon"].tick()
 
         assert tasks[0].state.name == "DONE"
-        # The loop is honest: ledger saw intent AND result
+        # The loop is honest: ledger saw task lifecycle, intent AND result
         kinds = [e["kind"] for e in loop["ledger"].events]
+        assert "task_started" in kinds
         assert "capability_intent" in kinds
         assert "capability_result" in kinds
+        assert "task_finished" in kinds
 
     def test_real_names_injected_v4_regression(self, loop):
         """The V4 killer bug, now a permanent regression test: the

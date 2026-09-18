@@ -148,3 +148,18 @@ class TestBudgetValidation:
             armored_run(["true"], budget=Budget(cpu_seconds=0, ram_mb=256))
         with pytest.raises(BudgetExceeded):
             armored_run(["true"], budget=Budget(cpu_seconds=5, ram_mb=0))
+
+
+class TestWindowsArmor:
+    def test_untrusted_tier_refused_on_windows(self):
+        if os.name == "nt":
+            with pytest.raises(RuntimeError) as exc_info:
+                armored_run(["python", "-c", "print(1)"], tier=2)
+            assert "REFUSED: Untrusted tiers require POSIX armor" in str(exc_info.value)
+
+    def test_windows_job_object_runner(self):
+        if os.name == "nt":
+            from elora.core.armored_subprocess import _run_windows_job_object
+            res = _run_windows_job_object(["python", "-c", "print('job_ok')"])
+            assert res.returncode == 0
+            assert "job_ok" in res.stdout

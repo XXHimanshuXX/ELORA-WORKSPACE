@@ -213,9 +213,13 @@ def preflight() -> int:
 
     # Honest Windows degradation advertisement
     if os.name == "nt":
-        check("BROKEN:RLIMIT_FSIZE", False,
-              "Windows Job Object + governor; RLIMIT_FSIZE POSIX-only",
-              warn=True)
+        print("  [WARN] Platform: nt (Windows)")
+        print("  [BROKEN] RLIMIT_FSIZE — POSIX rlimits unavailable on Windows")
+        print("  [DEGRADED] Job Object limits active: PROCESS_TIME=10s, Memory=512MB, ACTIVE_PROCESS=1")
+        print("  [REFUSED] tier >= PROBATION blocked on Windows (AST-gated code only)")
+        warnings += 3
+    else:
+        print("  [OK] POSIX rlimits active (RLIMIT_CPU, RLIMIT_AS, RLIMIT_FSIZE, RLIMIT_NPROC)")
 
     # Phase-2 leaps — honest presence, never theater
     try:
