@@ -214,7 +214,8 @@ def armored_run(command: list[str],
         if is_untrusted:
             raise RuntimeError(
                 "REFUSED: Untrusted tiers require POSIX armor. "
-                "Windows Job Objects cannot enforce RLIMIT_FSIZE/chroot parity."
+                "Windows Job Objects cannot enforce RLIMIT_FSIZE/chroot parity; "
+                "deferring task; run on POSIX or promote skill via AST-gated path."
             )
 
     if budget.cpu_seconds <= 0 or budget.ram_mb <= 0:
