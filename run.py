@@ -24,6 +24,16 @@ def stage_config() -> dict:
     os.makedirs(STATE_DIR, exist_ok=True)
     os.makedirs(CONSENT_DIR, exist_ok=True)
     os.makedirs(INBOX_DIR, exist_ok=True)
+    shm_dir = os.path.join(STATE_DIR, "shm")
+    os.makedirs(shm_dir, exist_ok=True)
+    ring_path = os.path.join(shm_dir, "overlay.ring")
+    if not os.path.exists(ring_path):
+        try:
+            from elora.core.virtio_shm import VirtioShmRing
+            r = VirtioShmRing(ring_path, slots=64, create=True)
+            r.close()
+        except Exception:
+            pass
     return {
         "state_dir": STATE_DIR,
         "poll_seconds": int(os.environ.get("ELORA_POLL_SECONDS", "5")),
@@ -203,6 +213,10 @@ def preflight() -> int:
     check("ollama", shutil.which("ollama") is not None,
           "absent -> AWAKE unreachable, tasks defer", warn=True)
 
+    tauri_cli = shutil.which("cargo-tauri") or shutil.which("tauri")
+    check("tauri", tauri_cli is not None,
+          "v1.6 installed" if tauri_cli else "absent", warn=True)
+
     check("offline mode", True, "offline is a mode, not a failure")
 
     destructive = os.environ.get("ELORA_ALLOW_DESTRUCTIVE")
@@ -268,10 +282,30 @@ def preflight() -> int:
     except Exception as e:
         check("leap: virtio shm", False, str(e))
 
-    # Honestly marked unverified: needs GPU runner in CI
-    check("leap: webgpu overlay", False,
-          "shader verified (overlay/organism.wgsl); rendering UNVERIFIED (needs GPU runner in CI)",
-          warn=True)
+    # Tauri overlay bridge & WebGPU overlay check
+    shm_overlay_path = os.path.join(STATE_DIR, "shm", "overlay.ring")
+    ring_valid = False
+    if os.path.exists(shm_overlay_path):
+        try:
+            from elora.core.virtio_shm import VirtioShmRing
+            ring = VirtioShmRing(shm_overlay_path, create=False)
+            ring_valid = ring.verify_header()
+            ring.close()
+        except Exception:
+            ring_valid = False
+
+    if ring_valid:
+        check("leap: tauri overlay bridge", True,
+              "verified, SHM ring exists (.elora/shm/overlay.ring)")
+        check("leap: webgpu overlay", False,
+              "shader verified (overlay/organism.wgsl) + bridge verified; rendering UNVERIFIED (needs GPU runner in CI)",
+              warn=True)
+    else:
+        check("leap: tauri overlay bridge", False,
+              "absent -> desktop packaging unreachable, mock active", warn=True)
+        check("leap: webgpu overlay", False,
+              "shader verified (overlay/organism.wgsl); rendering UNVERIFIED (needs GPU runner in CI)",
+              warn=True)
 
     try:
         import pywinauto

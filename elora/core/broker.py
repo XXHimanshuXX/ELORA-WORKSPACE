@@ -148,8 +148,9 @@ class Broker:
         except Exception:
             pass
         try:
-            from elora.overlay_bridge import ripple
+            from elora.overlay_bridge import ripple, emit_ripple
             ripple(capability)
+            emit_ripple("broker", capability)
         except Exception:
             pass
         return Result(execution=execution,
