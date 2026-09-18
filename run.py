@@ -357,9 +357,11 @@ def main():
                         help="preflight inspection")
     parser.add_argument("--smoke", action="store_true",
                         help="hermetic end-to-end test")
-    parser.add_argument("--brain", choices=["local", "none"],
+    parser.add_argument("--brain", choices=["local", "none", "bitnet"],
                         default="local",
                         help="brain backend (default: local)")
+    parser.add_argument("--once", action="store_true",
+                        help="process one inbox tick and exit cleanly")
     args = parser.parse_args()
 
     if args.check:
@@ -382,12 +384,22 @@ def _boot_main(args):
             def complete(self, system, messages):
                 return "DONE"
         brain = SleepingBrain()
+    elif args.brain == "bitnet":
+        from elora.core.bitnet import BitNetBrain
+        brain = BitNetBrain()
     else:
         from elora.brain import RealBrain
         brain = RealBrain(config["brain_url"], config["brain_model"])
 
     assembled = build(config, ledger, brain)
     print(f"[boot] all stages green in {time.time()-t0:.1f}s")
+    if args.once:
+        tasks = assembled.daemon.tick()
+        print(f"[run] tick complete: {len(tasks)} task(s) processed")
+        for t in tasks:
+            print(f"  - task {t.id}: {t.state.name} (iterations: {t.iterations})")
+        assembled.metabolism.shutdown()
+        return 0
     assembled.run()
 
 
