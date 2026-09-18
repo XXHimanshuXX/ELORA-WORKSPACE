@@ -281,17 +281,29 @@ class Broker:
         url = args["url"]
         out_path = args.get("out_path") or os.path.join(token.workspace, "fetch.out")
         os.makedirs(os.path.dirname(os.path.abspath(out_path)) or ".", exist_ok=True)
-        req = Request(url, headers={"User-Agent": "ELORA/7"})
-        with urlopen(req, timeout=30) as r:
-            body = r.read()
-        with open(out_path, "wb") as f:
-            f.write(body)
-        digest = hashlib.sha256(body).hexdigest()
-        return ExecutionResult(
-            returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
-            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
-            stdout=out_path, stderr="", work_dir=token.workspace,
-        )
+        try:
+            req = Request(url, headers={
+                "User-Agent": "ELORA/7",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
+            })
+            with urlopen(req, timeout=30) as r:
+                body = r.read()
+            with open(out_path, "wb") as f:
+                f.write(body)
+            digest = hashlib.sha256(body).hexdigest()
+            return ExecutionResult(
+                returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+                stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+                stdout=out_path, stderr="", work_dir=token.workspace,
+            )
+        except Exception as e:
+            return ExecutionResult(
+                returncode=1, timed_out=False, killed_by=None, duration_s=0.0,
+                stdout_sha256=hashlib.sha256(b"").hexdigest(),
+                stderr_sha256=hashlib.sha256(str(e).encode()).hexdigest(),
+                stdout="", stderr=str(e), work_dir=token.workspace,
+            )
 
 
 def _trivial_result(text: str, work_dir: str) -> ExecutionResult:

@@ -64,12 +64,15 @@ class Task:
     claimed_path: str = ""
 
 
+GITHUB_RAW_RE = re.compile(r"https://raw\.githubusercontent\.com/[\w./-]+")
+
+
 class Daemon:
     MAX_ITERATIONS = 8
 
     def __init__(self, brain, broker, metabolism, ledger, vault,
                  inbox_dir: str = ".elora/inbox", poll_seconds: int = 5,
-                 crystallizer=None, decay=None):
+                 crystallizer=None, decay=None, absorb_pipeline=None):
         self.brain = brain
         self.broker = broker
         self.metabolism = metabolism
@@ -79,11 +82,19 @@ class Daemon:
         self.poll_seconds = poll_seconds
         self.crystallizer = crystallizer
         self.decay = decay
+        self.absorb_pipeline = absorb_pipeline
         os.makedirs(inbox_dir, exist_ok=True)
         os.makedirs(os.path.join(inbox_dir, ".processing"), exist_ok=True)
         self.skills_token = SkillToken(
             skill_id="elora:core-daemon",
             tier=Tier.QUARANTINE,
+            workspace=os.path.abspath(".elora/skills/core-daemon"),
+            name="elora:core-daemon",
+            issued_at=time.time(),
+        )
+        self.core_token = SkillToken(
+            skill_id="elora:core-daemon",
+            tier=Tier.CORE,
             workspace=os.path.abspath(".elora/skills/core-daemon"),
             name="elora:core-daemon",
             issued_at=time.time(),
@@ -171,11 +182,28 @@ class Daemon:
 
     def handle_task(self, task: Task) -> Task:
         task.state = TaskState.RUNNING
+
+        text = task.event.payload.get("text", "")
+        m = GITHUB_RAW_RE.search(text)
+        if m and self.absorb_pipeline is not None:
+            url = m.group(0)
+            outcome = self.absorb_pipeline.absorb(url, self.core_token)
+            task.trace.append({
+                "absorbed": outcome.skill_id or outcome.reason,
+                "refused": outcome.refused,
+            })
+            task.state = TaskState.DONE
+            self._cleanup(task)
+            self.vault.save_episode(
+                f"Absorption task complete: {outcome.skill_id or outcome.reason}"
+            )
+            return task
+
         system = self._system_prompt()
         if not task.messages:
             task.messages = [{
                 "role": "user",
-                "content": task.event.payload.get("text", ""),
+                "content": text,
             }]
 
         while True:

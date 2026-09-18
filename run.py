@@ -93,7 +93,7 @@ def build(config: dict, ledger, brain) -> "Assembled":
     events = getattr(ledger, "events", [])
     promotion.rebuild_from_ledger(events)
 
-    print("[boot] 6/8 crystallizer + decay")
+    print("[boot] 6/8 crystallizer + decay + absorb")
     skills_dir = os.path.join(HERE, "vault", "skills")
     crystallizer = Crystallizer(
         promotion, ledger, vault, skills_dir=skills_dir,
@@ -102,6 +102,11 @@ def build(config: dict, ledger, brain) -> "Assembled":
         promotion, ledger, vault,
         skills_dir=skills_dir,
         cold_dir=os.path.join(skills_dir, "_cold"),
+    )
+    from elora.core.absorb_pipeline import AbsorptionPipeline
+    absorb_pipeline = AbsorptionPipeline(
+        broker=broker, promotion=promotion, ledger=ledger, vault=vault,
+        skills_dir=skills_dir,
     )
 
     print("[boot] 7/8 loaders (heavyweights stay asleep until needed)")
@@ -114,6 +119,7 @@ def build(config: dict, ledger, brain) -> "Assembled":
         ledger=ledger, vault=vault, inbox_dir=INBOX_DIR,
         poll_seconds=config.get("poll_seconds", 5),
         crystallizer=crystallizer, decay=decay,
+        absorb_pipeline=absorb_pipeline,
     )
     daemon.skills_token = promotion.register("elora:core-daemon")
 
@@ -122,7 +128,8 @@ def build(config: dict, ledger, brain) -> "Assembled":
     return Assembled(config=config, ledger=ledger, vault=vault,
                      metabolism=metabolism, broker=broker,
                      promotion=promotion, crystallizer=crystallizer,
-                     decay=decay, daemon=daemon)
+                     decay=decay, daemon=daemon,
+                     absorb_pipeline=absorb_pipeline)
 
 
 class Assembled:
