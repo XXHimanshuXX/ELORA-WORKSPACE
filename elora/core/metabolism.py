@@ -88,7 +88,7 @@ PROFILES: dict[State, StateProfile] = {
     ),
     State.ALERT: StateProfile(
         state=State.ALERT,
-        ram_estimate_mb=980,   # BitNet 380 + ASR/TTS 600
+        ram_estimate_mb=1800,  # BitNet 380 + ASR/TTS 1420 / ALERT 1800MB
         provides=frozenset({"voice.listen", "voice.speak"}),
     ),
     State.ARMED: StateProfile(
@@ -125,7 +125,7 @@ class Metabolism:
     _IDLE_DEFAULTS = {
         State.ARMED: 300,
         State.DIGESTING: 120,
-        State.ALERT: 600,
+        State.ALERT: 60,
         State.AWAKE: 900,
         State.ALIVE: 0,
         State.CRYPTOBIOSIS: 0,

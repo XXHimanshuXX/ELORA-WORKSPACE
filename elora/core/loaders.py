@@ -281,6 +281,10 @@ class _VoiceService(_Heavyweight):
     def load(self) -> bool:
         if not Path("elora/slime/voice.py").exists():
             return False                        # not built yet — honest
+        try:
+            import sherpa_onnx  # noqa: F401
+        except ImportError:
+            return False
         self.spawn([sys.executable, "-c", _VOICE_WORKER])
         # Ready when the worker announces itself on its health socket
         return self.ready(lambda: _port_open(9777))
