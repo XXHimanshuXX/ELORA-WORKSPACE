@@ -262,6 +262,10 @@ class Daemon:
                     stdout = ""
                     if isinstance(result, Result) and result.execution:
                         stdout = result.execution.stdout
+                        if name != "vault.save" and self.vault is not None:
+                            self.vault.save_episode(
+                                self._episode_for(task, call, result.execution)
+                            )
                     elif isinstance(result, Result):
                         stdout = result.stdout
                     task.trace.append({"tool": name, "args": args, "ok": True})
@@ -270,6 +274,18 @@ class Daemon:
                         "content": f"result: {stdout[:4000]}",
                     })
         return task
+
+    def _episode_for(self, task, call, execution) -> str:
+        sha = getattr(execution, "stdout_sha256", "") or ""
+        dur = getattr(execution, "duration_s", 0.0) or 0.0
+        rc = getattr(execution, "returncode", 0)
+        killed = getattr(execution, "killed_by", None)
+        return (f"task {task.id} iter {task.iterations}: "
+                f"{call['tool']}({call['args']}) -> "
+                f"rc={rc} "
+                f"killed_by={killed} "
+                f"dur={dur:.2f}s "
+                f"out_sha={sha[:12]}")
 
     def _cleanup(self, task: Task) -> None:
         if task.claimed_path and os.path.exists(task.claimed_path):

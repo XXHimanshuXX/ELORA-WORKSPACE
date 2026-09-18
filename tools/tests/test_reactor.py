@@ -124,6 +124,18 @@ class TestFullLoop:
         processing = loop["inbox"] / ".processing"
         assert not any(processing.iterdir()) if processing.exists() else True
 
+    def test_episodes_are_content_addressed(self, loop):
+        loop["brain"].script = [
+            '<mcp_call server="elora" tool="ledger.verify">{}</mcp_call>',
+            '<mcp_call server="elora" tool="vault.save">'
+            '{"content": "unique-alpha"}</mcp_call>',
+            "DONE"]
+        drop(loop["inbox"], "distinctness test")
+        loop["daemon"].tick()
+        episodes = loop["vault"].episodes
+        assert len(set(episodes)) == len(episodes)   # no duplicates
+        assert "iter" in episodes[-2]                 # real content, real shape
+
 
 class TestExtractToolCalls:
     def test_multiple_calls_extracted(self):
