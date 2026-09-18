@@ -206,6 +206,16 @@ class Broker:
                     return Rejected(
                         f"type_keys exceeded fuel limit: {len(text)} > {DEFAULT_FUEL_LIMIT}"
                     )
+        if cap.name == "generate.image":
+            path = args.get("path") or args.get("out_path")
+            roots = cap.allowed_roots
+            if token and token.workspace:
+                roots = roots + (token.workspace, os.path.abspath(token.workspace))
+            if path and not self._path_in_jail(path, roots):
+                return Rejected(
+                    f"path '{path}' is not inside approved roots "
+                    f"{list(cap.allowed_roots)}"
+                )
         return None
 
     def _path_in_jail(self, path: str, roots=()) -> bool:
@@ -278,6 +288,8 @@ class Broker:
             return self._execute_screen_capture(token, args)
         if cap.name == "screen.control":
             return self._execute_screen_control(token, args)
+        if cap.name == "generate.image":
+            return self._execute_generate_image(token, args)
         if cap.name == "vault.recall" and self.vault is not None:
             n = int(args.get("n", 5))
             rows = self.vault.get_recent_episodes(n)
@@ -382,6 +394,31 @@ class Broker:
                 stderr_sha256=hashlib.sha256(err_msg.encode("utf-8")).hexdigest(),
                 stdout="", stderr=err_msg, work_dir=token.workspace or ".",
             )
+
+    def _execute_generate_image(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import generation
+        prompt = args.get("prompt", "")
+        seed = int(args.get("seed", 42))
+        path = args.get("path") or args.get("out_path")
+        try:
+            res = generation.generate(prompt=prompt, seed=seed, out_path=path)
+            body = json.dumps(res)
+            digest = res.get("sha256", hashlib.sha256(body.encode()).hexdigest())
+            return ExecutionResult(
+                returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+                stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+                stdout=body, stderr="", work_dir=token.workspace or ".",
+            )
+        except Exception as e:
+            err_msg = str(e)
+            return ExecutionResult(
+                returncode=1, timed_out=False, killed_by=None, duration_s=0.0,
+                stdout_sha256=hashlib.sha256(b"").hexdigest(),
+                stderr_sha256=hashlib.sha256(err_msg.encode("utf-8")).hexdigest(),
+                stdout="", stderr=err_msg, work_dir=token.workspace or ".",
+            )
+
 
 
 

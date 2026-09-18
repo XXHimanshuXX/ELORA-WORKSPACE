@@ -185,8 +185,11 @@ _register(Capability(
         "--backend", "fastsd-cpu",
         "--prompt", a.get("prompt", ""),
         "--size", a.get("size", "512x512"),
-        "--out", a.get("path", "out.png"),
+        "--out", a.get("path", a.get("out_path", "out.png")),
+        "--seed", str(a.get("seed", 42)),
     ],
+    allowed_roots=(".elora/generations", os.path.abspath(".elora/generations"),
+                   os.path.abspath("vault"), "/tmp/.elora"),
 ))
 
 # --- Risk 3: Moderate --------------------------------------------------
