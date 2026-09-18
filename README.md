@@ -7,15 +7,6 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 
 ---
 
-# ELORA OS
-
-> **A Sovereign, Local-First Agentic Operating System**  
-> *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*
-
-ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
-
----
-
 ## Key Architecture & Ring 0 Organs
 
 ### 1. Metabolism (RAM as Blood Sugar)
@@ -45,7 +36,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 - Verifies ledger chain integrity on every boot (`ledger.verify()`).
 
 ### 5. Four Native Leaps
-1. **BitNet b1.58 Ternary Kernel**: Addition/subtraction-only matmul with weights in `{-1, 0, 1}`. Compiled native PyO3 Rust extension (`elora_bitnet.pyd`) with 6.12× speedup and 380MB AWAKE working set.
+1. **BitNet b1.58 Ternary Kernel**: Addition/subtraction-only matmul with weights in `{-1, 0, 1}`. Compiled native PyO3 Rust extension (`elora_bitnet.pyd`) with 6.12× speedup and 380MB AWAKE working set. Serves as the sovereign local inference organ and offline fallback; multi-turn tool planning and `<mcp_call>` generation in production is routed to an instruction-tuned model via Ollama / LocalAI (`--brain local`).
 2. **WASM Gastric Membrane**: 64KB `no_std` fuel-metered execution sandbox trapping infinite loops via `OP_BR_REL` branch metering (`WasmTrap`).
 3. **VirtIO SHM SPSC Ring**: Shared memory mapping (`.elora/shm/overlay.ring`) with `AtomicU64` head/tail and SHA-256 slot checksums for sub-millisecond tamper-evident IPC.
 4. **WebGPU SDF Organism Overlay**: Single-pass WGSL shader (`overlay/organism.wgsl`) driving real-time gyroid + metaball fluid physics governed by metabolic state and resource headroom.
@@ -136,6 +127,9 @@ ELORA provides a native desktop packaging wrapper via **Tauri v1.6** that render
 - **VirtIO SHM Ripple Bridge**: Lock-free SPSC ring buffer where broker capability requests emit cryptographic ripple events.
 - **Sidecar Lifecycle**: Spawns `python run.py --brain bitnet`, streams telemetry into Akashic ledger, and drains on shutdown.
 
+> [!NOTE]
+> **Honest Rendering Audit**: In accordance with preflight honesty (`[WARN] leap: webgpu overlay shader verified + bridge verified; rendering UNVERIFIED`), while the WGSL shader syntax/structure and the SPSC SHM bridge are fully verified, WebGPU rendering execution itself requires an active GPU hardware adapter and is marked unverified in headless/CI runners.
+
 ### Development & Verification
 Verify the Tauri application manifest and code:
 ```bash
@@ -156,7 +150,7 @@ cargo build --manifest-path src-tauri/Cargo.toml --release
 
 ## Installation & Sovereign Verification
 
-Local-first. No API keys. Free forever. All 124 tests must be green before the Tauri window opens.
+Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) verifies all 124 rungs across 17 modules.
 
 ### 1. Clone & Setup
 ```bash
@@ -193,16 +187,21 @@ python tools/live_demo.py
 # 5 iterations • 12 sequenced events • VALID Akashic cryptographic hash chain
 ```
 
-### 6. Run the Daemon
+### 6. Run the Daemon (Brain Division of Labor)
 Start continuous polling on `.elora/inbox`:
 ```bash
-# Using native BitNet brain:
+# Production Multi-Turn Planning (Ollama / LocalAI):
+# Emits <mcp_call> blocks with complex reasoning across capabilities
+python run.py --brain local
+
+# Sovereign Offline / Fallback (BitNet b1.58):
+# 380MB AWAKE addition-only kernel; returns DONE when unweighted (zero-hallucination)
 python run.py --brain bitnet
 
 # Process one inbox tick and exit cleanly:
 python run.py --brain bitnet --once
 
-# Offline / sleeping brain:
+# Offline / sleeping brain (for test harness):
 python run.py --brain none
 ```
 
