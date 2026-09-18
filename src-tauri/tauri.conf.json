@@ -1,0 +1,47 @@
+{
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../overlay",
+    "distDir": "../overlay"
+  },
+  "package": {
+    "productName": "ELORA OS",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true,
+        "sidecar": true,
+        "scope": [
+          {
+            "name": "python",
+            "cmd": "python"
+          }
+        ]
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.elora.os",
+      "icon": []
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "title": "ELORA OS",
+        "width": 1280,
+        "height": 800,
+        "transparent": true,
+        "decorations": false,
+        "resizable": true
+      }
+    ]
+  }
+}

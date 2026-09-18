@@ -71,14 +71,43 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 │   └── bitnet/                   # Rust PyO3 ternary matmul kernel
 ├── overlay/
 │   ├── index.html                # WebGPU organism visualization
+│   ├── tauri_bridge.js           # Tauri JS bridge for state & ripple events
 │   └── organism.wgsl             # Spatial particle WGSL shader
+├── src-tauri/                    # Tauri v1 desktop application
+│   ├── Cargo.toml                # Desktop app configuration & sidecar permissions
+│   ├── tauri.conf.json           # Window configuration (transparent, undecorated)
+│   └── src/
+│       └── main.rs               # Sidecar process manager & IPC bridge
 ├── tools/
-│   ├── tests/                    # Ring 0 hermetic test suite (75 tests)
+│   ├── tests/                    # Ring 0 hermetic test suite (124 tests)
+│   ├── build_native.py           # Native Rust PyO3 compilation tool
+│   ├── live_demo.py              # Multi-turn autonomous agent execution demo
 │   ├── _cleanup_backups.py       # Maintenance utility
 │   └── _compile_all.py           # Bytecode compilation verification
 ├── Docs/                         # Complete technical blueprints (v7 & v7.1)
 ├── run.py                        # Boot sequence, preflight, and smoke tests
 └── requirements.txt
+```
+
+---
+
+## Tauri Desktop Packaging & WebGPU Overlay
+
+ELORA provides a native desktop packaging wrapper via **Tauri v1.6** that renders the real-time WebGPU SDF organism overlay, connects to the kernel via a lock-free VirtIO SHM ring (`.elora/shm/overlay.ring`), and manages the ELORA daemon sidecar:
+
+- **Transparent Overlay**: Undecorated, transparent 1280x800 desktop canvas rendering dynamic SDF metaball physics.
+- **VirtIO SHM Ripple Bridge**: Lock-free SPSC ring buffer where broker capability requests emit cryptographic ripple events.
+- **Sidecar Lifecycle**: Spawns `python run.py --brain bitnet`, streams telemetry into Akashic ledger, and drains on shutdown.
+
+### Development & Verification
+Verify the Tauri application manifest and code:
+```bash
+cargo check --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml
+```
+To run the live desktop overlay in development mode (requires Tauri CLI):
+```bash
+cargo tauri dev
 ```
 
 ---
@@ -103,7 +132,7 @@ python run.py --smoke
 ```
 
 ### 4. Run Test Suite
-Run the 75 hermetic unit & integration tests:
+Run the 124 hermetic unit & integration tests:
 ```bash
 pytest tools/tests
 ```

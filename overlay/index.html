@@ -45,6 +45,27 @@ async function boot() {
     STATE.state = s; STATE.chainOk = chainOk; STATE.cpuLimit = cpu;
   };
 
+  // Tauri Desktop bridge: poll metabolism every 500ms and listen for ripples
+  if (window.__TAURI__) {
+    const tauri = window.__TAURI__;
+    const invoke = tauri.invoke || (tauri.tauri && tauri.tauri.invoke);
+    const listen = tauri.event && tauri.event.listen;
+    if (invoke) {
+      setInterval(async () => {
+        try {
+          const stateStr = await invoke("get_metabolism_state");
+          const d = typeof stateStr === "string" ? JSON.parse(stateStr) : stateStr;
+          window.eloraState(d.state ?? 1, d.chainOk ?? 1.0, d.cpuLimit ?? 10.0);
+        } catch (e) {}
+      }, 500);
+    }
+    if (listen) {
+      listen("ripple", () => {
+        window.eloraRipple();
+      });
+    }
+  }
+
   const start = performance.now();
   function frame() {
     STATE.time = (performance.now() - start) / 1000;
