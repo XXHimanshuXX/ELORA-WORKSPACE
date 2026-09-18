@@ -84,7 +84,7 @@ class Broker:
             )
 
         # 2. SCHEMA — path jail / net allowlist before any other privilege
-        schema = self._validate(cap, args)
+        schema = self._validate(cap, args, token=token)
         if schema is not None:
             return schema
 
@@ -161,7 +161,7 @@ class Broker:
     # Schema / consent / execute
     # ------------------------------------------------------------------
 
-    def _validate(self, cap, args: dict):
+    def _validate(self, cap, args: dict, token: SkillToken | None = None):
         if cap.name == "fs.write":
             path = args.get("path", "")
             if not self._path_in_jail(path, cap.allowed_roots):
@@ -178,6 +178,34 @@ class Broker:
                     f"host '{host}' not allowlisted; "
                     f"allowed: {', '.join(allow)}"
                 )
+        if cap.name == "screen.capture":
+            out_path = args.get("out_path")
+            roots = cap.allowed_roots
+            if token and token.workspace:
+                roots = roots + (token.workspace, os.path.abspath(token.workspace))
+            if out_path and not self._path_in_jail(out_path, roots):
+                return Rejected(
+                    f"path '{out_path}' is not inside approved roots "
+                    f"{list(cap.allowed_roots)}"
+                )
+        if cap.name == "screen.control":
+            action = args.get("action", "click")
+            if action == "click":
+                x = int(args.get("x", 0))
+                y = int(args.get("y", 0))
+                from elora.slime.computer_use import get_screen_bounds
+                w, h = get_screen_bounds()
+                if x < 0 or x > w or y < 0 or y > h:
+                    return Rejected(
+                        f"coordinates ({x}, {y}) out of screen bounds [0, 0, {w}, {h}]"
+                    )
+            elif action == "type_keys":
+                text = str(args.get("text", ""))
+                from elora.slime.computer_use import DEFAULT_FUEL_LIMIT
+                if len(text) > DEFAULT_FUEL_LIMIT:
+                    return Rejected(
+                        f"type_keys exceeded fuel limit: {len(text)} > {DEFAULT_FUEL_LIMIT}"
+                    )
         return None
 
     def _path_in_jail(self, path: str, roots=()) -> bool:
@@ -208,6 +236,9 @@ class Broker:
                 return Rejected(
                     f"env gate {cap.env_gate} not set — dual-key consent required"
                 )
+
+        if not cap.consent_required:
+            return None
 
         consent_path = os.path.join(self.consent_dir, f"{cap.name}.txt")
         if not os.path.exists(consent_path):
@@ -243,6 +274,10 @@ class Broker:
             return self._execute_fs_write(token, args)
         if cap.name == "net.fetch":
             return self._execute_net_fetch(token, args)
+        if cap.name == "screen.capture":
+            return self._execute_screen_capture(token, args)
+        if cap.name == "screen.control":
+            return self._execute_screen_control(token, args)
         if cap.name == "vault.recall" and self.vault is not None:
             n = int(args.get("n", 5))
             rows = self.vault.get_recent_episodes(n)
@@ -304,6 +339,50 @@ class Broker:
                 stderr_sha256=hashlib.sha256(str(e).encode()).hexdigest(),
                 stdout="", stderr=str(e), work_dir=token.workspace,
             )
+
+    def _execute_screen_capture(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import computer_use
+        out_path = args.get("out_path")
+        res = computer_use.capture(out_path)
+        body = json.dumps(res)
+        digest = res.get("sha256", hashlib.sha256(body.encode()).hexdigest())
+        return ExecutionResult(
+            returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+            stdout=body, stderr="", work_dir=token.workspace or ".",
+        )
+
+    def _execute_screen_control(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import computer_use
+        action = args.get("action", "click")
+        try:
+            if action == "click":
+                res = computer_use.click(int(args.get("x", 0)), int(args.get("y", 0)))
+                body = json.dumps(res)
+            elif action == "type_keys":
+                res = computer_use.type_keys(str(args.get("text", "")))
+                body = json.dumps(res)
+            elif action == "read":
+                body = computer_use.get_window_text(str(args.get("target", "")))
+            else:
+                body = json.dumps({"action": action, "status": "ok"})
+            digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+            return ExecutionResult(
+                returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+                stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+                stdout=body, stderr="", work_dir=token.workspace or ".",
+            )
+        except Exception as e:
+            err_msg = str(e)
+            return ExecutionResult(
+                returncode=1, timed_out=False, killed_by=None, duration_s=0.0,
+                stdout_sha256=hashlib.sha256(b"").hexdigest(),
+                stderr_sha256=hashlib.sha256(err_msg.encode("utf-8")).hexdigest(),
+                stdout="", stderr=err_msg, work_dir=token.workspace or ".",
+            )
+
 
 
 def _trivial_result(text: str, work_dir: str) -> ExecutionResult:

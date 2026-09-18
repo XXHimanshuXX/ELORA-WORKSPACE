@@ -280,6 +280,12 @@ def preflight() -> int:
           "shader verified (overlay/organism.wgsl); rendering UNVERIFIED (needs GPU runner in CI)",
           warn=True)
 
+    try:
+        import pywinauto
+        check("leap: computer_use", True, "pywinauto available")
+    except ImportError:
+        check("leap: computer_use", False, "pywinauto absent -> screen.control unreachable", warn=True)
+
     print(f"-- preflight: {failures} fail, {warnings} warn --")
     return 0 if failures == 0 else 1
 

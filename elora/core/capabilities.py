@@ -150,6 +150,18 @@ _register(Capability(
     command_builder=lambda a: _py("elora.core.schedule", "--tick"),
 ))
 
+_register(Capability(
+    name="screen.capture",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Capture a screenshot for perception (no control)",
+    command_builder=lambda a: _py(
+        "elora.slime.computer_use", "--action", "capture",
+        "--out", a.get("out_path", "")),
+    allowed_roots=(".elora/screenshots", os.path.abspath(".elora/screenshots"),
+                   os.path.abspath("vault"), "/tmp/.elora"),
+))
+
 # --- Risk 2: Low -------------------------------------------------------
 
 _register(Capability(
@@ -177,14 +189,6 @@ _register(Capability(
     ],
 ))
 
-_register(Capability(
-    name="screen.capture",
-    risk=Risk.LOW,
-    budget=Budget.MICRO(),
-    description="Capture a screenshot for perception (no control)",
-    command_builder=lambda a: _py("elora.slime.computer_use", "--capture"),
-))
-
 # --- Risk 3: Moderate --------------------------------------------------
 
 _register(Capability(
@@ -207,8 +211,12 @@ _register(Capability(
     command_builder=lambda a: [
         sys.executable, "-m", "elora.slime.computer_use",
         "--action", a.get("action", "click"),
+        "--x", str(a.get("x", 0)),
+        "--y", str(a.get("y", 0)),
+        "--text", a.get("text", ""),
         "--target", a.get("target", ""),
     ],
+    env_gate="ELORA_ALLOW_CONTROL",
 ))
 
 _register(Capability(
