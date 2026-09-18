@@ -93,7 +93,7 @@ PROFILES: dict[State, StateProfile] = {
     ),
     State.ARMED: StateProfile(
         state=State.ARMED,
-        ram_estimate_mb=3380,  # BitNet 380 + FastSD 3000
+        ram_estimate_mb=4200,  # BitNet 380 + FastSD / ARMED 4200MB
         provides=frozenset({"generate.image"}),
     ),
     State.DIGESTING: StateProfile(

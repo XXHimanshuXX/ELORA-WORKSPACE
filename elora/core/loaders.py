@@ -352,6 +352,10 @@ class _ImageGenService(_Heavyweight):
     def load(self) -> bool:
         if _dependency_missing("python") or not Path("elora/slime/generation.py").exists():
             return False
+        try:
+            import fastsdcpu  # noqa: F401
+        except ImportError:
+            return False
         env = {"ELORA_SANDBOX": "1", "OMP_NUM_THREADS": "4"}
         self.spawn([sys.executable, "-c", _FASTSD_SERVER], env_extra=env)
         return self.ready(lambda: _port_open(_FASTSD_PORT))

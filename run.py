@@ -202,13 +202,6 @@ def preflight() -> int:
     import shutil
     check("ollama", shutil.which("ollama") is not None,
           "absent -> AWAKE unreachable, tasks defer", warn=True)
-    try:
-        import fastsdcpu  # noqa: F401
-        fastsd = True
-    except ImportError:
-        fastsd = False
-    check("fastsdcpu", fastsd,
-          "absent -> ARMED unreachable, tasks defer", warn=True)
 
     check("offline mode", True, "offline is a mode, not a failure")
 
@@ -285,6 +278,12 @@ def preflight() -> int:
         check("leap: computer_use", True, "pywinauto available")
     except ImportError:
         check("leap: computer_use", False, "pywinauto absent -> screen.control unreachable", warn=True)
+
+    try:
+        import fastsdcpu  # noqa: F401
+        check("leap: generation", True, "fastsdcpu present -> ARMED reachable")
+    except ImportError:
+        check("leap: generation", False, "fastsdcpu absent -> ARMED unreachable, tasks defer, mock active", warn=True)
 
     print(f"-- preflight: {failures} fail, {warnings} warn --")
     return 0 if failures == 0 else 1
