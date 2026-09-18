@@ -7,39 +7,69 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 
 ---
 
-## Key Architecture & Organs
+# ELORA OS
+
+> **A Sovereign, Local-First Agentic Operating System**  
+> *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*
+
+ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
+
+---
+
+## Key Architecture & Ring 0 Organs
 
 ### 1. Metabolism (RAM as Blood Sugar)
-- **Zero-Crash Admission Control**: Capabilities require specific metabolic states. Requests that exceed current headroom are `DEFERRED` with backoff rather than causing OOM panics.
-- **Ordered Lifecycle**:
+- **Zero-Crash Admission Control**: Capabilities require specific metabolic states. Requests that exceed current headroom are `DEFERRED` with exponential backoff rather than causing OOM panics.
+- **Ordered 6-State Lifecycle**:
   - `CRYPTOBIOSIS` (50MB) — Minimal standby; inbox polling and ledger integrity checks.
   - `ALIVE` (200MB) — Core services hot; shell execution, schedule ticks, screen capture, vault persistence.
-  - `AWAKE` (1200MB) — Local LLM / inference engine active.
-  - `ALERT` (1800MB) — Real-time audio stream (ASR/TTS).
-  - `ARMED` (4200MB) — Heavyweight generative pipelines.
+  - `AWAKE` (380MB) — Local BitNet b1.58 ternary inference engine active (collapsed from 1200MB baseline).
+  - `ALERT` (1800MB) — Real-time speech stream (ASR/TTS).
+  - `ARMED` (4200MB) — Heavyweight local image generation pipelines.
   - `DIGESTING` (1900MB) — Subprocess code absorption & AST distillation.
-- **Auto-Decay**: Inactivity triggers step-down demotion to protect system resources.
+- **Auto-Decay**: Inactivity triggers step-down demotion to conserve machine resources.
 
-### 2. Armored Subprocess & Security Membrane
-- **Sandboxed Execution**: Enforces strict execution budgets (`MICRO`, `SKILL`, `DIGEST`, `GENERATE`) with hard limits on CPU time, RAM, and output size.
-- **POSIX rlimits & Windows Job Objects**: Prevents runaway loops, memory leaks, and fork bombs across platforms.
-- **Allowlist AST Parsing**: Strict syntax and module allowlists for all untrusted code absorption.
+### 2. Capability Broker (7-Step Liturgy)
+- Every action follows an immutable 7-step sequence: `Intent → Validate → Plan → Route → Execute → Reflect → Seal`.
+- Tier-based permissioning: `QUARANTINE` → `PROBATION` → `TRUSTED` → `CORE`.
+- Destructive operations require dual-key human consent tokens.
+- Emits atomic ripple events to the VirtIO SHM ring on every capability execution.
 
-### 3. Capability Broker & Dual-Key Consent
-- Every tool invocation goes through the central `Broker`.
-- Tier-based permissioning: `QUARANTINE` → `SANDBOX` → `TRUSTED`.
-- Destructive actions require dual-key human consent tokens.
+### 3. Armored Subprocess & Security Membrane
+- **Sandboxed Execution**: Enforces strict execution budgets (`MICRO`, `SKILL`, `DIGEST`, `GENERATE`) with hard limits on CPU time, memory, and output truncation.
+- **Platform Parity**: POSIX rlimits on Linux; Windows Job Objects (`kernel32.CreateJobObjectW`, `SetInformationJobObject`, `AssignProcessToJobObject`) with kill-on-close limits and memory ceilings.
+- **Allowlist AST Parsing**: Strict module allowlists for untrusted code ingestion; raw external source code is never executed directly.
 
-### 4. Akashic Ledger
-- Tamper-evident cryptographic hash chain recording all system events (boot, tasks, tool calls, promotions, and shutdowns).
-- Verifies ledger chain integrity on every boot (`verify()`).
+### 4. Akashic Cryptographic Ledger
+- Tamper-evident SHA-256 hash chain recording every lifecycle event (boot, tasks, tool calls, promotions, and shutdowns).
+- Verifies ledger chain integrity on every boot (`ledger.verify()`).
 
-### 5. BitNet b1.58 Inference Organ
-- Addition-only ternary weights `{-1, 0, 1}` requiring no float multiplication.
-- Native Rust extension (`native/bitnet`) via PyO3 with automatic pure-Python fallback.
+### 5. Four Native Leaps
+1. **BitNet b1.58 Ternary Kernel**: Addition/subtraction-only matmul with weights in `{-1, 0, 1}`. Compiled native PyO3 Rust extension (`elora_bitnet.pyd`) with 6.12× speedup and 380MB AWAKE working set.
+2. **WASM Gastric Membrane**: 64KB `no_std` fuel-metered execution sandbox trapping infinite loops via `OP_BR_REL` branch metering (`WasmTrap`).
+3. **VirtIO SHM SPSC Ring**: Shared memory mapping (`.elora/shm/overlay.ring`) with `AtomicU64` head/tail and SHA-256 slot checksums for sub-millisecond tamper-evident IPC.
+4. **WebGPU SDF Organism Overlay**: Single-pass WGSL shader (`overlay/organism.wgsl`) driving real-time gyroid + metaball fluid physics governed by metabolic state and resource headroom.
 
-### 6. WebGPU Overlay Organism
-- Real-time metabolic ripple and state visualization via WGSL compute shader (`overlay/organism.wgsl`).
+### 6. Slime Periphery (WIREs 3–6)
+- **WIRE-3 (`elora/slime/computer_use.py`)**: Tier0 perception (`screen.capture` via PIL) and actuation (`screen.control` via `pywinauto` UIA) with coordinate jailing.
+- **WIRE-4 (`elora/core/absorb_pipeline.py`)**: End-to-end ingestion pipeline fetching remote GitHub code, AST-gating contracts, and synthesizing `spec.md` at `Tier.QUARANTINE`.
+- **WIRE-5 (`elora/slime/generation.py`)**: Local image generation organ gated at `State.ARMED` 4200MB with deterministic seed reproducibility.
+- **WIRE-6 (`elora/slime/voice.py`)**: Speech ASR/TTS organ gated at `State.ALERT` 1800MB with loud degradation markers when peripherals are absent.
+
+---
+
+## Pull Request Lineage & Audit Scoreboard
+
+| PR | Milestone | Commit | Tests | Δ | Status |
+|:---|:---|:---:|:---:|:---:|:---:|
+| **#1** | Windows Job Objects Containment & Leap Inspection Rungs | `d29f9b1` | 96 | Baseline | **FOUNDATION** |
+| **#2** | Phase B Live Absorption Pipeline (`net.fetch` → `digest` → `spec.md`) | `9af7098` | 99 | +3 | **HARDENED** |
+| **#3** | Content-Addressed Vault Episodes (`_episode_for`) | `25681dd` | 100 | +1 | **VERIFIABLE** |
+| **#4** | WIRE-3: `computer_use` Tier0 Perception & Actuation | `7bc5220` | 111 | +11 | **TIER0 AWAKE** |
+| **#5** | WIRE-5: `generation.py` Local Image Organ (`State.ARMED` 4200MB) | `3d98676` | 116 | +5 | **ARMED** |
+| **#6** | WIRE-6: `voice.py` Speech Organ (`State.ALERT` 1800MB) | `ed80995` | 120 | +4 | **ALERT** |
+| **#7** | Native BitNet 1.58 Rust PyO3 Extension (`elora_bitnet.pyd`) & `--once` | `05cf53a` | 120 | 6.12× speedup | **ACCELERATED** |
+| **#8** | Tauri 1.6 Sovereign Desktop Packaging & VirtIO SHM Ripple Bridge | `c0ec83f` | 124 | +4 | **SOVEREIGN RELEASE** |
 
 ---
 
@@ -49,43 +79,50 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 .
 ├── elora/
 │   ├── core/
+│   │   ├── absorb_pipeline.py    # Ingestion pipeline (fetch → gate → spec → bind)
 │   │   ├── absorption_gate.py    # AST allowlist and quarantine parser
-│   │   ├── armored_subprocess.py # Sandboxed execution membrane & budgets
+│   │   ├── armored_subprocess.py # Sandboxed execution membrane & Job Objects
 │   │   ├── bitnet.py             # BitNet b1.58 ternary kernel
 │   │   ├── broker.py             # Capability broker & dual-key consent
 │   │   ├── capabilities.py       # Registered tools and permission tiers
 │   │   ├── crystallization.py    # Skill promotion and code synthesis
 │   │   ├── decay.py              # Skill usage decay and cold storage
+│   │   ├── fs.py                 # Sandboxed filesystem utilities
 │   │   ├── loaders.py            # On-demand metabolic asset loaders
-│   │   ├── metabolism.py         # State machine & RAM admission control
+│   │   ├── metabolism.py         # 6-state machine & RAM admission control
 │   │   ├── promotion.py          # Ledger-driven skill promotion
-│   │   ├── virtio_shm.py         # Shared memory SPSC ring buffer
+│   │   ├── virtio_shm.py         # Lock-free SPSC shared-memory ring buffer
 │   │   └── wasm_gastric.py       # Fuel-metered WebAssembly sandbox
 │   ├── organs/
 │   │   └── akashic.py            # Tamper-evident hash-chained ledger
+│   ├── slime/
+│   │   ├── computer_use.py       # WIRE-3 screen capture & UIA control
+│   │   ├── generation.py         # WIRE-5 local image synthesis (ARMED 4200MB)
+│   │   └── voice.py              # WIRE-6 speech recognition & synthesis (ALERT 1800MB)
 │   ├── brain.py                  # RealBrain (HTTP) and ScriptedBrain (CI)
-│   ├── daemon.py                 # Core reactor event loop
-│   ├── overlay_bridge.py         # WebGPU ripple counter bridge
-│   └── vault.py                  # Persistent episode storage
+│   ├── daemon.py                 # Core reactor event loop & semantic scheduler
+│   ├── overlay_bridge.py         # SPSC ring ripple bridge for desktop overlay
+│   └── vault.py                  # Persistent episode storage (SQLite)
 ├── native/
-│   └── bitnet/                   # Rust PyO3 ternary matmul kernel
+│   └── bitnet/                   # Rust PyO3 ternary matmul kernel (b1.58)
 ├── overlay/
 │   ├── index.html                # WebGPU organism visualization
 │   ├── tauri_bridge.js           # Tauri JS bridge for state & ripple events
-│   └── organism.wgsl             # Spatial particle WGSL shader
-├── src-tauri/                    # Tauri v1 desktop application
-│   ├── Cargo.toml                # Desktop app configuration & sidecar permissions
+│   └── organism.wgsl             # Spatial particle WGSL compute shader
+├── src-tauri/                    # Tauri v1.6 desktop application
+│   ├── Cargo.toml                # Desktop app dependencies & sidecar permissions
 │   ├── tauri.conf.json           # Window configuration (transparent, undecorated)
+│   ├── build.rs                  # Windows resource builder
 │   └── src/
 │       └── main.rs               # Sidecar process manager & IPC bridge
 ├── tools/
-│   ├── tests/                    # Ring 0 hermetic test suite (124 tests)
+│   ├── tests/                    # Ring 0 hermetic test suite (124 tests across 17 modules)
 │   ├── build_native.py           # Native Rust PyO3 compilation tool
 │   ├── live_demo.py              # Multi-turn autonomous agent execution demo
 │   ├── _cleanup_backups.py       # Maintenance utility
 │   └── _compile_all.py           # Bytecode compilation verification
 ├── Docs/                         # Complete technical blueprints (v7 & v7.1)
-├── run.py                        # Boot sequence, preflight, and smoke tests
+├── run.py                        # Boot sequence, preflight, smoke, and live runner
 └── requirements.txt
 ```
 
@@ -95,7 +132,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 
 ELORA provides a native desktop packaging wrapper via **Tauri v1.6** that renders the real-time WebGPU SDF organism overlay, connects to the kernel via a lock-free VirtIO SHM ring (`.elora/shm/overlay.ring`), and manages the ELORA daemon sidecar:
 
-- **Transparent Overlay**: Undecorated, transparent 1280x800 desktop canvas rendering dynamic SDF metaball physics.
+- **Transparent Overlay**: Undecorated, transparent 1280×800 desktop canvas rendering dynamic SDF metaball physics.
 - **VirtIO SHM Ripple Bridge**: Lock-free SPSC ring buffer where broker capability requests emit cryptographic ripple events.
 - **Sidecar Lifecycle**: Spawns `python run.py --brain bitnet`, streams telemetry into Akashic ledger, and drains on shutdown.
 
@@ -105,9 +142,14 @@ Verify the Tauri application manifest and code:
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo clippy --manifest-path src-tauri/Cargo.toml
 ```
-To run the live desktop overlay in development mode (requires Tauri CLI):
+To run the live desktop overlay in development mode:
 ```bash
 cargo tauri dev
+```
+To compile the standalone desktop executable:
+```bash
+cargo build --manifest-path src-tauri/Cargo.toml --release
+# → src-tauri/target/release/elora-tauri.exe (5.74 MB standalone binary)
 ```
 
 ---
@@ -127,7 +169,7 @@ Compiles the PyO3 0.22 native extension with ABI3 forward compatibility for Pyth
 ```bash
 python tools/build_native.py
 # → target/release/elora_bitnet.dll -> ./elora_bitnet.pyd
-# Accelerates test execution 6.12x (52.25s → 8.53s) with AWAKE working set 380MB
+# Accelerates test execution 6.12× (52.25s → 8.53s) with AWAKE working set 380MB
 ```
 
 ### 3. Verify Preflight & Smoke Test
@@ -142,7 +184,7 @@ python run.py --smoke
 ### 4. Run Full Test Suite
 ```bash
 pytest tools/tests
-# 124 passed in tools/tests across 17 modules
+# 124 passed across 17 test modules in tools/tests
 ```
 
 ### 5. Multi-Turn Live Demonstration
@@ -151,17 +193,17 @@ python tools/live_demo.py
 # 5 iterations • 12 sequenced events • VALID Akashic cryptographic hash chain
 ```
 
-### 6. Run or Build Desktop Overlay (Tauri v1.6)
+### 6. Run the Daemon
+Start continuous polling on `.elora/inbox`:
 ```bash
-# Verify compiler and lints (0 errors, 0 warnings)
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml
+# Using native BitNet brain:
+python run.py --brain bitnet
 
-# Run desktop overlay in dev mode (requires Tauri CLI: cargo install tauri-cli)
-cargo tauri dev
+# Process one inbox tick and exit cleanly:
+python run.py --brain bitnet --once
 
-# Build standalone installer (MSI on Windows)
-cargo tauri build
+# Offline / sleeping brain:
+python run.py --brain none
 ```
 
 ---
@@ -170,4 +212,5 @@ cargo tauri build
 Detailed architectural blueprints and specs can be found in the `Docs/` directory:
 - [ELORA-TRUE-BLUEPRINT-V7-UPGRADE.md](Docs/ELORA-TRUE-BLUEPRINT-V7-UPGRADE.md)
 - [ELORA-TRUE-BLUEPRINT-V7-1-METABOLISM.md](Docs/ELORA-TRUE-BLUEPRINT-V7-1-METABOLISM.md)
+
 
