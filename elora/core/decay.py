@@ -17,11 +17,11 @@ metabolism, so it lives where metabolism lives.
 
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 
 from .crystallization import STALENESS_DAYS
+from .fs import ensure_dir, path_join, file_exists, move_file
 
 
 @dataclass
@@ -42,7 +42,7 @@ class DecayEngine:
         self.vault = vault
         self.skills_dir = skills_dir
         self.cold_dir = cold_dir
-        os.makedirs(cold_dir, exist_ok=True)
+        ensure_dir(cold_dir)
 
     def sweep(self) -> list[DecayDecision]:
         """One decay pass over all registered skills."""
@@ -72,9 +72,9 @@ class DecayEngine:
 
     def _archive(self, skill_id: str, reason: str) -> DecayDecision:
         """Move spec to cold storage, revoke binding. Spec survives."""
-        src = os.path.join(self.skills_dir, f"{skill_id}.md")
-        if os.path.exists(src):
-            os.rename(src, os.path.join(self.cold_dir, f"{skill_id}.md"))
+        src = path_join(self.skills_dir, f"{skill_id}.md")
+        if file_exists(src):
+            move_file(src, path_join(self.cold_dir, f"{skill_id}.md"))
         rec = self.promotion.skills.get(skill_id)
         if rec:
             from elora.core.capabilities import Tier
@@ -91,10 +91,10 @@ class DecayEngine:
         Spec moves back from _cold/, binding re-registered fresh
         at QUARANTINE. The slime remembers WHAT, re-earns WHETHER.
         """
-        cold = os.path.join(self.cold_dir, f"{skill_id}.md")
-        if not os.path.exists(cold):
+        cold = path_join(self.cold_dir, f"{skill_id}.md")
+        if not file_exists(cold):
             return False
-        os.rename(cold, os.path.join(self.skills_dir, f"{skill_id}.md"))
+        move_file(cold, path_join(self.skills_dir, f"{skill_id}.md"))
         self.promotion.register(origin=f"revived:{skill_id}")
         self.ledger.append(
             organ="decay", kind="skill_revived", message=skill_id,

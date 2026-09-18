@@ -74,18 +74,25 @@ ALLOWED_NODES = {
     "LShift", "RShift", "BitOr", "BitXor", "BitAnd",
     "USub", "UAdd", "Not", "Invert", "In", "NotIn",
     "Is", "IsNot", "And", "Or",
+    "Eq", "NotEq", "Lt", "LtE", "Gt", "GtE",
     # Containers and assignment
     "Assign", "AugAssign", "AnnAssign",
-    "Tuple", "List", "Dict", "Set",
+    "Tuple", "List", "Dict", "Set", "Starred",
     # Control flow
     "If", "IfExp", "For", "While", "Break", "Continue",
-    "Try", "ExceptHandler", "Finally", "With",
+    "Try", "ExceptHandler", "Finally", "With", "withitem",
+    "Raise", "Assert",
+    # Pattern matching (Python 3.10+)
+    "Match", "match_case", "MatchValue", "MatchSingleton", "MatchSequence",
+    "MatchMapping", "MatchClass", "MatchStar", "MatchAs", "MatchOr",
     # Comprehensions
     "ListComp", "SetComp", "DictComp", "GeneratorExp", "comprehension",
     # Classes: allowed, but their bodies are gated identically
     "ClassDef",
     # Imports are parsed so the audit stage can refuse them by name
     "Import", "ImportFrom", "alias",
+    # Arguments and keywords
+    "keyword",
     # Python 3.14 emits lowercase node names for some argument nodes
     "arguments", "arg",
 }
