@@ -27,6 +27,7 @@ OP_I32_MUL = 0x6C
 OP_LOCAL_GET = 0x20
 OP_LOCAL_SET = 0x21
 OP_RETURN = 0x0F
+OP_BR_REL = 0x0C  # relative branch: signed 8-bit offset
 OP_END = 0x0B
 
 
@@ -117,6 +118,13 @@ class WasmiLike:
                 stack.append(a * b)
             elif op == OP_RETURN:
                 return stack.pop() if stack else 0
+            elif op == OP_BR_REL:
+                if pc >= len(code):
+                    raise WasmTrap("truncated branch")
+                offset = int.from_bytes([code[pc]], "little", signed=True)
+                pc += 1 + offset
+                if pc < 0 or pc > len(code):
+                    raise WasmTrap("branch out of bounds")
             elif op == OP_END:
                 return stack.pop() if stack else 0
             else:
