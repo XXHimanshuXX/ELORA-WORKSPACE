@@ -216,6 +216,16 @@ class Broker:
                     f"path '{path}' is not inside approved roots "
                     f"{list(cap.allowed_roots)}"
                 )
+        if cap.name == "voice.speak":
+            path = args.get("out_path") or args.get("path")
+            roots = cap.allowed_roots
+            if token and token.workspace:
+                roots = roots + (token.workspace, os.path.abspath(token.workspace))
+            if path and not self._path_in_jail(path, roots):
+                return Rejected(
+                    f"path '{path}' is not inside approved roots "
+                    f"{list(cap.allowed_roots)}"
+                )
         return None
 
     def _path_in_jail(self, path: str, roots=()) -> bool:
@@ -290,6 +300,10 @@ class Broker:
             return self._execute_screen_control(token, args)
         if cap.name == "generate.image":
             return self._execute_generate_image(token, args)
+        if cap.name == "voice.listen":
+            return self._execute_voice_listen(token, args)
+        if cap.name == "voice.speak":
+            return self._execute_voice_speak(token, args)
         if cap.name == "vault.recall" and self.vault is not None:
             n = int(args.get("n", 5))
             rows = self.vault.get_recent_episodes(n)
@@ -418,6 +432,33 @@ class Broker:
                 stderr_sha256=hashlib.sha256(err_msg.encode("utf-8")).hexdigest(),
                 stdout="", stderr=err_msg, work_dir=token.workspace or ".",
             )
+
+    def _execute_voice_listen(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import voice
+        seconds = int(args.get("seconds", 5))
+        res = voice.listen(seconds=seconds)
+        body = json.dumps(res)
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        return ExecutionResult(
+            returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+            stdout=body, stderr="", work_dir=token.workspace or ".",
+        )
+
+    def _execute_voice_speak(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import voice
+        text = str(args.get("text", ""))
+        path = args.get("out_path") or args.get("path")
+        res = voice.speak(text=text, out_path=path)
+        body = json.dumps(res)
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        return ExecutionResult(
+            returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+            stdout=body, stderr="", work_dir=token.workspace or ".",
+        )
 
 
 

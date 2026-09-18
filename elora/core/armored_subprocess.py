@@ -97,6 +97,10 @@ class Budget:
     def GENERATE(cls):
         return cls(cpu_seconds=120, ram_mb=4200, wall_seconds=1800, file_mb=64)
 
+    @classmethod
+    def ALERT(cls):
+        return cls(cpu_seconds=30, ram_mb=1800, wall_seconds=60)
+
 
 @dataclass
 class ExecutionResult:

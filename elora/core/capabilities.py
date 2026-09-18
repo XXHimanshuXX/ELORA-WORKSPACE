@@ -232,19 +232,22 @@ _register(Capability(
 
 _register(Capability(
     name="voice.listen",
-    risk=Risk.MODERATE,
-    budget=Budget.SKILL(),
+    risk=Risk.LOW,
+    budget=Budget.ALERT(),
     description="ASR listen via the ALERT organ",
-    command_builder=lambda a: _py("elora.slime.voice", "--listen"),
+    command_builder=lambda a: _py("elora.slime.voice", "--listen", "--seconds", str(a.get("seconds", 5))),
 ))
 
 _register(Capability(
     name="voice.speak",
-    risk=Risk.MODERATE,
-    budget=Budget.SKILL(),
+    risk=Risk.LOW,
+    budget=Budget.ALERT(),
     description="TTS speak via the ALERT organ",
     command_builder=lambda a: _py(
-        "elora.slime.voice", "--speak", a.get("text", "")),
+        "elora.slime.voice", "--speak", a.get("text", ""),
+        "--out", a.get("out_path", a.get("path", ""))),
+    allowed_roots=(".elora/voice", os.path.abspath(".elora/voice"),
+                   os.path.abspath("vault"), "/tmp/.elora"),
 ))
 
 _register(Capability(
