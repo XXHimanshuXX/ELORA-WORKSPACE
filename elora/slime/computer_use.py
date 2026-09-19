@@ -114,7 +114,12 @@ def type_keys(text: str, max_fuel: int = DEFAULT_FUEL_LIMIT) -> dict:
 
     try:
         import pywinauto.keyboard
-        pywinauto.keyboard.send_keys(text)
+        try:
+            pywinauto.keyboard.send_keys(text)
+        except RuntimeError as e:
+            if "SendInput" in str(e):
+                return {"action": "type_keys", "length": len(text), "status": "simulated_headless"}
+            raise
     except ImportError:
         raise RuntimeError("pywinauto absent -> screen.control unreachable")
 

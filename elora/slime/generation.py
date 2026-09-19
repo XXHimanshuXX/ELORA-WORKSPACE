@@ -65,9 +65,32 @@ class RealFastSDBackend:
         return buf.getvalue()
 
 
+class RealSDTurboBackend:
+    name = "sd-turbo"
+
+    def __init__(self, pipeline=None):
+        self.pipeline = pipeline
+
+    def render(self, prompt: str, seed: int = 42) -> bytes:
+        if self.pipeline is None:
+            import torch
+            from diffusers import AutoPipelineForText2Image
+            self.pipeline = AutoPipelineForText2Image.from_pretrained(
+                "stabilityai/sd-turbo",
+                torch_dtype=torch.float32,
+            )
+            self.pipeline.to("cpu")
+        import torch
+        gen = torch.manual_seed(seed)
+        res = self.pipeline(prompt=prompt, num_inference_steps=1, guidance_scale=0.0, generator=gen)
+        buf = io.BytesIO()
+        res.images[0].save(buf, format="PNG")
+        return buf.getvalue()
+
+
 class GenerationOrgan:
-    def __init__(self):
-        self.backend = None
+    def __init__(self, backend=None):
+        self.backend = backend
 
     def _ensure_backend(self):
         if self.backend is not None:
@@ -76,8 +99,19 @@ class GenerationOrgan:
             import fastsdcpu  # noqa: F401
             from fastsdcpu import pipeline
             self.backend = RealFastSDBackend(pipeline)
+            return
         except Exception:
-            self.backend = MockBackend()
+            pass
+
+        if os.environ.get("ELORA_SD_TURBO") == "1":
+            try:
+                import diffusers  # noqa: F401
+                self.backend = RealSDTurboBackend()
+                return
+            except Exception:
+                pass
+
+        self.backend = MockBackend()
 
     def generate(self, prompt: str, seed: int = 42, out_path: Optional[str] = None) -> dict:
         self._ensure_backend()

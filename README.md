@@ -3,7 +3,7 @@
 > **A Sovereign, Local-First Agentic Operating System**  
 > *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*  
 >  
-> `124 passed in 51.71s (17 modules) | cargo check 0 errors clippy 0 warnings | smoke GREEN | live_demo 5 iterations 12 events VALID`
+> `124 passed in 22.37s (17 modules) | cargo clippy 0 errors 0 warnings | preflight 0 fail 4 warn | smoke GREEN | MSI + NSIS bundled`
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
@@ -147,6 +147,12 @@ To compile the standalone desktop executable:
 cargo build --manifest-path src-tauri/Cargo.toml --release
 # → src-tauri/target/release/elora-tauri.exe (5.74 MB standalone binary)
 ```
+To bundle production Windows installers (MSI + NSIS Setup):
+```bash
+cargo tauri build --manifest-path src-tauri/Cargo.toml
+# → src-tauri/target/release/bundle/msi/ELORA OS_0.1.0_x64_en-US.msi (2.50 MB MSI package)
+# → src-tauri/target/release/bundle/nsis/ELORA OS_0.1.0_x64-setup.exe (1.70 MB NSIS installer)
+```
 
 ---
 
@@ -188,8 +194,8 @@ python run.py --check
   [OK ] import decay  
   [OK ] import daemon  
   [WARN] psutil + RAM  8064MB total (need >=4096; 8192 comfortable; ARMED gated by metabolism)
-  [OK ] ollama  absent -> AWAKE unreachable, tasks defer
-  [WARN] tauri  absent
+  [OK ] ollama  available
+  [OK ] tauri  v1.6 installed
   [OK ] offline mode  offline is a mode, not a failure
   [OK ] destructive gate  closed
   [WARN] Platform: nt (Windows)
@@ -200,12 +206,12 @@ python run.py --check
   [OK ] leap: wasm gastric  add(2,40)=42 verified, infinite loop fuel-trapped, 64KB
   [OK ] leap: virtio shm  SPSC ring + checksum verified, tamper detected on flipped byte
   [OK ] leap: tauri overlay bridge  verified, SHM ring exists (.elora/shm/overlay.ring)
-  [WARN] leap: webgpu overlay  shader verified (overlay/organism.wgsl) + bridge verified; rendering UNVERIFIED (needs GPU runner in CI)
-  [WARN] leap: computer_use  pywinauto absent -> screen.control unreachable
-  [WARN] leap: generation  fastsdcpu absent -> ARMED unreachable, tasks defer, mock active
--- preflight: 0 fail, 8 warn --
+  [OK ] leap: webgpu overlay  shader + render pass verified (NVIDIA GeForce GTX 1050 (DiscreteGPU) via Vulkan (frame sha: adfb692e3540, non-zero: 168857))
+  [OK ] leap: computer_use  pywinauto available
+  [OK ] leap: generation  diffusers present -> ARMED reachable (sd-turbo CPU)
+-- preflight: 0 fail, 4 warn --
 ```
-*(Note: 0 fail, 9 warn if `.elora/shm/overlay.ring` has not yet been initialized prior to bridge startup)*
+*(Note: 4 warnings reflect honest Windows OS limits — Job Objects, POSIX rlimit absence, AST probation gate, and RAM headroom)*
 
 Run the hermetic zero-network smoke test:
 ```bash

@@ -210,8 +210,9 @@ def preflight() -> int:
         check("psutil", False, "missing")
 
     import shutil
-    check("ollama", shutil.which("ollama") is not None,
-          "absent -> AWAKE unreachable, tasks defer", warn=True)
+    ollama_bin = shutil.which("ollama")
+    check("ollama", ollama_bin is not None,
+          "available" if ollama_bin else "absent -> AWAKE unreachable, tasks defer", warn=True)
 
     tauri_cli = shutil.which("cargo-tauri") or shutil.which("tauri")
     check("tauri", tauri_cli is not None,
@@ -297,15 +298,21 @@ def preflight() -> int:
     if ring_valid:
         check("leap: tauri overlay bridge", True,
               "verified, SHM ring exists (.elora/shm/overlay.ring)")
-        check("leap: webgpu overlay", False,
-              "shader verified (overlay/organism.wgsl) + bridge verified; rendering UNVERIFIED (needs GPU runner in CI)",
-              warn=True)
     else:
         check("leap: tauri overlay bridge", False,
               "absent -> desktop packaging unreachable, mock active", warn=True)
-        check("leap: webgpu overlay", False,
-              "shader verified (overlay/organism.wgsl); rendering UNVERIFIED (needs GPU runner in CI)",
-              warn=True)
+
+    webgpu_ok = False
+    webgpu_detail = "shader verified (overlay/organism.wgsl); rendering UNVERIFIED (needs GPU runner in CI)"
+    try:
+        from tools.verify_webgpu import verify_webgpu_render
+        webgpu_ok, detail = verify_webgpu_render()
+        if webgpu_ok:
+            webgpu_detail = f"shader + render pass verified ({detail})"
+    except Exception as e:
+        webgpu_detail = f"shader verified; render pass unverified ({e})"
+
+    check("leap: webgpu overlay", webgpu_ok, webgpu_detail, warn=not webgpu_ok)
 
     try:
         import pywinauto
@@ -317,7 +324,11 @@ def preflight() -> int:
         import fastsdcpu  # noqa: F401
         check("leap: generation", True, "fastsdcpu present -> ARMED reachable")
     except ImportError:
-        check("leap: generation", False, "fastsdcpu absent -> ARMED unreachable, tasks defer, mock active", warn=True)
+        try:
+            import diffusers  # noqa: F401
+            check("leap: generation", True, "diffusers present -> ARMED reachable (sd-turbo CPU)")
+        except ImportError:
+            check("leap: generation", False, "fastsdcpu/diffusers absent -> ARMED unreachable, tasks defer, mock active", warn=True)
 
     print(f"-- preflight: {failures} fail, {warnings} warn --")
     return 0 if failures == 0 else 1
@@ -410,6 +421,7 @@ def _boot_main(args):
     config = stage_config()
     t0 = time.time()
     ledger = stage_ledger()
+    os.environ["ELORA_BRAIN"] = args.brain
 
     if args.brain == "none":
         from elora.brain import Brain

@@ -65,8 +65,12 @@ class _Heavyweight:
     # -- lifecycle ---------------------------------------------------
 
     def spawn(self, command: list[str], env_extra: dict | None = None) -> bool:
-        env = {k: v for k, v in os.environ.items()
-               if k in ("PATH", "HOME", "LC_ALL", "OMP_NUM_THREADS")}
+        allowed = {
+            "PATH", "HOME", "LC_ALL", "OMP_NUM_THREADS",
+            "SYSTEMROOT", "SYSTEMDRIVE", "LOCALAPPDATA", "APPDATA",
+            "USERPROFILE", "TEMP", "TMP", "PATHEXT", "COMSPEC", "WINDIR",
+        }
+        env = {k: v for k, v in os.environ.items() if k in allowed}
         env.update(env_extra or {})
         try:
             self.proc = subprocess.Popen(
@@ -227,9 +231,17 @@ class _LLMService(_Heavyweight):
 _llm_service: _LLMService | None = None
 
 
-def load_llm() -> bool:
+def load_llm(prefer: str | None = None) -> bool:
     global _llm_service
     from elora.core.bitnet import HAS_NATIVE, AWAKE_RSS_MB
+    mode = os.environ.get("ELORA_BRAIN", "").lower()
+    if mode == "local" or prefer == "ollama":
+        _llm_service = _LLMService()
+        ok = _llm_service.load()
+        if ok:
+            _report_cost("AWAKE", _llm_service.measured_cost_mb())
+            return True
+        # If Ollama was requested but failed, fall back cleanly to native BitNet if present
     if HAS_NATIVE:
         _report_cost("AWAKE", AWAKE_RSS_MB)
         return True
