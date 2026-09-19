@@ -96,6 +96,31 @@ class AkashicLedger:
         self._events.append(rec)
         return digest
 
+    def recent_events(self, kind: Optional[str] = None, n: int = 50) -> list[dict]:
+        """Return the most recent events, optionally filtered by kind."""
+        query = ("SELECT seq, ts, organ, kind, message, payload, prev_hash, hash "
+                 "FROM events ")
+        params: list[Any] = []
+        if kind is not None:
+            query += "WHERE kind = ? "
+            params.append(kind)
+        query += "ORDER BY seq DESC LIMIT ?"
+        params.append(n)
+        cur = self.conn.execute(query, tuple(params))
+        out = []
+        for row in cur.fetchall():
+            seq, ts, organ, k, message, payload, prev_hash, digest = row
+            try:
+                payload_obj = json.loads(payload)
+            except Exception:
+                payload_obj = payload
+            out.append({
+                "seq": seq, "ts": ts, "organ": organ, "kind": k,
+                "message": message, "payload": payload_obj,
+                "prev_hash": prev_hash, "hash": digest,
+            })
+        return out[::-1]
+
     def verify(self):
         """
         Iterate the chain. Return (True, None) if intact, (False, seq)

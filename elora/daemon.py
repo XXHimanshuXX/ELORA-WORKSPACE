@@ -72,7 +72,8 @@ class Daemon:
 
     def __init__(self, brain, broker, metabolism, ledger, vault,
                  inbox_dir: str = ".elora/inbox", poll_seconds: int = 5,
-                 crystallizer=None, decay=None, absorb_pipeline=None):
+                 crystallizer=None, decay=None, absorb_pipeline=None,
+                 drive=None):
         self.brain = brain
         self.broker = broker
         self.metabolism = metabolism
@@ -83,6 +84,7 @@ class Daemon:
         self.crystallizer = crystallizer
         self.decay = decay
         self.absorb_pipeline = absorb_pipeline
+        self.drive = drive
         os.makedirs(inbox_dir, exist_ok=True)
         os.makedirs(os.path.join(inbox_dir, ".processing"), exist_ok=True)
         self.skills_token = SkillToken(
@@ -330,7 +332,12 @@ class Daemon:
     def run_forever(self, poll_seconds: int | None = None):
         interval = poll_seconds if poll_seconds is not None else self.poll_seconds
         while True:
-            self.tick()
+            tasks = self.tick()
+            if not tasks and self.drive is not None:
+                try:
+                    self.drive.tick()
+                except Exception:
+                    pass
             if self.decay is not None:
                 try:
                     self.decay.sweep()

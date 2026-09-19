@@ -23,6 +23,9 @@ class FakeLedger:
     def append(self, organ, kind, message, payload=None):
         self.events.append({"organ": organ, "kind": kind,
                             "message": message, "payload": payload})
+    def recent_events(self, kind=None, n=50):
+        evs = self.events if kind is None else [e for e in self.events if e.get("kind") == kind]
+        return evs[-n:]
 
 
 class FakeVault:

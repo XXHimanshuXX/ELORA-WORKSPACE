@@ -98,6 +98,22 @@ class Crystallizer:
         except Exception:
             pass  # logged upstream in real build; never propagate
 
+    def observe_text(self, text: str) -> None:
+        """Observe episodic text directly for pattern consolidation."""
+        words = re.findall(r"\b([a-zA-Z0-9_]+\.[a-zA-Z0-9_]+)\b", text)
+        caps = [w for w in words if w in REGISTRY]
+        if not caps:
+            return
+        class _PseudoEvent:
+            payload = {"text": text}
+        class _PseudoTask:
+            event = _PseudoEvent()
+            trace = [{"tool": c, "args": {}} for c in caps]
+        try:
+            self._observe_unsafe(_PseudoTask())
+        except Exception:
+            pass
+
     def _observe_unsafe(self, task) -> None:
         # Extract the ordered capability sequence from the trace
         sequence = []

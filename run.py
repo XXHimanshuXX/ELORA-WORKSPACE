@@ -133,13 +133,21 @@ def build(config: dict, ledger, brain) -> "Assembled":
     )
     daemon.skills_token = promotion.register("elora:core-daemon")
 
+    from elora.core.drive import DriveLoop
+    drive = DriveLoop(
+        daemon=daemon, crystallizer=crystallizer, decay=decay,
+        promotion=promotion, absorb_pipeline=absorb_pipeline,
+        ledger=ledger, vault=vault, brain=brain,
+    )
+    daemon.drive = drive
+
     ledger.append(organ="boot", kind="boot_complete",
                   message="all stages green")
     return Assembled(config=config, ledger=ledger, vault=vault,
                      metabolism=metabolism, broker=broker,
                      promotion=promotion, crystallizer=crystallizer,
                      decay=decay, daemon=daemon,
-                     absorb_pipeline=absorb_pipeline)
+                     absorb_pipeline=absorb_pipeline, drive=drive)
 
 
 class Assembled:
@@ -192,6 +200,7 @@ def preflight() -> int:
                 "elora.core.promotion",
                 "elora.core.crystallization",
                 "elora.core.decay",
+                "elora.core.drive",
                 "elora.daemon"):
         try:
             __import__(mod)
