@@ -145,7 +145,7 @@ cargo tauri dev
 To compile the standalone desktop executable:
 ```bash
 cargo build --manifest-path src-tauri/Cargo.toml --release
-# → src-tauri/target/release/elora-tauri.exe (5.74 MB standalone binary)
+# → src-tauri/target/release/ELORA OS.exe (5.77 MB standalone binary)
 ```
 To bundle production Windows installers (MSI + NSIS Setup):
 ```bash
