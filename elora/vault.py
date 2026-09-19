@@ -46,6 +46,21 @@ class Vault:
 
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
+    path = os.environ.get("ELORA_VAULT", os.path.join(".elora", "vault.db"))
+    v = Vault(path)
+    if "--recall" in argv:
+        idx = argv.index("--recall")
+        n = int(argv[idx + 1]) if idx + 1 < len(argv) and argv[idx + 1].isdigit() else 5
+        episodes = v.get_recent_episodes(n)
+        for ep in episodes:
+            print(ep)
+        return 0
+    elif "--save" in argv:
+        idx = argv.index("--save")
+        content = argv[idx + 1] if idx + 1 < len(argv) else ""
+        v.save_episode(content)
+        print("saved")
+        return 0
     return 0
 
 

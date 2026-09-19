@@ -131,8 +131,16 @@ def extract_tool_calls(reply: str) -> list[dict]:
     """
     calls, failures = [], []
     for m in TOOL_CALL_RE.finditer(reply):
+        body = (m.group("body") or "").strip()
+        if body.startswith("{json}"):
+            body = body[6:].strip()
+        if not body:
+            calls.append({"server": m.group("server"),
+                          "tool": m.group("tool"),
+                          "args": {}})
+            continue
         try:
-            args = json.loads(m.group("body"))
+            args = json.loads(body)
             calls.append({"server": m.group("server"),
                           "tool": m.group("tool"),
                           "args": args})

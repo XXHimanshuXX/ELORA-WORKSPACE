@@ -109,7 +109,7 @@ class Daemon:
         return (
             "You are ELORA, a sovereign agentic OS. "
             "Call tools with "
-            '<mcp_call server="elora" tool="NAME">{json}</mcp_call>. '
+            '<mcp_call server="elora" tool="NAME">{}</mcp_call>. '
             "When finished reply with DONE.\n"
             "REAL capability names (hallucinated names are rejected):\n"
             f"{names}\n"
@@ -236,6 +236,10 @@ class Daemon:
                 continue
             if not calls:
                 # no tool call, not DONE — ask again
+                task.messages.append({
+                    "role": "user",
+                    "content": "Please emit your tool call using <mcp_call server=\"elora\" tool=\"NAME\">{}</mcp_call> or reply with DONE if complete."
+                })
                 continue
 
             for call in calls:
