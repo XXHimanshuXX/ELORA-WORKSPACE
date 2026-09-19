@@ -1,7 +1,9 @@
 # ELORA OS
 
 > **A Sovereign, Local-First Agentic Operating System**  
-> *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*
+> *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*  
+>  
+> `124 passed in 51.71s (17 modules) | cargo check 0 errors clippy 0 warnings | smoke GREEN | live_demo 5 iterations 12 events VALID`
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
@@ -167,12 +169,62 @@ python tools/build_native.py
 ```
 
 ### 3. Verify Preflight & Smoke Test
-```bash
-# Preflight audit (0 fail, 9 warn expected)
-python run.py --check
+Run the audit check and hermetic smoke test. Honest warnings for uninstalled optional peripheral runtimes (`tauri`, `pywinauto`, `fastsdcpu`) and Windows platform constraints are expected and auditable:
 
-# Hermetic smoke test (GREEN)
+```bash
+python run.py --check
+```
+
+```text
+-- ELORA preflight --
+  [OK ] python  3.14 (need >=3.11)
+  [OK ] import metabolism  
+  [OK ] import broker  
+  [OK ] import capabilities  
+  [OK ] import armored_subprocess  
+  [OK ] import absorption_gate  
+  [OK ] import promotion  
+  [OK ] import crystallization  
+  [OK ] import decay  
+  [OK ] import daemon  
+  [WARN] psutil + RAM  8064MB total (need >=4096; 8192 comfortable; ARMED gated by metabolism)
+  [OK ] ollama  absent -> AWAKE unreachable, tasks defer
+  [WARN] tauri  absent
+  [OK ] offline mode  offline is a mode, not a failure
+  [OK ] destructive gate  closed
+  [WARN] Platform: nt (Windows)
+  [BROKEN] RLIMIT_FSIZE — POSIX rlimits unavailable on Windows
+  [DEGRADED] Job Object limits active: PROCESS_TIME=10s, Memory=512MB, ACTIVE_PROCESS=1
+  [REFUSED] tier >= PROBATION blocked on Windows (AST-gated code only)
+  [OK ] leap: bitnet 1.58  kernel verified (-1.0==-1.0), native=True, AWAKE=380MB
+  [OK ] leap: wasm gastric  add(2,40)=42 verified, infinite loop fuel-trapped, 64KB
+  [OK ] leap: virtio shm  SPSC ring + checksum verified, tamper detected on flipped byte
+  [OK ] leap: tauri overlay bridge  verified, SHM ring exists (.elora/shm/overlay.ring)
+  [WARN] leap: webgpu overlay  shader verified (overlay/organism.wgsl) + bridge verified; rendering UNVERIFIED (needs GPU runner in CI)
+  [WARN] leap: computer_use  pywinauto absent -> screen.control unreachable
+  [WARN] leap: generation  fastsdcpu absent -> ARMED unreachable, tasks defer, mock active
+-- preflight: 0 fail, 8 warn --
+```
+*(Note: 0 fail, 9 warn if `.elora/shm/overlay.ring` has not yet been initialized prior to bridge startup)*
+
+Run the hermetic zero-network smoke test:
+```bash
 python run.py --smoke
+```
+
+```text
+[boot] 2/8 vault
+[boot] 3/8 metabolism (booting at ALIVE, never higher)
+[boot] 4/8 broker
+[boot] 5/8 promotion engine (replaying ledger)
+[boot] 6/8 crystallizer + decay + absorb
+[boot] 7/8 loaders (heavyweights stay asleep until needed)
+[boot] 8/8 daemon (registering itself as a skill - QUARANTINE)
+  [OK ] task loop -> DONE
+  [OK ] real subprocess ran (smoke.txt written)
+  [OK ] akashic chain verifies
+  [OK ] real names in system prompt (V4 regression)
+-- smoke: GREEN --
 ```
 
 ### 4. Run Full Test Suite
