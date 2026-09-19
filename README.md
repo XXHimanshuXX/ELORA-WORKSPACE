@@ -150,8 +150,8 @@ cargo build --manifest-path src-tauri/Cargo.toml --release
 To bundle production Windows installers (MSI + NSIS Setup):
 ```bash
 cargo tauri build --manifest-path src-tauri/Cargo.toml
-# → src-tauri/target/release/bundle/msi/ELORA OS_0.1.0_x64_en-US.msi (2.50 MB MSI package)
-# → src-tauri/target/release/bundle/nsis/ELORA OS_0.1.0_x64-setup.exe (1.70 MB NSIS installer)
+# → src-tauri/target/release/bundle/msi/ELORA OS_7.1.0_x64_en-US.msi (2.50 MB MSI package)
+# → src-tauri/target/release/bundle/nsis/ELORA OS_7.1.0_x64-setup.exe (1.70 MB NSIS installer)
 ```
 
 ---

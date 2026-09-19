@@ -7,7 +7,7 @@
   },
   "package": {
     "productName": "ELORA OS",
-    "version": "0.1.0"
+    "version": "7.1.0"
   },
   "tauri": {
     "allowlist": {
