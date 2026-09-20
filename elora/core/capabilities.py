@@ -225,12 +225,12 @@ _register(Capability(
 
 _register(Capability(
     name="doc.ingest",
-    risk=Risk.LOW,
+    risk=Risk.TRIVIAL,
     budget=Budget.DIGEST(),
     description="Ingest a local file (pdf/image/video/text) into memory",
     command_builder=lambda a: [
         sys.executable, "-m", "elora.slime.ingest",
-        "--path", a.get("path", ""),
+        "--path", a.get("path", a.get("file_path", a.get("file", a.get("filepath", "")))),
     ],
 ))
 

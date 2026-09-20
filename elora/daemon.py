@@ -265,22 +265,14 @@ class Daemon:
                 return task
 
             task.messages.append({"role": "assistant", "content": reply})
-            if isinstance(reply, str):
-                trimmed = reply.strip().upper()
-                if trimmed.startswith("DONE") or trimmed.endswith("DONE") or "\nDONE" in trimmed or "DONE." in trimmed:
-                    task.state = TaskState.DONE
-                    return task
-
             calls, failures = extract_tool_calls(reply)
-            if failures:
-                task.trace.append({"malformed": failures})
-                task.messages.append({
-                    "role": "user",
-                    "content": f"malformed tool call: {failures}. "
-                               f"Use a real name from: {', '.join(sorted(REGISTRY))}",
-                })
-                continue
-            if not calls:
+
+            if not calls and not failures:
+                if isinstance(reply, str):
+                    trimmed = reply.strip().upper()
+                    if trimmed.startswith("DONE") or trimmed.endswith("DONE") or "\nDONE" in trimmed or "DONE." in trimmed:
+                        task.state = TaskState.DONE
+                        return task
                 if any(t.get("ok") for t in task.trace):
                     task.state = TaskState.DONE
                     return task
@@ -288,6 +280,15 @@ class Daemon:
                 task.messages.append({
                     "role": "user",
                     "content": "Please emit your tool call using <mcp_call server=\"elora\" tool=\"NAME\">{}</mcp_call> or reply with DONE if complete."
+                })
+                continue
+
+            if failures:
+                task.trace.append({"malformed": failures})
+                task.messages.append({
+                    "role": "user",
+                    "content": f"malformed tool call: {failures}. "
+                               f"Use a real name from: {', '.join(sorted(REGISTRY))}",
                 })
                 continue
 

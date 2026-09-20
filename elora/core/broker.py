@@ -350,7 +350,7 @@ class Broker:
             rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
             rag = RagIndex(persist_dir=rag_dir)
             pipeline = IngestionPipeline(vault=self.vault, ledger=self.ledger, rag=rag, metabolism=self.metabolism)
-            path = args.get("path", "")
+            path = args.get("path", args.get("file_path", args.get("file", args.get("filepath", ""))))
             res = pipeline.ingest(path)
             return _trivial_result(json.dumps(res), token.workspace)
 

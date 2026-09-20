@@ -124,7 +124,7 @@ class RealBrain(Brain):
 TOOL_CALL_RE = re.compile(
     r'<mcp_call\s+server="(?P<server>[^"]+)"\s+tool="(?P<tool>[^"]+)">\s*'
     r'(?P<body>.*?)'
-    r'</mcp_call>',
+    r'</?mcp_call>',
     re.DOTALL,
 )
 
