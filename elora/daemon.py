@@ -66,6 +66,46 @@ class Task:
 
 GITHUB_RAW_RE = re.compile(r"https://raw\.githubusercontent\.com/[\w./-]+")
 
+IMPERATIVE_VERBS = {
+    "verify", "check", "confirm", "test", "audit", "validate", "inspect", "examine",
+    "scan", "run", "execute", "launch", "start", "stop", "restart", "kill",
+    "save", "store", "persist", "write", "record", "append", "log",
+    "recall", "read", "fetch", "get", "retrieve", "pull", "load", "find", "search",
+    "create", "build", "compile", "generate", "make", "synthesize", "craft",
+    "update", "modify", "edit", "patch", "fix", "repair",
+    "delete", "remove", "drop", "purge", "prune", "clean", "clear", "sweep",
+    "absorb", "ingest", "crystallize", "consolidate", "decay", "promote",
+    "echo", "print", "display", "show", "list", "view", "diff",
+    "measure", "profile", "benchmark", "track", "count",
+    "open", "close", "connect", "disconnect", "send", "post", "request",
+}
+
+EXIT_PATTERNS = [
+    re.compile(r"^(?:when finished\s+)?(?:please\s+)?(?:reply|respond|say|type|output)\s+(?:with\s+)?done\b", re.I),
+]
+
+CLAUSE_DELIMS = re.compile(r"(?:[;\n\r]+|\. |,\s*|\band\s+then\b|\band\b|\bthen\b|\balso\b)", re.IGNORECASE)
+STRIP_PREFIX = re.compile(r"^\s*(?:\d+[\.\)]|[-*•]|\bplease\b)\s*", re.IGNORECASE)
+
+
+def count_imperative_clauses(text: str) -> int:
+    """Counts discrete imperative action clauses in a task instruction string.
+    Filters out task protocol completion phrases (e.g. 'reply with DONE')."""
+    if not text:
+        return 0
+    raw_pieces = CLAUSE_DELIMS.split(text)
+    count = 0
+    for p in raw_pieces:
+        clean = STRIP_PREFIX.sub("", p).strip()
+        if not clean:
+            continue
+        if any(pat.search(clean) for pat in EXIT_PATTERNS):
+            continue
+        words = clean.split()
+        if words and words[0].lower() in IMPERATIVE_VERBS:
+            count += 1
+    return count
+
 
 class Daemon:
     MAX_ITERATIONS = 8
@@ -300,6 +340,30 @@ class Daemon:
             except OSError:
                 pass
 
+    def assess_task_completion(self, task: Task) -> str:
+        """Determines task completion fidelity for the ledger.
+        - Failed state -> 'failed'
+        - Absorbed pipeline -> 'ok'
+        - Zero capability pairs -> 'DONE_NO_WORK'
+        - Fewer capability pairs than imperative clauses -> 'DONE_PARTIAL'
+        - Full completion -> 'ok'
+        """
+        if task.state != TaskState.DONE:
+            return "failed"
+        if any("absorbed" in t for t in task.trace):
+            return "ok"
+
+        cap_pairs = len([t for t in task.trace if t.get("ok")])
+        if cap_pairs == 0:
+            return "DONE_NO_WORK"
+
+        text = task.event.payload.get("text", "") if task.event and task.event.payload else ""
+        clauses = count_imperative_clauses(text)
+        if clauses > 1 and cap_pairs < clauses:
+            return "DONE_PARTIAL"
+
+        return "ok"
+
     def tick(self) -> list[Task]:
         tasks = self.poll_inbox()
         if not tasks:
@@ -313,7 +377,7 @@ class Daemon:
             )
             try:
                 self.handle_task(task)
-                status = "ok" if task.state == TaskState.DONE else "failed"
+                status = self.assess_task_completion(task)
                 self.ledger.append(
                     organ="daemon", kind="task_finished",
                     message=task.id, payload={"status": status},
@@ -333,9 +397,14 @@ class Daemon:
                 self._cleanup(task)
         return tasks
 
-    def run_forever(self, poll_seconds: int | None = None):
+    def run_forever(self, poll_seconds: int | None = None, max_iterations: int | None = None):
         interval = poll_seconds if poll_seconds is not None else self.poll_seconds
+        heartbeat_interval_s = int(os.environ.get("ELORA_HEARTBEAT_SECONDS", "300"))
+        last_heartbeat = time.time()
+        heartbeat_count = 0
+        iterations = 0
         while True:
+            iterations += 1
             tasks = self.tick()
             if not tasks and self.drive is not None:
                 try:
@@ -347,4 +416,18 @@ class Daemon:
                     self.decay.sweep()
                 except Exception:
                     pass
+
+            now = time.time()
+            if now - last_heartbeat >= heartbeat_interval_s:
+                heartbeat_count += 1
+                last_heartbeat = now
+                state_obj = getattr(getattr(self, "metabolism", None), "state", None)
+                state_name = getattr(state_obj, "name", "ALIVE")
+                skills_count = len(getattr(getattr(self, "promotion", None), "skills", {})) if getattr(self, "promotion", None) else 1
+                seq = getattr(self.ledger, "seq", 0) if hasattr(self.ledger, "seq") else len(getattr(self.ledger, "events", []))
+                t_str = time.strftime("%H:%M:%S")
+                print(f"[{t_str}] heartbeat #{heartbeat_count} | state={state_name} | skills={skills_count} | ledger={seq}", flush=True)
+
+            if max_iterations is not None and iterations >= max_iterations:
+                break
             time.sleep(interval)

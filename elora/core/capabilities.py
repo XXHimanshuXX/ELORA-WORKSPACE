@@ -119,6 +119,18 @@ _register(Capability(
 ))
 
 _register(Capability(
+    name="rag.recall",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Recall semantic memory chunks matching query from RAG index",
+    command_builder=lambda a: [
+        sys.executable, "-m", "elora.slime.rag",
+        "--query", a.get("query", ""),
+        "--n", str(a.get("n", 5)),
+    ],
+))
+
+_register(Capability(
     name="vault.save",
     risk=Risk.TRIVIAL,
     budget=Budget.MICRO(),
@@ -179,17 +191,47 @@ _register(Capability(
     name="generate.image",
     risk=Risk.LOW,
     budget=Budget.GENERATE(),
-    description="Generate an image locally via FastSD CPU. No network. No API.",
+    description="Generate an image via local model or paid API",
     command_builder=lambda a: [
-        sys.executable, "-m", "elora.slime.generation",
-        "--backend", "fastsd-cpu",
+        sys.executable, "-m", "elora.slime.generation_api",
         "--prompt", a.get("prompt", ""),
-        "--size", a.get("size", "512x512"),
         "--out", a.get("path", a.get("out_path", "out.png")),
-        "--seed", str(a.get("seed", 42)),
     ],
     allowed_roots=(".elora/generations", os.path.abspath(".elora/generations"),
                    os.path.abspath("vault"), "/tmp/.elora"),
+))
+
+_register(Capability(
+    name="net.read",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Read a webpage into structured memory. Respects robots.txt. Never solves CAPTCHAs.",
+    command_builder=lambda a: [
+        sys.executable, "-m", "elora.slime.browser",
+        "--action", "read", "--url", a.get("url", ""),
+    ],
+))
+
+_register(Capability(
+    name="net.search",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Web search via bot-friendly HTML endpoints",
+    command_builder=lambda a: [
+        sys.executable, "-m", "elora.slime.browser",
+        "--action", "search", "--query", a.get("query", ""),
+    ],
+))
+
+_register(Capability(
+    name="doc.ingest",
+    risk=Risk.LOW,
+    budget=Budget.DIGEST(),
+    description="Ingest a local file (pdf/image/video/text) into memory",
+    command_builder=lambda a: [
+        sys.executable, "-m", "elora.slime.ingest",
+        "--path", a.get("path", ""),
+    ],
 ))
 
 # --- Risk 3: Moderate --------------------------------------------------

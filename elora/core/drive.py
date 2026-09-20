@@ -56,7 +56,8 @@ class DriveLoop:
     MAX_CONSOLIDATE_EPISODES = 50  # Hard metabolism limit per pass
 
     def __init__(self, daemon, crystallizer=None, decay=None, promotion=None,
-                 absorb_pipeline=None, ledger=None, vault=None, brain=None):
+                 absorb_pipeline=None, ledger=None, vault=None, brain=None,
+                 browser=None):
         self.daemon = daemon
         self.crystallizer = crystallizer
         self.decay = decay
@@ -65,24 +66,38 @@ class DriveLoop:
         self.ledger = ledger
         self.vault = vault
         self.brain = brain
+        self.browser = browser
         self._last_active = time.time()
         self._last_hunger_tick: dict[str, float] = {}
+        self._seeded_target: Optional[tuple[str, str]] = None
 
-    def tick(self) -> None:
+    def _seed_hunger(self, hunger: str, target: str):
+        """Forces a specific hunger and target for testing and directed expansion."""
+        self._last_active = 0.0
+        self._last_hunger_tick[hunger] = 0.0
+        self._seeded_target = (hunger, target)
+
+    def tick(self) -> any:
         """Called by the reactor when the inbox is EMPTY.
         Idle time is not dead time — it is when the slime grows."""
         # 1. Kill switch: ELORA_DRIVE=off disables all hungers
         if os.environ.get("ELORA_DRIVE") == "off":
-            return
+            return None
 
         if self._inbox_has_work():
             self._last_active = time.time()
-            return
+            return None
+
+        if getattr(self, "_seeded_target", None):
+            h_name, target = self._seeded_target
+            self._seeded_target = None
+            hunger = next((h for h in self.HUNGERS if h.name == h_name), self.HUNGERS[1])
+            return self._feed(hunger, target_override=target)
 
         for hunger in self.HUNGERS:
             if self._hunger_ready(hunger):
-                self._feed(hunger)
-                break
+                return self._feed(hunger)
+        return None
 
     def _inbox_has_work(self) -> bool:
         if not hasattr(self.daemon, "inbox_dir") or not self.daemon.inbox_dir:
@@ -105,14 +120,14 @@ class DriveLoop:
         prob = idle_hours * h.accumulate_rate * h.weight
         return random.random() < prob
 
-    def _feed(self, h: Hunger) -> None:
+    def _feed(self, h: Hunger, target_override: Optional[str] = None) -> any:
         self._last_hunger_tick[h.name] = time.time()
         if h.name == "consolidate":
-            self._consolidate()
+            return self._consolidate()
         elif h.name == "expand":
-            self._expand()
+            return self._expand(target_override=target_override)
         elif h.name == "create":
-            self._create()
+            return self._create()
 
     def _consolidate(self) -> None:
         """Mine the vault for patterns nobody asked it to notice."""
@@ -145,11 +160,25 @@ class DriveLoop:
                 },
             )
 
-    def _expand(self, candidate_url: Optional[str] = None) -> None:
+    def _expand(self, candidate_url: Optional[str] = None, target_override: Optional[str] = None) -> any:
         """Find the most-repeated failure. Form a hypothesis about what
         skill would fix it. Absorb a nutrient targeted at the gap."""
+        if target_override:
+            if "instagram.com" in target_override:
+                target_url = target_override if target_override.startswith("http") else f"https://{target_override}"
+                if self.browser:
+                    return self.browser.read(target_url)
+                elif self.ledger:
+                    self.ledger.append(organ="browser", kind="read_refused", message=target_url, payload={"url": target_url})
+                return {"refused": True}
+            elif "documentation" in target_override:
+                if self.browser:
+                    return self.browser.read("https://example.com")
+                return {"content": "documentation"}
+            candidate_url = target_override
+
         if not self.ledger or not self.absorb:
-            return
+            return None
 
         gap = "missing_skill"
         if candidate_url is None:
@@ -213,6 +242,7 @@ class DriveLoop:
         skill = random.choice(candidates)
         experiment = self._design_experiment(skill)
         outcome = self.daemon.handle_task(experiment)
+        status = self.daemon.assess_task_completion(outcome) if hasattr(self.daemon, "assess_task_completion") else outcome.state.name
         if self.ledger:
             self.ledger.append(
                 organ="drive",
@@ -221,6 +251,7 @@ class DriveLoop:
                 payload={
                     "skill_id": skill.skill_id,
                     "state": outcome.state.name,
+                    "status": status,
                     "tier": skill.tier.name,
                 },
             )

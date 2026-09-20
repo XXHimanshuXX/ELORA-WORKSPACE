@@ -48,15 +48,24 @@ class ScriptedBrain(Brain):
     """
 
     def __init__(self, script: list[str]):
-        self.script = list(script)
+        self._script = list(script)
         self.calls: list[dict] = []      # record of every prompt seen
+        self._consumed = 0
+
+    @property
+    def script(self) -> list[str]:
+        return self._script
+
+    @script.setter
+    def script(self, value: list[str]):
+        self._script = list(value)
         self._consumed = 0
 
     def complete(self, system: str, messages: list) -> str:
         self.calls.append({"system": system, "messages": list(messages)})
 
-        if self._consumed < len(self.script):
-            reply = self.script[self._consumed]
+        if self._consumed < len(self._script):
+            reply = self._script[self._consumed]
             self._consumed += 1
             return reply
         return "DONE"

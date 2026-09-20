@@ -119,11 +119,11 @@ def build(config: dict, ledger, brain) -> "Assembled":
         skills_dir=skills_dir,
     )
 
-    print("[boot] 7/8 loaders (heavyweights stay asleep until needed)")
+    print("[boot] 7/10 loaders (heavyweights stay asleep until needed)")
     from elora.core.loaders import register_with
     register_with(metabolism)
 
-    print("[boot] 8/8 daemon (registering itself as a skill - QUARANTINE)")
+    print("[boot] 8/10 daemon (registering itself as a skill - QUARANTINE)")
     daemon = Daemon(
         brain=brain, broker=broker, metabolism=metabolism,
         ledger=ledger, vault=vault, inbox_dir=INBOX_DIR,
@@ -133,11 +133,25 @@ def build(config: dict, ledger, brain) -> "Assembled":
     )
     daemon.skills_token = promotion.register("elora:core-daemon")
 
+    # 9/10 browser organ
+    print("[boot] 9/10 browser organ")
+    from elora.slime.rag import RagIndex
+    from elora.slime.browser import BrowserOrgan
+    rag = RagIndex(persist_dir=os.path.join(STATE_DIR, "rag"))
+    browser = BrowserOrgan(vault=vault, ledger=ledger, rag=rag, headless=True)
+
+    # 10/10 ingestion + RAG + generation
+    print("[boot] 10/10 ingestion pipeline")
+    from elora.slime.ingest import IngestionPipeline
+    from elora.slime.generation_api import GenerationOrgan
+    ingestion = IngestionPipeline(vault=vault, ledger=ledger, rag=rag, metabolism=metabolism)
+    generation = GenerationOrgan(vault=vault, ledger=ledger)
+
     from elora.core.drive import DriveLoop
     drive = DriveLoop(
         daemon=daemon, crystallizer=crystallizer, decay=decay,
         promotion=promotion, absorb_pipeline=absorb_pipeline,
-        ledger=ledger, vault=vault, brain=brain,
+        ledger=ledger, vault=vault, brain=brain, browser=browser,
     )
     daemon.drive = drive
 
@@ -147,7 +161,9 @@ def build(config: dict, ledger, brain) -> "Assembled":
                      metabolism=metabolism, broker=broker,
                      promotion=promotion, crystallizer=crystallizer,
                      decay=decay, daemon=daemon,
-                     absorb_pipeline=absorb_pipeline, drive=drive)
+                     absorb_pipeline=absorb_pipeline, drive=drive,
+                     browser=browser, rag=rag, ingestion=ingestion,
+                     generation=generation)
 
 
 class Assembled:
@@ -201,7 +217,11 @@ def preflight() -> int:
                 "elora.core.crystallization",
                 "elora.core.decay",
                 "elora.core.drive",
-                "elora.daemon"):
+                "elora.daemon",
+                "elora.slime.browser",
+                "elora.slime.rag",
+                "elora.slime.ingest",
+                "elora.slime.generation_api"):
         try:
             __import__(mod)
             check(f"import {mod.split('.')[-1]}", True)

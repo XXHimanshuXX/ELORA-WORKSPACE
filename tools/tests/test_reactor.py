@@ -136,6 +136,59 @@ class TestFullLoop:
         assert len(set(episodes)) == len(episodes)   # no duplicates
         assert "iter" in episodes[-2]                 # real content, real shape
 
+    def test_multistep_task_completeness(self, loop):
+        """Audit rung: when a task text contains multiple imperative clauses,
+        DONE with fewer capability pairs than clauses is recorded as DONE_PARTIAL
+        (distinct from DONE_NO_WORK)."""
+        # 1. Multi-step task with partial completion (3 clauses, 1 tool executed) -> DONE_PARTIAL
+        drop(loop["inbox"], "verify memory and check the vault and confirm the chain", "partial.txt")
+        loop["brain"].script = [
+            '<mcp_call server="elora" tool="shell.run_command">'
+            '{"command": "echo verify"}</mcp_call>',
+            "DONE",
+        ]
+        tasks = loop["daemon"].tick()
+        assert tasks[0].state.name == "DONE"
+        finished_events = [e for e in loop["ledger"].events if e["kind"] == "task_finished"]
+        assert len(finished_events) == 1
+        assert finished_events[0]["payload"]["status"] == "DONE_PARTIAL"
+
+        # 2. Multi-step task with full completion (2 clauses, 2 tools executed) -> ok
+        drop(loop["inbox"], "verify memory and check the vault", "full.txt")
+        loop["brain"].script = [
+            '<mcp_call server="elora" tool="shell.run_command">'
+            '{"command": "echo verify"}</mcp_call>',
+            '<mcp_call server="elora" tool="shell.run_command">'
+            '{"command": "echo check"}</mcp_call>',
+            "DONE",
+        ]
+        tasks2 = loop["daemon"].tick()
+        assert tasks2[0].state.name == "DONE"
+        finished_events2 = [e for e in loop["ledger"].events if e["kind"] == "task_finished"]
+        assert len(finished_events2) == 2
+        assert finished_events2[1]["payload"]["status"] == "ok"
+
+        # 3. Task with zero capability pairs -> DONE_NO_WORK
+        drop(loop["inbox"], "check the vault", "lazy.txt")
+        loop["brain"].script = ["DONE"]
+        tasks3 = loop["daemon"].tick()
+        assert tasks3[0].state.name == "DONE"
+        finished_events3 = [e for e in loop["ledger"].events if e["kind"] == "task_finished"]
+        assert len(finished_events3) == 3
+        assert finished_events3[2]["payload"]["status"] == "DONE_NO_WORK"
+
+
+class TestImperativeClauseCounting:
+    def test_counting_varieties(self):
+        from elora.daemon import count_imperative_clauses
+        assert count_imperative_clauses("verify memory and check the vault and confirm the chain") == 3
+        assert count_imperative_clauses("Verify skill skl_123 self-check and reply with DONE") == 1
+        assert count_imperative_clauses("run a test command") == 1
+        assert count_imperative_clauses("quick one") == 0
+        assert count_imperative_clauses("1. Verify memory\n2. Check vault\n3. Confirm chain") == 3
+        assert count_imperative_clauses("verify memory, check the vault, and confirm the chain") == 3
+        assert count_imperative_clauses("echo hello > proof.txt") == 1
+
 
 class TestExtractToolCalls:
     def test_multiple_calls_extracted(self):
