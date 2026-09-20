@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -70,6 +71,34 @@ class DriveLoop:
         self._last_active = time.time()
         self._last_hunger_tick: dict[str, float] = {}
         self._seeded_target: Optional[tuple[str, str]] = None
+        self._refused_cache: dict[str, float] = {}
+        self._last_consolidated_ep: Optional[str] = None
+
+    def _is_nutrient_refused(self, url: str) -> bool:
+        if not url:
+            return False
+        clean_url = url.strip()
+        if self.vault and hasattr(self.vault, "is_nutrient_refused"):
+            try:
+                if self.vault.is_nutrient_refused(clean_url):
+                    return True
+            except Exception:
+                pass
+        ts = self._refused_cache.get(clean_url)
+        if ts and (time.time() - ts) < 7 * 86400:
+            return True
+        return False
+
+    def _record_refused_nutrient(self, url: str, reason: str = ""):
+        if not url:
+            return
+        clean_url = url.strip()
+        self._refused_cache[clean_url] = time.time()
+        if self.vault and hasattr(self.vault, "record_refused_nutrient"):
+            try:
+                self.vault.record_refused_nutrient(clean_url, reason)
+            except Exception:
+                pass
 
     def _seed_hunger(self, hunger: str, target: str):
         """Forces a specific hunger and target for testing and directed expansion."""
@@ -129,13 +158,19 @@ class DriveLoop:
         elif h.name == "create":
             return self._create()
 
-    def _consolidate(self) -> None:
+    def _consolidate(self, force: bool = False) -> None:
         """Mine the vault for patterns nobody asked it to notice."""
         if not self.vault:
             return
         episodes = self.vault.get_recent_episodes(n=100) if hasattr(self.vault, "get_recent_episodes") else []
         if not episodes:
             return
+
+        # Throttle: skip consolidation if zero new episodes since last pass
+        last_ep = episodes[-1]
+        if not force and getattr(self, "_last_consolidated_ep", None) == last_ep:
+            return
+        self._last_consolidated_ep = last_ep
 
         # Metabolism cap: budget restricts runaway mining
         episodes_to_review = episodes[-self.MAX_CONSOLIDATE_EPISODES:]
@@ -180,23 +215,54 @@ class DriveLoop:
         if not self.ledger or not self.absorb:
             return None
 
+        RAW_BASE = "https://raw.githubusercontent.com/elora-skills/library/main/"
         gap = "missing_skill"
         if candidate_url is None:
             events = []
             if hasattr(self.ledger, "recent_events"):
-                events = self.ledger.recent_events(kind="absorption_refused", n=50)
+                all_recent = self.ledger.recent_events(n=100)
+                events = [
+                    e for e in all_recent
+                    if (e.get("kind") == "task_finished" and e.get("payload", {}).get("status") in ("failed", "error", "DONE_PARTIAL", "DONE_NO_WORK"))
+                    or e.get("kind") in ("absorption_refused", "task_failed", "tool_refused", "expansion_refused")
+                ]
             elif hasattr(self.ledger, "events"):
                 events = [
                     e for e in self.ledger.events
-                    if e.get("kind") in ("absorption_refused", "task_failed", "tool_refused")
+                    if e.get("kind") in ("absorption_refused", "task_failed", "tool_refused", "expansion_refused")
                 ][-50:]
 
             if not events:
-                return
+                return None
 
             last_event = events[-1]
-            gap = last_event.get("message", "missing_skill")
-            candidate_url = f"https://raw.githubusercontent.com/elora-skills/library/main/{gap}.py"
+            raw_msg = last_event.get("message", "missing_skill")
+            if raw_msg.startswith("https://") or raw_msg.startswith("http://"):
+                candidate_url = raw_msg
+                gap = raw_msg.rstrip("/").split("/")[-1].replace(".py", "")
+            else:
+                gap = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_msg.strip()).strip('_') or "missing_skill"
+                candidate_url = f"{RAW_BASE}{gap}.py"
+        else:
+            clean = candidate_url.strip()
+            if clean.startswith("https://") or clean.startswith("http://"):
+                candidate_url = clean
+                gap = clean.rstrip("/").split("/")[-1].replace(".py", "")
+            else:
+                stem = clean if clean.endswith(".py") else f"{clean}.py"
+                candidate_url = f"{RAW_BASE}{stem}"
+                gap = clean.replace(".py", "")
+
+        # Refusal memory cooldown: check if this nutrient was already refused within 7 days
+        if self._is_nutrient_refused(candidate_url):
+            if self.ledger:
+                self.ledger.append(
+                    organ="drive",
+                    kind="nutrient_blacklisted",
+                    message=f"refused cooldown active: {candidate_url}",
+                    payload={"candidate_url": candidate_url},
+                )
+            return {"refused": True, "blacklisted": True}
 
         # Leash on eating: check allowlist
         # Must be strictly raw.githubusercontent.com
@@ -208,7 +274,8 @@ class DriveLoop:
                     message=f"non-allowlisted nutrient: {candidate_url}",
                     payload={"candidate_url": candidate_url},
                 )
-            return
+            self._record_refused_nutrient(candidate_url, "non-allowlisted nutrient")
+            return {"refused": True}
 
         token = getattr(self.daemon, "skills_token", None)
         if token is None:
@@ -224,8 +291,12 @@ class DriveLoop:
             },
         )
 
+        outcome = None
         if self.absorb and hasattr(self.absorb, "absorb"):
-            self.absorb.absorb(candidate_url, token)
+            outcome = self.absorb.absorb(candidate_url, token)
+            if outcome and getattr(outcome, "refused", False):
+                self._record_refused_nutrient(candidate_url, getattr(outcome, "reason", "refused"))
+        return outcome
 
     def _create(self) -> None:
         """Pick an under-tiered skill. Design ONE self-verifiable task

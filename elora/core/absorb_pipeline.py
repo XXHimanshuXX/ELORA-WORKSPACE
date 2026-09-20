@@ -112,6 +112,8 @@ class AbsorptionPipeline:
         self.ledger.append(organ="absorb", kind="absorption_refused",
                            message=url[:120], payload={"reason": reason})
         self.vault.save_episode(f"Refused absorption of {url}: {reason}")
+        if hasattr(self.vault, "record_refused_nutrient"):
+            self.vault.record_refused_nutrient(url, reason)
 
     def _render_spec(self, url, d: DigestedCode, skill_id: str) -> str:
         lines = [

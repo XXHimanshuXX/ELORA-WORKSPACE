@@ -195,3 +195,80 @@ class TestDriveSafetyLines:
         drive_events = [e for e in ledger.events if e.get("organ") == "drive"]
         assert len(drive_events) == 0
         assert all(v == 0.0 for v in drive._last_hunger_tick.values())
+
+    def test_expand_never_double_joins_urls(self, drive_env):
+        """Rung 5: Expand never concatenates RAW_BASE onto an existing absolute URL."""
+        drive = drive_env["drive"]
+        absorb = drive_env["absorb"]
+        ledger = drive_env["ledger"]
+
+        # Case A: Full URL
+        full_url = "https://raw.githubusercontent.com/elora-skills/library/main/sqlite_helper.py"
+        drive._expand(candidate_url=full_url)
+        assert len(absorb.calls) == 1
+        assert absorb.calls[0]["url"] == full_url
+        assert not absorb.calls[0]["url"].count("https://") > 1
+
+        # Case B: Relative skill name
+        drive._expand(candidate_url="math_solver")
+        assert len(absorb.calls) == 2
+        assert absorb.calls[1]["url"] == "https://raw.githubusercontent.com/elora-skills/library/main/math_solver.py"
+        assert not absorb.calls[1]["url"].count("https://") > 1
+
+        # Case C: Gap extracted from ledger event with an existing URL
+        ledger.append(organ="absorb", kind="absorption_refused",
+                      message="https://raw.githubusercontent.com/elora-skills/library/main/dead_code.py")
+        drive._expand(candidate_url=None)
+        # Should not double join into /library/main/https://raw.githubus...
+        assert len(absorb.calls) == 3
+        assert absorb.calls[2]["url"] == "https://raw.githubusercontent.com/elora-skills/library/main/dead_code.py"
+        assert not absorb.calls[2]["url"].count("https://") > 1
+
+    def test_expand_refusal_memory_blacklists_refused_nutrients(self, drive_env):
+        """Rung 6: A nutrient refused by allowlist or absorption is remembered;
+        subsequent expand ticks skip it and log nutrient_blacklisted."""
+        drive = drive_env["drive"]
+        absorb = drive_env["absorb"]
+        ledger = drive_env["ledger"]
+
+        bad_url = "https://evil.com/malware.py"
+        drive._expand(candidate_url=bad_url)
+        assert len(absorb.calls) == 0
+
+        # Refusal event recorded
+        refused = [e for e in ledger.events if e["kind"] == "expansion_refused"]
+        assert len(refused) == 1
+
+        # Next attempt on the same URL within cooldown MUST be blacklisted
+        res = drive._expand(candidate_url=bad_url)
+        assert res.get("blacklisted") is True
+        assert len(absorb.calls) == 0
+
+        blacklisted = [e for e in ledger.events if e["kind"] == "nutrient_blacklisted"]
+        assert len(blacklisted) == 1
+        assert bad_url in blacklisted[0]["message"]
+
+    def test_consolidation_throttled_when_no_new_episodes(self, drive_env):
+        """Rung 7: Consolidation skips when zero new episodes are added to the vault."""
+        drive = drive_env["drive"]
+        vault = drive_env["vault"]
+        ledger = drive_env["ledger"]
+
+        vault.save_episode("episode 1: something happened")
+        drive._consolidate()
+
+        passes = [e for e in ledger.events if e["kind"] == "consolidation_pass"]
+        assert len(passes) == 1
+
+        # Call consolidation again immediately with NO new episodes
+        drive._consolidate()
+        passes = [e for e in ledger.events if e["kind"] == "consolidation_pass"]
+        # Must still be 1 — no duplicate pass
+        assert len(passes) == 1
+
+        # Add a new episode
+        vault.save_episode("episode 2: something else happened")
+        drive._consolidate()
+        passes = [e for e in ledger.events if e["kind"] == "consolidation_pass"]
+        # Now 2 — new material triggered consolidation
+        assert len(passes) == 2

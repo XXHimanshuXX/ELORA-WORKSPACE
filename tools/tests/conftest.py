@@ -31,10 +31,31 @@ class FakeLedger:
 class FakeVault:
     def __init__(self):
         self.episodes = []
+        self.refused_nutrients = {}
+
     def save_episode(self, content):
         self.episodes.append(content)
+
+    def count(self) -> int:
+        return len(self.episodes)
+
     def get_recent_episodes(self, n=10):
         return self.episodes[-n:]
+
+    def record_refused_nutrient(self, url: str, reason: str = ""):
+        import hashlib
+        import time
+        url_sha = hashlib.sha256(url.strip().encode("utf-8")).hexdigest()
+        self.refused_nutrients[url_sha] = {"url": url.strip(), "ts": time.time(), "reason": reason}
+
+    def is_nutrient_refused(self, url: str, max_age_s: float = 7 * 86400) -> bool:
+        import hashlib
+        import time
+        url_sha = hashlib.sha256(url.strip().encode("utf-8")).hexdigest()
+        rec = self.refused_nutrients.get(url_sha)
+        if not rec:
+            return False
+        return (time.time() - rec["ts"]) < max_age_s
 
 
 @pytest.fixture
