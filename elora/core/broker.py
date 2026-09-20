@@ -317,6 +317,42 @@ class Broker:
             ok, bad = self.ledger.verify() if hasattr(self.ledger, "verify") else (True, None)
             text = "ok" if ok else f"tamper at {bad}"
             return _trivial_result(text, token.workspace)
+        if cap.name == "rag.recall":
+            import json
+            from elora.slime.rag import RagIndex
+            rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
+            rag = RagIndex(persist_dir=rag_dir)
+            query = args.get("query", args.get("q", args.get("text", args.get("prompt", args.get("arg", "")))))
+            n = int(args.get("n", 5))
+            hits = rag.recall(query or "memory", n=n)
+            return _trivial_result(json.dumps(hits), token.workspace)
+        if cap.name == "net.read":
+            import json
+            from elora.slime.browser import BrowserOrgan
+            from elora.slime.rag import RagIndex
+            rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
+            rag = RagIndex(persist_dir=rag_dir)
+            browser = BrowserOrgan(vault=self.vault, ledger=self.ledger, rag=rag, headless=True)
+            url = args.get("url", args.get("link", args.get("uri", "")))
+            res = browser.read(url)
+            return _trivial_result(json.dumps(res), token.workspace)
+        if cap.name == "net.search":
+            import json
+            from elora.slime.browser import BrowserOrgan
+            browser = BrowserOrgan(vault=self.vault, ledger=self.ledger, headless=True)
+            query = args.get("query", args.get("q", ""))
+            res = browser.search(query)
+            return _trivial_result(json.dumps(res), token.workspace)
+        if cap.name == "doc.ingest":
+            import json
+            from elora.slime.ingest import IngestionPipeline
+            from elora.slime.rag import RagIndex
+            rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
+            rag = RagIndex(persist_dir=rag_dir)
+            pipeline = IngestionPipeline(vault=self.vault, ledger=self.ledger, rag=rag, metabolism=self.metabolism)
+            path = args.get("path", "")
+            res = pipeline.ingest(path)
+            return _trivial_result(json.dumps(res), token.workspace)
 
         work_dir = token.workspace or os.getcwd()
         os.makedirs(work_dir, exist_ok=True)

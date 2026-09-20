@@ -125,7 +125,7 @@ _register(Capability(
     description="Recall semantic memory chunks matching query from RAG index",
     command_builder=lambda a: [
         sys.executable, "-m", "elora.slime.rag",
-        "--query", a.get("query", ""),
+        "--query", a.get("query", a.get("q", a.get("text", a.get("prompt", a.get("arg", ""))))),
         "--n", str(a.get("n", 5)),
     ],
 ))
@@ -203,12 +203,12 @@ _register(Capability(
 
 _register(Capability(
     name="net.read",
-    risk=Risk.LOW,
+    risk=Risk.TRIVIAL,
     budget=Budget.SKILL(),
     description="Read a webpage into structured memory. Respects robots.txt. Never solves CAPTCHAs.",
     command_builder=lambda a: [
         sys.executable, "-m", "elora.slime.browser",
-        "--action", "read", "--url", a.get("url", ""),
+        "--action", "read", "--url", a.get("url", a.get("link", a.get("uri", ""))),
     ],
 ))
 

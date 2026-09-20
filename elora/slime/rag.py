@@ -58,13 +58,14 @@ def main():
     import sys
 
     parser = argparse.ArgumentParser(description="ELORA RAG Recall")
-    parser.add_argument("--query", required=True, help="Query string for semantic recall")
+    parser.add_argument("--query", default="", help="Query string for semantic recall")
     parser.add_argument("--n", type=int, default=5, help="Max results to recall")
     parser.add_argument("--dir", default=".elora/rag", help="Directory for RAG database")
     args = parser.parse_args()
 
     rag = RagIndex(persist_dir=args.dir)
-    hits = rag.recall(args.query, n=args.n)
+    query_str = args.query.strip() if args.query else "memory"
+    hits = rag.recall(query_str, n=args.n)
     print(json.dumps(hits, indent=2))
 
 

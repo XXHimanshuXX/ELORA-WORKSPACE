@@ -78,7 +78,7 @@ PROFILES: dict[State, StateProfile] = {
             "shell.run_command", "shell.run_destructive",
             "vault.recall", "vault.save",
             "schedule.tick", "screen.capture", "fs.write", "net.fetch",
-            "screen.control",
+            "screen.control", "net.read", "net.search", "doc.ingest", "rag.recall",
         }),
     ),
     State.AWAKE: StateProfile(

@@ -147,10 +147,14 @@ class Daemon:
         names = "\n".join(f"- {n}" for n in capability_names())
         known = ", ".join(sorted(REGISTRY))
         return (
-            "You are ELORA, a sovereign agentic OS. "
-            "Call tools with "
-            '<mcp_call server="elora" tool="NAME">{}</mcp_call>. '
-            "When finished reply with DONE.\n"
+            "You are ELORA, a sovereign agentic operating system.\n"
+            "You interact with the external world and your persistent memory using tools.\n"
+            "To perform an action or retrieve information, emit an MCP tool call:\n"
+            '<mcp_call server="elora" tool="TOOL_NAME">{"arg": "value"}</mcp_call>\n\n'
+            "CRITICAL TOOL ROUTING LAWS:\n"
+            "1. MEMORY QUESTIONS: If the user asks about ANY previously read webpage, prior content, earlier task, or memory (e.g. 'what was the page you read earlier about?'), you MUST call 'rag.recall' with {\"query\": \"keywords\"}. Never call 'net.read' for memory questions.\n"
+            "2. NEW WEBPAGES: If the user explicitly asks to read or browse a NEW URL (e.g. 'read https://...'), call 'net.read' with {\"url\": \"https://...\"}.\n"
+            "3. After receiving the tool result, explain the answer to the user and conclude with DONE.\n\n"
             "REAL capability names (hallucinated names are rejected):\n"
             f"{names}\n"
             f"Closed registry: {known}\n"
@@ -261,9 +265,11 @@ class Daemon:
                 return task
 
             task.messages.append({"role": "assistant", "content": reply})
-            if isinstance(reply, str) and reply.strip().upper().startswith("DONE"):
-                task.state = TaskState.DONE
-                return task
+            if isinstance(reply, str):
+                trimmed = reply.strip().upper()
+                if trimmed.startswith("DONE") or trimmed.endswith("DONE") or "\nDONE" in trimmed or "DONE." in trimmed:
+                    task.state = TaskState.DONE
+                    return task
 
             calls, failures = extract_tool_calls(reply)
             if failures:
@@ -275,6 +281,9 @@ class Daemon:
                 })
                 continue
             if not calls:
+                if any(t.get("ok") for t in task.trace):
+                    task.state = TaskState.DONE
+                    return task
                 # no tool call, not DONE — ask again
                 task.messages.append({
                     "role": "user",
