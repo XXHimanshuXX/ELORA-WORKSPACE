@@ -51,6 +51,11 @@ class Vault:
         row = cur.fetchone()
         return row[0] if row else 0
 
+    def last_episode_id(self) -> int | None:
+        cur = self.conn.execute("SELECT id FROM episodes ORDER BY id DESC LIMIT 1")
+        row = cur.fetchone()
+        return row[0] if row else None
+
     def get_recent_episodes(self, n: int = 5) -> List[str]:
         cur = self.conn.execute(
             "SELECT content FROM episodes ORDER BY id DESC LIMIT ?", (n,)

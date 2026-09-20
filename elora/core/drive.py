@@ -73,6 +73,8 @@ class DriveLoop:
         self._seeded_target: Optional[tuple[str, str]] = None
         self._refused_cache: dict[str, float] = {}
         self._last_consolidated_ep: Optional[str] = None
+        self._last_consolidated_id: Optional[int] = None
+        self.last_action: str = "idle"
 
     def _is_nutrient_refused(self, url: str) -> bool:
         if not url:
@@ -167,10 +169,16 @@ class DriveLoop:
             return
 
         # Throttle: skip consolidation if zero new episodes since last pass
-        last_ep = episodes[-1]
-        if not force and getattr(self, "_last_consolidated_ep", None) == last_ep:
-            return
-        self._last_consolidated_ep = last_ep
+        if hasattr(self.vault, "last_episode_id"):
+            last_id = self.vault.last_episode_id()
+            if not force and last_id is not None and getattr(self, "_last_consolidated_id", None) == last_id:
+                return
+            self._last_consolidated_id = last_id
+        else:
+            last_ep = episodes[-1]
+            if not force and getattr(self, "_last_consolidated_ep", None) == last_ep:
+                return
+            self._last_consolidated_ep = last_ep
 
         # Metabolism cap: budget restricts runaway mining
         episodes_to_review = episodes[-self.MAX_CONSOLIDATE_EPISODES:]
@@ -183,6 +191,7 @@ class DriveLoop:
         if self.decay is not None and hasattr(self.decay, "sweep"):
             self.decay.sweep()
 
+        self.last_action = f"consolidate ({len(episodes_to_review)} eps)"
         if self.ledger is not None:
             self.ledger.append(
                 organ="drive",
@@ -255,6 +264,7 @@ class DriveLoop:
 
         # Refusal memory cooldown: check if this nutrient was already refused within 7 days
         if self._is_nutrient_refused(candidate_url):
+            self.last_action = f"nutrient_blacklisted: {gap}"
             if self.ledger:
                 self.ledger.append(
                     organ="drive",
@@ -267,6 +277,7 @@ class DriveLoop:
         # Leash on eating: check allowlist
         # Must be strictly raw.githubusercontent.com
         if not candidate_url.startswith("https://raw.githubusercontent.com/"):
+            self.last_action = f"expansion_refused: {gap}"
             if self.ledger:
                 self.ledger.append(
                     organ="drive",
@@ -295,7 +306,14 @@ class DriveLoop:
         if self.absorb and hasattr(self.absorb, "absorb"):
             outcome = self.absorb.absorb(candidate_url, token)
             if outcome and getattr(outcome, "refused", False):
+                self.last_action = f"absorption_refused: {gap}"
                 self._record_refused_nutrient(candidate_url, getattr(outcome, "reason", "refused"))
+            elif outcome:
+                self.last_action = f"skill_absorbed: {getattr(outcome, 'skill_id', gap)}"
+            else:
+                self.last_action = f"expand: {gap}"
+        else:
+            self.last_action = f"expand: {gap}"
         return outcome
 
     def _create(self) -> None:
@@ -314,6 +332,7 @@ class DriveLoop:
         experiment = self._design_experiment(skill)
         outcome = self.daemon.handle_task(experiment)
         status = self.daemon.assess_task_completion(outcome) if hasattr(self.daemon, "assess_task_completion") else outcome.state.name
+        self.last_action = f"self_exp: {skill.skill_id} -> {outcome.state.name}"
         if self.ledger:
             self.ledger.append(
                 organ="drive",

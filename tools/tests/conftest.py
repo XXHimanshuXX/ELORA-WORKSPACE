@@ -39,6 +39,9 @@ class FakeVault:
     def count(self) -> int:
         return len(self.episodes)
 
+    def last_episode_id(self) -> int | None:
+        return len(self.episodes) if self.episodes else None
+
     def get_recent_episodes(self, n=10):
         return self.episodes[-n:]
 

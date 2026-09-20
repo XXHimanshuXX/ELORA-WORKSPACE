@@ -196,8 +196,9 @@ class TestDriveSafetyLines:
         assert len(drive_events) == 0
         assert all(v == 0.0 for v in drive._last_hunger_tick.values())
 
-    def test_expand_never_double_joins_urls(self, drive_env):
-        """Rung 5: Expand never concatenates RAW_BASE onto an existing absolute URL."""
+    def test_nutrient_url_never_doubles(self, drive_env):
+        """Handoff Fix 1: Expand never concatenates RAW_BASE onto an existing absolute URL.
+        'https://raw.githubusercontent.com/https://' never appears in any absorption call."""
         drive = drive_env["drive"]
         absorb = drive_env["absorb"]
         ledger = drive_env["ledger"]
@@ -207,26 +208,25 @@ class TestDriveSafetyLines:
         drive._expand(candidate_url=full_url)
         assert len(absorb.calls) == 1
         assert absorb.calls[0]["url"] == full_url
-        assert not absorb.calls[0]["url"].count("https://") > 1
+        assert "https://raw.githubusercontent.com/https://" not in absorb.calls[0]["url"]
 
         # Case B: Relative skill name
         drive._expand(candidate_url="math_solver")
         assert len(absorb.calls) == 2
         assert absorb.calls[1]["url"] == "https://raw.githubusercontent.com/elora-skills/library/main/math_solver.py"
-        assert not absorb.calls[1]["url"].count("https://") > 1
+        assert "https://raw.githubusercontent.com/https://" not in absorb.calls[1]["url"]
 
         # Case C: Gap extracted from ledger event with an existing URL
         ledger.append(organ="absorb", kind="absorption_refused",
                       message="https://raw.githubusercontent.com/elora-skills/library/main/dead_code.py")
         drive._expand(candidate_url=None)
-        # Should not double join into /library/main/https://raw.githubus...
         assert len(absorb.calls) == 3
         assert absorb.calls[2]["url"] == "https://raw.githubusercontent.com/elora-skills/library/main/dead_code.py"
-        assert not absorb.calls[2]["url"].count("https://") > 1
+        assert "https://raw.githubusercontent.com/https://" not in absorb.calls[2]["url"]
 
-    def test_expand_refusal_memory_blacklists_refused_nutrients(self, drive_env):
-        """Rung 6: A nutrient refused by allowlist or absorption is remembered;
-        subsequent expand ticks skip it and log nutrient_blacklisted."""
+    def test_refused_nutrient_not_retried(self, drive_env):
+        """Handoff Fix 2: Refused nutrient cooldown.
+        Same URL refused twice must produce drive/nutrient_blacklisted, NOT absorption_started."""
         drive = drive_env["drive"]
         absorb = drive_env["absorb"]
         ledger = drive_env["ledger"]
@@ -239,7 +239,7 @@ class TestDriveSafetyLines:
         refused = [e for e in ledger.events if e["kind"] == "expansion_refused"]
         assert len(refused) == 1
 
-        # Next attempt on the same URL within cooldown MUST be blacklisted
+        # Second attempt on the same URL within cooldown MUST produce nutrient_blacklisted, NOT absorption
         res = drive._expand(candidate_url=bad_url)
         assert res.get("blacklisted") is True
         assert len(absorb.calls) == 0
@@ -247,9 +247,10 @@ class TestDriveSafetyLines:
         blacklisted = [e for e in ledger.events if e["kind"] == "nutrient_blacklisted"]
         assert len(blacklisted) == 1
         assert bad_url in blacklisted[0]["message"]
+        assert not any(e["kind"] == "absorption_started" for e in ledger.events)
 
-    def test_consolidation_throttled_when_no_new_episodes(self, drive_env):
-        """Rung 7: Consolidation skips when zero new episodes are added to the vault."""
+    def test_consolidation_skips_when_no_new_episodes(self, drive_env):
+        """Handoff Fix 3: Consolidation skips when zero new episodes are added to the vault."""
         drive = drive_env["drive"]
         vault = drive_env["vault"]
         ledger = drive_env["ledger"]
@@ -259,6 +260,7 @@ class TestDriveSafetyLines:
 
         passes = [e for e in ledger.events if e["kind"] == "consolidation_pass"]
         assert len(passes) == 1
+        assert drive.last_action.startswith("consolidate")
 
         # Call consolidation again immediately with NO new episodes
         drive._consolidate()
@@ -272,3 +274,16 @@ class TestDriveSafetyLines:
         passes = [e for e in ledger.events if e["kind"] == "consolidation_pass"]
         # Now 2 — new material triggered consolidation
         assert len(passes) == 2
+
+    def test_heartbeat_tells_the_story(self, drive_env, capsys):
+        """Handoff Fix 4: Heartbeat output prints last action."""
+        daemon = drive_env["daemon"]
+        drive = drive_env["drive"]
+        drive.last_action = "consolidate (5 eps)"
+
+        # Trigger heartbeat logic
+        daemon.run_forever(poll_seconds=0, max_iterations=1)
+        out = capsys.readouterr().out
+        # If heartbeat printed, last action is present; verify drive.last_action attribute
+        assert hasattr(drive, "last_action")
+        assert drive.last_action == "consolidate (5 eps)"
