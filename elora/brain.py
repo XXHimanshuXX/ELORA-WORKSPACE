@@ -88,16 +88,18 @@ class ScriptedBrain(Brain):
 
 class RealBrain(Brain):
     """
-    OpenAI-compatible chat client. Works with Ollama, LocalAI, LM Studio,
+    OpenAI-compatible chat client. Works with OmniRoute, Ollama, LocalAI, LM Studio,
     llama.cpp server — anything speaking the protocol. No SDK, just
     urllib: the daemon's dependency surface stays flat.
     """
 
     def __init__(self, base_url: str = "http://127.0.0.1:11434",
-                 model: str = "qwen2.5:3b", timeout_s: int = 120):
+                 model: str = "qwen2.5:3b", timeout_s: int = 120,
+                 api_key: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_s = timeout_s
+        self.api_key = api_key
 
     def complete(self, system: str, messages: list) -> str:
         import urllib.request
@@ -107,10 +109,13 @@ class RealBrain(Brain):
                        + messages,
             "stream": False,
         }).encode()
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         req = urllib.request.Request(
             f"{self.base_url}/v1/chat/completions",
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers=headers,
         )
         with urllib.request.urlopen(req, timeout=self.timeout_s) as r:
             data = json.loads(r.read().decode())
@@ -122,9 +127,9 @@ class RealBrain(Brain):
 # ----------------------------------------------------------------------
 
 TOOL_CALL_RE = re.compile(
-    r'<mcp_call\s+server="(?P<server>[^"]+)"\s+tool="(?P<tool>[^"]+)">\s*'
+    r'(?:<tool_call>\s*)?<?mcp_call\s+server="(?P<server>[^"]+)"\s+tool="(?P<tool>[^"]+)">\s*'
     r'(?P<body>.*?)'
-    r'</?mcp_call>',
+    r'</?mcp_call>(?:\s*</tool_call>)?',
     re.DOTALL,
 )
 

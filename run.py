@@ -34,12 +34,25 @@ def stage_config() -> dict:
             r.close()
         except Exception:
             pass
+
+    omni_key_path = os.path.join(STATE_DIR, "secrets", "omniroute_api_key")
+    omni_key = None
+    if os.path.exists(omni_key_path):
+        try:
+            with open(omni_key_path, "r", encoding="utf-8") as f:
+                omni_key = f.read().strip()
+        except Exception:
+            pass
+
     return {
         "state_dir": STATE_DIR,
         "poll_seconds": int(os.environ.get("ELORA_POLL_SECONDS", "5")),
         "brain_url": os.environ.get(
             "ELORA_BRAIN_URL", "http://127.0.0.1:11434"),
         "brain_model": os.environ.get("ELORA_BRAIN_MODEL", "qwen2.5:3b"),
+        "omniroute_api_key": omni_key,
+        "omniroute_url": os.environ.get("OMNIROUTE_URL", "http://localhost:20128"),
+        "omniroute_model": os.environ.get("OMNIROUTE_MODEL", "auto"),
     }
 
 
@@ -431,9 +444,9 @@ def main():
                         help="preflight inspection")
     parser.add_argument("--smoke", action="store_true",
                         help="hermetic end-to-end test")
-    parser.add_argument("--brain", choices=["local", "none", "bitnet"],
-                        default="local",
-                        help="brain backend (default: local)")
+    parser.add_argument("--brain", choices=["local", "none", "bitnet", "omniroute"],
+                        default="omniroute" if os.path.exists(os.path.join(STATE_DIR, "secrets", "omniroute_api_key")) else "local",
+                        help="brain backend (default: omniroute if key present, else local)")
     parser.add_argument("--once", action="store_true",
                         help="process one inbox tick and exit cleanly")
     args = parser.parse_args()
@@ -462,6 +475,13 @@ def _boot_main(args):
     elif args.brain == "bitnet":
         from elora.core.bitnet import BitNetBrain
         brain = BitNetBrain()
+    elif args.brain == "omniroute":
+        from elora.brain import RealBrain
+        brain = RealBrain(
+            base_url=config["omniroute_url"],
+            model=config["omniroute_model"],
+            api_key=config.get("omniroute_api_key"),
+        )
     else:
         from elora.brain import RealBrain
         brain = RealBrain(config["brain_url"], config["brain_model"])

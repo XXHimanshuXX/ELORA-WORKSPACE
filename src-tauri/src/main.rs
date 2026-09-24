@@ -127,7 +127,7 @@ fn main() {
             // Sidecar spawning logic: run with local brain
             tauri::async_runtime::spawn(async move {
                 let res = Command::new("python")
-                    .args(["run.py", "--brain", "local"])
+                    .args(["run.py", "--brain", "omniroute"])
                     .spawn();
                 if let Ok((mut rx, _child)) = res {
                     while let Some(event) = rx.recv().await {
