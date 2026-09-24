@@ -142,6 +142,59 @@ class Daemon:
             issued_at=time.time(),
         )
 
+    def _write_state(self, current_task=None, status="IDLE", capability=None, last_action=None):
+        try:
+            state_obj = getattr(getattr(self, "metabolism", None), "state", None)
+            state_name = getattr(state_obj, "name", "ALIVE")
+            skills_count = len(getattr(getattr(self, "promotion", None), "skills", {})) if getattr(self, "promotion", None) else 1
+            seq = getattr(self.ledger, "seq", 0) if hasattr(self.ledger, "seq") else len(getattr(self.ledger, "events", []))
+            act = last_action or getattr(getattr(self, "drive", None), "last_action", "idle") or "idle"
+            data = {
+                "state": getattr(state_obj, "value", 1) if state_obj else 1,
+                "state_name": state_name,
+                "chainOk": 1.0,
+                "current_task": current_task or "Idle",
+                "current_capability": capability or "none",
+                "status": status,
+                "last_action": act,
+                "skills_count": skills_count,
+                "seq": seq,
+                "ts": time.time(),
+            }
+            state_path = os.path.join(".elora", "state.json")
+            os.makedirs(".elora", exist_ok=True)
+            with open(state_path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            os.replace(state_path + ".tmp", state_path)
+        except Exception:
+            pass
+
+    def _append_chat(self, sender: str, text: str, task_id: str | None = None):
+        try:
+            chat_path = os.path.join(".elora", "chat.json")
+            messages = []
+            if os.path.exists(chat_path):
+                try:
+                    with open(chat_path, "r", encoding="utf-8") as f:
+                        messages = json.load(f)
+                except Exception:
+                    messages = []
+            if sender == "user" and task_id:
+                if any(m.get("task_id") == task_id and m.get("sender") == "user" for m in messages):
+                    return
+            messages.append({
+                "sender": sender,
+                "text": text,
+                "task_id": task_id,
+                "ts": time.time(),
+            })
+            messages = messages[-100:]
+            with open(chat_path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(messages, f, indent=2)
+            os.replace(chat_path + ".tmp", chat_path)
+        except Exception:
+            pass
+
     def _system_prompt(self) -> str:
         # -- THE system prompt: real capability names, V4 lesson
         names = "\n".join(f"- {n}" for n in capability_names())
@@ -295,6 +348,7 @@ class Daemon:
             for call in calls:
                 name = call.get("tool")
                 args = call.get("args") or {}
+                self._write_state(current_task=task.id, status="RUNNING", capability=name, last_action=f"broker: {name}")
                 result = self.broker.request(self.skills_token, name, args)
                 from elora.core.broker import Rejected, Deferred, Result
                 if isinstance(result, Rejected):
@@ -381,18 +435,31 @@ class Daemon:
 
         tasks.sort(key=lambda t: t.event.urgency, reverse=True)
         for task in tasks:
+            user_text = task.event.payload.get("text", "") if task.event and task.event.payload else ""
+            self._write_state(current_task=task.id, status="PROCESSING", last_action=f"task_started: {task.id}")
             self.ledger.append(
                 organ="daemon", kind="task_started",
-                message=task.id, payload={"path": task.claimed_path},
+                message=task.id, payload={"path": task.claimed_path, "text": user_text},
             )
             try:
                 self.handle_task(task)
                 status = self.assess_task_completion(task)
+                final_answer = ""
+                for msg in reversed(task.messages):
+                    if msg.get("role") == "assistant":
+                        final_answer = msg.get("content", "")
+                        break
+                if user_text:
+                    self._append_chat("user", user_text, task_id=task.id)
+                if final_answer:
+                    self._append_chat("elora", final_answer, task_id=task.id)
                 self.ledger.append(
                     organ="daemon", kind="task_finished",
-                    message=task.id, payload={"status": status},
+                    message=task.id, payload={"status": status, "answer": final_answer},
                 )
+                self._write_state(current_task=None, status="IDLE", last_action=f"finished {task.id} -> {status}")
             except Exception as e:
+                self._write_state(current_task=None, status="ERROR", last_action=f"error: {str(e)}")
                 self.ledger.append(
                     organ="daemon", kind="task_finished",
                     message=task.id, payload={"status": "error", "error": str(e)},

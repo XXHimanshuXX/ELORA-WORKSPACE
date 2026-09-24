@@ -2,96 +2,917 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>ELORA organism</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELORA OS — The Resident</title>
   <style>
-    html, body { margin: 0; background: #05070a; height: 100%; overflow: hidden; }
-    canvas { width: 100%; height: 100%; display: block; }
+    :root {
+      --bg-dark: #07090e;
+      --card-bg: rgba(14, 20, 32, 0.85);
+      --card-border: rgba(45, 60, 90, 0.45);
+      --card-hover: rgba(22, 32, 52, 0.95);
+      --text-main: #e2e8f0;
+      --text-dim: #94a3b8;
+      --text-muted: #64748b;
+      --accent-blue: #38bdf8;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-purple: #a855f7;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* Ambient background shader/glow */
+    #ambient-canvas {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.35;
+    }
+
+    /* App Container */
+    #app-container {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      padding: 14px 20px;
+      gap: 14px;
+    }
+
+    /* Top Navigation / Header */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+      font-weight: 800;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .brand-title {
+      font-weight: 700;
+      font-size: 16px;
+      letter-spacing: 0.05em;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-version {
+      font-size: 11px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-family: var(--font-mono);
+    }
+
+    .header-metrics {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .metabolism-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-emerald);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-emerald);
+      animation: pulse-glow 2s infinite;
+    }
+
+    @keyframes pulse-glow {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+
+    .metric-pill {
+      font-size: 12px;
+      color: var(--text-dim);
+      font-family: var(--font-mono);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chain-pill {
+      color: var(--accent-cyan);
+      background: rgba(6, 182, 212, 0.1);
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(6, 182, 212, 0.25);
+    }
+
+    /* Main Workspace Grid */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 480px;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+
+    .panel-header {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .panel-title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Left Panel: NOW + CHAT */
+    .left-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      height: 100%;
+      min-height: 0;
+    }
+
+    /* NOW SECTION */
+    .now-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px 20px;
+      backdrop-filter: blur(12px);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .now-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .now-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: rgba(0, 0, 0, 0.25);
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.04);
+    }
+
+    .now-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+
+    .now-value {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .now-action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: rgba(56, 189, 248, 0.06);
+      border: 1px solid rgba(56, 189, 248, 0.2);
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--accent-blue);
+      font-family: var(--font-mono);
+    }
+
+    /* CHAT SECTION */
+    .chat-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .message-bubble {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-width: 82%;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-bubble.user {
+      align-self: flex-end;
+    }
+
+    .message-bubble.elora {
+      align-self: flex-start;
+    }
+
+    .bubble-meta {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      display: flex;
+      gap: 8px;
+    }
+
+    .message-content {
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      line-height: 1.55;
+      user-select: text;
+      word-break: break-word;
+    }
+
+    .user .message-content {
+      background: linear-gradient(135deg, rgba(14, 116, 144, 0.85), rgba(30, 64, 175, 0.85));
+      color: #fff;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-bottom-right-radius: 2px;
+    }
+
+    .elora .message-content {
+      background: rgba(18, 24, 38, 0.95);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      border-bottom-left-radius: 2px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    }
+
+    .elora .message-content pre {
+      background: #030712;
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin-top: 8px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .chat-quick-actions {
+      display: flex;
+      gap: 8px;
+      padding: 10px 18px 0;
+      overflow-x: auto;
+    }
+
+    .chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 4px 10px;
+      border-radius: 14px;
+      font-size: 11px;
+      color: var(--text-dim);
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+
+    .chip:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: var(--accent-blue);
+      color: var(--accent-blue);
+    }
+
+    .chat-input-area {
+      padding: 14px 18px;
+      border-top: 1px solid var(--card-border);
+      background: rgba(0, 0, 0, 0.2);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .chat-input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13.5px;
+      color: #fff;
+      font-family: var(--font-sans);
+      outline: none;
+      transition: border 0.15s;
+    }
+
+    .chat-input:focus {
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+
+    .send-btn {
+      background: linear-gradient(135deg, var(--accent-cyan), #2563eb);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 2px 10px rgba(6, 182, 212, 0.3);
+    }
+
+    .send-btn:hover {
+      opacity: 0.95;
+      transform: translateY(-1px);
+    }
+
+    .send-btn:active {
+      transform: translateY(0);
+    }
+
+    /* RIGHT PANEL: LEDGER TAIL */
+    .ledger-panel {
+      height: 100%;
+      min-height: 0;
+    }
+
+    .ledger-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 0;
+      font-family: var(--font-mono);
+      user-select: text;
+    }
+
+    .ledger-entry {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      transition: background 0.15s;
+      cursor: pointer;
+    }
+
+    .ledger-entry:hover {
+      background: rgba(255, 255, 255, 0.03);
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+
+    .entry-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .entry-seq {
+      color: var(--accent-blue);
+      font-weight: 700;
+    }
+
+    .entry-time {
+      color: var(--text-muted);
+      font-size: 11px;
+    }
+
+    .entry-tags {
+      display: flex;
+      gap: 6px;
+    }
+
+    .organ-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      font-weight: 700;
+      background: rgba(168, 85, 247, 0.15);
+      color: var(--accent-purple);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+    }
+
+    .organ-broker { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); border-color: rgba(56, 189, 248, 0.3); }
+    .organ-daemon { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.3); }
+    .organ-drive  { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.3); }
+    .organ-absorb { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.3); }
+    .organ-ingest { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); border-color: rgba(6, 182, 212, 0.3); }
+
+    .kind-label {
+      font-size: 11px;
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    .entry-msg {
+      color: var(--text-dim);
+      font-size: 11.5px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .entry-payload {
+      display: none;
+      background: #020617;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: #38bdf8;
+      overflow-x: auto;
+      border: 1px solid rgba(56, 189, 248, 0.2);
+    }
+
+    .entry-payload.visible {
+      display: block;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
   </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<script type="module">
-const STATE = { time: 0, state: 0, chainOk: 1, cpuLimit: 10, ripple: 2 };
+<canvas id="ambient-canvas"></canvas>
 
-async function boot() {
-  const canvas = document.getElementById("c");
-  if (!navigator.gpu) {
-    document.body.textContent = "WebGPU unavailable — overlay idle (honest).";
-    return;
+<div id="app-container">
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">E</div>
+      <div class="brand-title">
+        ELORA RESIDENT
+        <span class="brand-version">v9.0 // FOREGROUND</span>
+      </div>
+    </div>
+
+    <div class="header-metrics">
+      <div class="chain-pill metric-pill">
+        <span>🔗</span>
+        <span id="chain-status">SHA-256 INTACT</span>
+      </div>
+      <div class="metric-pill">
+        <span>SKILLS:</span>
+        <strong id="skills-count">4</strong>
+      </div>
+      <div class="metabolism-badge">
+        <div class="pulse-dot"></div>
+        <span id="metabolism-state">ALIVE</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Split Layout -->
+  <main>
+    <!-- Left Column: NOW + CHAT -->
+    <div class="left-stack">
+      <!-- NOW SECTION -->
+      <section class="now-card">
+        <div class="panel-title">
+          <span>⚡</span>
+          <span>Now — Active Cognition</span>
+        </div>
+        <div class="now-grid">
+          <div class="now-item">
+            <span class="now-label">Active Task</span>
+            <span class="now-value" id="now-task">Idle (Listening to inbox)</span>
+          </div>
+          <div class="now-item">
+            <span class="now-label">Active Capability</span>
+            <span class="now-value" id="now-capability" style="color: var(--accent-cyan);">None</span>
+          </div>
+          <div class="now-item">
+            <span class="now-label">Execution Tier</span>
+            <span class="now-value" id="now-tier" style="color: var(--accent-amber);">QUARANTINE</span>
+          </div>
+          <div class="now-item">
+            <span class="now-label">Reactor Status</span>
+            <span class="now-value" id="now-status" style="color: var(--accent-emerald);">IDLE</span>
+          </div>
+        </div>
+        <div class="now-action-bar">
+          <span>Last Loop Action:</span>
+          <strong id="now-last-action" style="font-weight: 500;">idle</strong>
+        </div>
+      </section>
+
+      <!-- CHAT SECTION -->
+      <section class="panel chat-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>💬</span>
+            <span>Dialogue & Task Interface</span>
+          </div>
+          <div class="metric-pill" id="inbox-status" style="font-size: 11px;">
+            INBOX: 0 PENDING
+          </div>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+          <div class="message-bubble elora">
+            <div class="bubble-meta">
+              <strong>ELORA</strong>
+              <span>Resident Boot</span>
+            </div>
+            <div class="message-content">
+              I am ELORA, your sovereign desktop resident. I monitor the inbox, execute capabilities through the Broker, record proof to the Akashic Ledger, and retain memory in RAG. Ask me to browse, recall, ingest, or verify.
+            </div>
+          </div>
+        </div>
+
+        <div class="chat-quick-actions">
+          <div class="chip" onclick="fillInput('read https://example.com and tell me what it was about')">🔍 Read example.com</div>
+          <div class="chip" onclick="fillInput('what was the page you read earlier about?')">🧠 Recall from memory</div>
+          <div class="chip" onclick="fillInput('ingest tests/fixtures/sample.pdf')">📄 Ingest sample.pdf</div>
+          <div class="chip" onclick="fillInput('verify akashic ledger integrity')">🛡️ Verify ledger</div>
+        </div>
+
+        <div class="chat-input-area">
+          <input
+            type="text"
+            id="chat-input"
+            class="chat-input"
+            placeholder="Type a task instruction (writes to .elora/inbox)..."
+            autocomplete="off"
+          />
+          <button id="send-btn" class="send-btn" onclick="submitTask()">
+            <span>Send</span>
+            <span>→</span>
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right Column: LEDGER TAIL (LAST 20 EVENTS) -->
+    <section class="panel ledger-panel">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>📜</span>
+          <span>Akashic Ledger Tail (Last 20)</span>
+        </div>
+        <div class="metric-pill">
+          <span>SEQ:</span>
+          <strong id="ledger-seq-header">#0</strong>
+        </div>
+      </div>
+      <div class="ledger-scroll" id="ledger-scroll">
+        <!-- Rendered events go here -->
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // Ambient Canvas Animation (WebGPU spatial shader harness with Canvas2D fallback)
+  const canvas = document.getElementById("ambient-canvas");
+  const isWebGpuSupported = typeof navigator !== "undefined" && "gpu" in navigator;
+  // If WebGPU is supported, initialize device harness, otherwise render glowing spatial radial gradient
+  if (isWebGpuSupported) {
+    navigator.gpu.requestAdapter().then(adapter => {
+      if (adapter) {
+        adapter.requestDevice().then(device => {
+          console.log("[ELORA WebGPU] Initialized spatial canvas harness on", adapter);
+        }).catch(() => {});
+      }
+    }).catch(() => {});
   }
-  const adapter = await navigator.gpu.requestAdapter();
-  const device = await adapter.requestDevice();
-  const context = canvas.getContext("webgpu");
-  const format = navigator.gpu.getPreferredCanvasFormat();
-  context.configure({ device, format, alphaMode: "premultiplied" });
 
-  const code = await (await fetch("organism.wgsl")).text();
-  const shader = device.createShaderModule({ code });
-  const pipeline = device.createRenderPipeline({
-    layout: "auto",
-    vertex: { module: shader, entryPoint: "vs" },
-    fragment: { module: shader, entryPoint: "fs", targets: [{ format }] },
-    primitive: { topology: "triangle-list" },
-  });
+  const ctx = canvas.getContext("2d");
+  let w, h;
+  function resize() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+  }
+  window.addEventListener("resize", resize);
+  resize();
 
-  const ubo = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-  const bind = device.createBindGroup({
-    layout: pipeline.getBindGroupLayout(0),
-    entries: [{ binding: 0, resource: { buffer: ubo } }],
-  });
+  let t = 0;
+  function drawAmbient() {
+    t += 0.01;
+    ctx.clearRect(0, 0, w, h);
+    const grad = ctx.createRadialGradient(w * 0.3 + Math.sin(t) * 100, h * 0.4 + Math.cos(t) * 80, 50, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
+    grad.addColorStop(0, "rgba(56, 189, 248, 0.08)");
+    grad.addColorStop(0.5, "rgba(168, 85, 247, 0.05)");
+    grad.addColorStop(1, "rgba(7, 9, 14, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    requestAnimationFrame(drawAmbient);
+  }
+  drawAmbient();
 
-  window.eloraRipple = () => { STATE.ripple = 0.0; };
-  window.eloraState = (s, chainOk, cpu) => {
-    STATE.state = s; STATE.chainOk = chainOk; STATE.cpuLimit = cpu;
-  };
+  // Helper: fill input from quick chip
+  function fillInput(text) {
+    const input = document.getElementById("chat-input");
+    input.value = text;
+    input.focus();
+  }
 
-  // Tauri Desktop bridge: poll metabolism every 500ms and listen for ripples
-  if (window.__TAURI__) {
-    const tauri = window.__TAURI__;
-    const invoke = tauri.invoke || (tauri.tauri && tauri.tauri.invoke);
-    const listen = tauri.event && tauri.event.listen;
+  // Tauri or Local Fetch Bridge
+  const hasTauri = !!window.__TAURI__;
+  const invoke = hasTauri ? (window.__TAURI__.invoke || (window.__TAURI__.tauri && window.__TAURI__.tauri.invoke)) : null;
+
+  async function invokeCommand(cmd, args = {}) {
     if (invoke) {
-      setInterval(async () => {
-        try {
-          const stateStr = await invoke("get_metabolism_state");
-          const d = typeof stateStr === "string" ? JSON.parse(stateStr) : stateStr;
-          window.eloraState(d.state ?? 1, d.chainOk ?? 1.0, d.cpuLimit ?? 10.0);
-        } catch (e) {}
-      }, 500);
+      return await invoke(cmd, args);
     }
-    if (listen) {
-      listen("ripple", () => {
-        window.eloraRipple();
-      });
+    // Fallback if running via HTTP server
+    if (cmd === "get_metabolism_state" || cmd === "get_now_state") {
+      const res = await fetch("/.elora/state.json");
+      return await res.text();
+    }
+    if (cmd === "get_ledger_tail") {
+      const res = await fetch("/.elora/ledger_tail.json");
+      return await res.text();
+    }
+    if (cmd === "get_chat_history") {
+      const res = await fetch("/.elora/chat.json");
+      return await res.text();
+    }
+    throw new Error("Tauri not connected");
+  }
+
+  // Submit Task (writes to .elora/inbox)
+  async function submitTask() {
+    const input = document.getElementById("chat-input");
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = "";
+
+    try {
+      if (invoke) {
+        const filename = await invoke("send_inbox_task", { prompt: text });
+        console.log("Task dropped:", filename);
+        poll();
+      } else {
+        // Fallback for direct browser: append chat
+        appendUserBubble(text, "Just now");
+      }
+    } catch (e) {
+      console.error("Failed to drop task:", e);
     }
   }
 
-  const start = performance.now();
-  function frame() {
-    STATE.time = (performance.now() - start) / 1000;
-    STATE.ripple += 0.012;
-    const data = new Float32Array([
-      STATE.time, STATE.state, STATE.chainOk, STATE.cpuLimit, STATE.ripple, 0, 0, 0,
-    ]);
-    device.queue.writeBuffer(ubo, 0, data);
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
-      colorAttachments: [{
-        view: context.getCurrentTexture().createView(),
-        clearValue: { r: 0.02, g: 0.03, b: 0.04, a: 1 },
-        loadOp: "clear", storeOp: "store",
-      }],
-    });
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bind);
-    pass.draw(3);
-    pass.end();
-    device.queue.submit([encoder.finish()]);
-    requestAnimationFrame(frame);
+  document.getElementById("chat-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitTask();
+  });
+
+  function appendUserBubble(text, timeStr = "Just now") {
+    const container = document.getElementById("chat-messages");
+    const bubble = document.createElement("div");
+    bubble.className = "message-bubble user";
+    bubble.innerHTML = `
+      <div class="bubble-meta">
+        <strong>You</strong>
+        <span>${escapeHtml(timeStr)}</span>
+      </div>
+      <div class="message-content">${escapeHtml(text)}</div>
+    `;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
   }
-  frame();
-}
-boot();
+
+  function appendEloraBubble(text, meta = "ELORA Assistant") {
+    const container = document.getElementById("chat-messages");
+    const bubble = document.createElement("div");
+    bubble.className = "message-bubble elora";
+    bubble.innerHTML = `
+      <div class="bubble-meta">
+        <strong>ELORA</strong>
+        <span>${escapeHtml(meta)}</span>
+      </div>
+      <div class="message-content">${formatMessageContent(text)}</div>
+    `;
+    container.appendChild(bubble);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function formatMessageContent(text) {
+    let safe = escapeHtml(text);
+    // highlight done
+    safe = safe.replace(/\bDONE\b/g, '<strong style="color: var(--accent-emerald);">DONE</strong>');
+    return safe;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Render Ledger Tail
+  let lastSeenSeq = -1;
+  function renderLedger(events) {
+    if (!Array.isArray(events) || events.length === 0) return;
+    const container = document.getElementById("ledger-scroll");
+
+    const latestSeq = events[0].seq;
+    if (latestSeq === lastSeenSeq) return;
+    lastSeenSeq = latestSeq;
+
+    document.getElementById("ledger-seq-header").textContent = `#${latestSeq}`;
+
+    container.innerHTML = "";
+    events.slice(0, 20).forEach((ev) => {
+      const entry = document.createElement("div");
+      entry.className = "ledger-entry";
+
+      const organClass = `organ-${(ev.organ || "").toLowerCase()}`;
+      const timeStr = ev.ts ? new Date(ev.ts * 1000).toLocaleTimeString() : "";
+
+      entry.innerHTML = `
+        <div class="entry-header">
+          <span class="entry-seq">#${ev.seq}</span>
+          <div class="entry-tags">
+            <span class="organ-badge ${organClass}">${ev.organ}</span>
+            <span class="kind-label">${ev.kind}</span>
+          </div>
+          <span class="entry-time">${timeStr}</span>
+        </div>
+        <div class="entry-msg">${escapeHtml(ev.message || "")}</div>
+        <pre class="entry-payload">${escapeHtml(JSON.stringify(ev.payload || {}, null, 2))}</pre>
+      `;
+
+      entry.addEventListener("click", () => {
+        const p = entry.querySelector(".entry-payload");
+        p.classList.toggle("visible");
+      });
+
+      container.appendChild(entry);
+    });
+  }
+
+  // Synchronize Chat Messages from .elora/chat.json
+  let renderedChatIds = new Set();
+  function syncChat(messages) {
+    if (!Array.isArray(messages)) return;
+    messages.forEach((m) => {
+      const key = m.task_id ? `${m.sender}-${m.task_id}` : `${m.sender}-${m.ts}-${(m.text || '').substring(0, 20)}`;
+      if (!renderedChatIds.has(key)) {
+        renderedChatIds.add(key);
+        if (m.sender === "user") {
+          appendUserBubble(m.text, m.ts ? new Date(m.ts * 1000).toLocaleTimeString() : "Just now");
+        } else {
+          appendEloraBubble(m.text, m.task_id ? `Task: ${m.task_id}` : "ELORA Sovereign");
+        }
+      }
+    });
+  }
+
+  // Update Now Section & Metrics
+  function updateState(state) {
+    if (!state) return;
+    document.getElementById("metabolism-state").textContent = state.state_name || "ALIVE";
+    document.getElementById("skills-count").textContent = state.skills_count || "4";
+
+    const taskElem = document.getElementById("now-task");
+    taskElem.textContent = state.current_task || "Idle (Listening to inbox)";
+    taskElem.style.color = state.current_task && state.current_task !== "Idle" ? "var(--accent-blue)" : "var(--text-main)";
+
+    document.getElementById("now-capability").textContent = state.current_capability || "none";
+    document.getElementById("now-tier").textContent = state.tier || "QUARANTINE";
+
+    const statusElem = document.getElementById("now-status");
+    statusElem.textContent = state.status || "IDLE";
+    if (state.status === "RUNNING" || state.status === "PROCESSING") {
+      statusElem.style.color = "var(--accent-cyan)";
+    } else if (state.status === "ERROR") {
+      statusElem.style.color = "var(--accent-rose)";
+    } else {
+      statusElem.style.color = "var(--accent-emerald)";
+    }
+
+    document.getElementById("now-last-action").textContent = state.last_action || "idle";
+  }
+
+  // Polling Loop (every 800ms)
+  async function poll() {
+    try {
+      // 1. Now & Metabolism State
+      const stateStr = await invokeCommand("get_now_state");
+      const state = typeof stateStr === "string" ? JSON.parse(stateStr) : stateStr;
+      updateState(state);
+
+      // 2. Ledger Tail
+      const ledgerStr = await invokeCommand("get_ledger_tail");
+      const ledger = typeof ledgerStr === "string" ? JSON.parse(ledgerStr) : ledgerStr;
+      renderLedger(ledger);
+
+      // 3. Chat History
+      const chatStr = await invokeCommand("get_chat_history");
+      const chat = typeof chatStr === "string" ? JSON.parse(chatStr) : chatStr;
+      syncChat(chat);
+    } catch (e) {
+      // Quiet poll error on initial startup before files are created
+    }
+  }
+
+  setInterval(poll, 800);
+  poll();
 </script>
 </body>
 </html>

@@ -154,5 +154,18 @@ def extract_tool_calls(reply: str) -> list[dict]:
                           "tool": m.group("tool"),
                           "args": args})
         except json.JSONDecodeError:
-            failures.append(m.group(0))
+            try:
+                # Robust extraction for trailing non-JSON tokens (e.g. from local LLMs)
+                stripped = body.strip()
+                if "{" in stripped:
+                    start = stripped.find("{")
+                    decoder = json.JSONDecoder()
+                    args, _ = decoder.raw_decode(stripped[start:])
+                    calls.append({"server": m.group("server"),
+                                  "tool": m.group("tool"),
+                                  "args": args})
+                else:
+                    failures.append(m.group(0))
+            except Exception:
+                failures.append(m.group(0))
     return calls, failures

@@ -94,6 +94,15 @@ class AkashicLedger:
             "prev_hash": prev_hash, "hash": digest,
         }
         self._events.append(rec)
+        try:
+            tail_dir = os.path.dirname(os.path.abspath(self.db_path))
+            tail_path = os.path.join(tail_dir, "ledger_tail.json")
+            tail = self.recent_events(n=25)
+            with open(tail_path + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(tail, f, indent=2)
+            os.replace(tail_path + ".tmp", tail_path)
+        except Exception:
+            pass
         return digest
 
     def recent_events(self, kind: Optional[str] = None, n: int = 50) -> list[dict]:

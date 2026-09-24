@@ -40,11 +40,11 @@
     },
     "windows": [
       {
-        "title": "ELORA OS",
-        "width": 1280,
-        "height": 800,
+        "title": "ELORA OS — The Resident",
+        "width": 1400,
+        "height": 880,
         "transparent": true,
-        "decorations": false,
+        "decorations": true,
         "resizable": true
       }
     ]
