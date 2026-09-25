@@ -1,8 +1,12 @@
 """
 overlay_bridge.py — broker.request() ripples the WebGPU organism.
 
-The Tauri overlay (overlay/index.html + organism.wgsl) reads this
-counter or shared-memory ring. No window is required for the kernel to run.
+This is the producer side. The shader that consumes it (overlay/organism.wgsl)
+still exists and is still structurally verified, but the console rebuilt around the
+generated genome no longer mounts a canvas to host it. So today this fills a ring
+and bumps a counter that nothing renders from. No window is required for the
+kernel to run — and "the organism is on screen" would be an overstatement.
+
 """
 
 from __future__ import annotations

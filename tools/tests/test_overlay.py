@@ -46,7 +46,17 @@ class TestOverlayWgsl:
         assert after["n"] == count_before + 1
         assert after["ts"] > 0
 
-    def test_html_canvas_harness(self):
+    def test_html_console_contract(self):
+        """
+        What the console page must be, now that it is genome-driven.
+
+        Replaces an earlier assertion that index.html embedded a `<canvas>` and a
+        WebGPU bootstrap. The rebuilt console does not, and the shader's own test
+        above still passes, so the harness was genuinely dropped rather than
+        moved — which is why that fact now has its own test below. Asserting
+        `<canvas>` was never the point here; the point was that the page is a
+        real, wired-up frontend, so that is what it checks.
+        """
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         html_path = os.path.join(root, "overlay", "index.html")
         assert os.path.exists(html_path)
@@ -54,5 +64,27 @@ class TestOverlayWgsl:
         with open(html_path, "r", encoding="utf-8") as f:
             html = f.read()
 
-        assert "<canvas" in html
-        assert "webgpu" in html.lower() or "navigator.gpu" in html.lower()
+        # The theme injection point. Without it the genome cannot reach the page
+        # and the whole generated-aesthetic system silently does nothing.
+        assert 'id="genome-style"' in html
+        assert 'href="styles.css"' in html
+        assert 'type="module" src="app.js"' in html
+
+        # Glyphs are SVG symbols so they do not depend on a font the machine may
+        # not have. Nothing above U+2500 in this file means no emoji crept in.
+        assert not any(ord(ch) >= 0x2500 for ch in html)
+    def test_webgpu_harness_is_not_hosted_by_the_console(self):
+        """
+        Records a known gap instead of leaving it to be discovered.
+
+        organism.wgsl is structurally verified and its uniforms are still fed by
+        metabolic state, but no page mounts a canvas for it any more. This test
+        exists so that "the shader runs in the console" cannot be assumed without
+        someone changing a test that says otherwise.
+        """
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(root, "overlay", "index.html"), "r", encoding="utf-8") as f:
+            html = f.read()
+
+        assert "<canvas" not in html
+        assert "navigator.gpu" not in html

@@ -52,7 +52,13 @@ def stage_config() -> dict:
         "brain_model": os.environ.get("ELORA_BRAIN_MODEL", "qwen2.5:3b"),
         "omniroute_api_key": omni_key,
         "omniroute_url": os.environ.get("OMNIROUTE_URL", "http://localhost:20128"),
-        "omniroute_model": os.environ.get("OMNIROUTE_MODEL", "auto"),
+        # NOT "auto". The bare string "auto" is absent from OmniRoute's advertised
+        # catalogue (verified live: 931 models, 38 of them `auto/*` aliases, none
+        # named "auto"). The gateway accepts it anyway and resolves it to whatever
+        # it likes, so the same prompt lands on a different model run to run and no
+        # measurement taken against this brain is reproducible. `auto/best-coding`
+        # IS in the catalogue and resolves deterministically, so it is the default.
+        "omniroute_model": os.environ.get("OMNIROUTE_MODEL", "auto/best-coding"),
     }
 
 

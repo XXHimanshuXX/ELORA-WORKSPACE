@@ -1,918 +1,130 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ELORA OS — The Resident</title>
-  <style>
-    :root {
-      --bg-dark: #07090e;
-      --card-bg: rgba(14, 20, 32, 0.85);
-      --card-border: rgba(45, 60, 90, 0.45);
-      --card-hover: rgba(22, 32, 52, 0.95);
-      --text-main: #e2e8f0;
-      --text-dim: #94a3b8;
-      --text-muted: #64748b;
-      --accent-blue: #38bdf8;
-      --accent-cyan: #06b6d4;
-      --accent-emerald: #10b981;
-      --accent-amber: #f59e0b;
-      --accent-rose: #f43f5e;
-      --accent-purple: #a855f7;
-      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>ELORA · console</title>
+<!--
+  The theme is not written here.
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background: var(--bg-dark);
-      color: var(--text-main);
-      font-family: var(--font-sans);
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      user-select: none;
-    }
-
-    /* Ambient background shader/glow */
-    #ambient-canvas {
-      position: absolute;
-      top: 0; left: 0; width: 100%; height: 100%;
-      pointer-events: none;
-      z-index: 0;
-      opacity: 0.35;
-    }
-
-    /* App Container */
-    #app-container {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      padding: 14px 20px;
-      gap: 14px;
-    }
-
-    /* Top Navigation / Header */
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 12px 20px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .brand-logo {
-      width: 28px;
-      height: 28px;
-      border-radius: 7px;
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
-      font-weight: 800;
-      font-size: 14px;
-      color: #fff;
-    }
-
-    .brand-title {
-      font-weight: 700;
-      font-size: 16px;
-      letter-spacing: 0.05em;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .brand-version {
-      font-size: 11px;
-      padding: 2px 7px;
-      border-radius: 4px;
-      background: rgba(56, 189, 248, 0.15);
-      color: var(--accent-blue);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      font-family: var(--font-mono);
-    }
-
-    .header-metrics {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .metabolism-badge {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 5px 12px;
-      border-radius: 20px;
-      background: rgba(16, 185, 129, 0.12);
-      border: 1px solid rgba(16, 185, 129, 0.35);
-      font-family: var(--font-mono);
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--accent-emerald);
-      box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
-    }
-
-    .pulse-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent-emerald);
-      animation: pulse-glow 2s infinite;
-    }
-
-    @keyframes pulse-glow {
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-      70% { transform: scale(1.15); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-    }
-
-    .metric-pill {
-      font-size: 12px;
-      color: var(--text-dim);
-      font-family: var(--font-mono);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .chain-pill {
-      color: var(--accent-cyan);
-      background: rgba(6, 182, 212, 0.1);
-      padding: 4px 10px;
-      border-radius: 6px;
-      border: 1px solid rgba(6, 182, 212, 0.25);
-    }
-
-    /* Main Workspace Grid */
-    main {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1fr 480px;
-      gap: 14px;
-      min-height: 0;
-    }
-
-    .panel {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      backdrop-filter: blur(12px);
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-    }
-
-    .panel-header {
-      padding: 12px 18px;
-      border-bottom: 1px solid var(--card-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: rgba(255, 255, 255, 0.02);
-    }
-
-    .panel-title {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    /* Left Panel: NOW + CHAT */
-    .left-stack {
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      height: 100%;
-      min-height: 0;
-    }
-
-    /* NOW SECTION */
-    .now-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 16px 20px;
-      backdrop-filter: blur(12px);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    .now-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-    }
-
-    .now-item {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      background: rgba(0, 0, 0, 0.25);
-      padding: 10px 14px;
-      border-radius: 8px;
-      border: 1px solid rgba(255, 255, 255, 0.04);
-    }
-
-    .now-label {
-      font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      font-weight: 600;
-    }
-
-    .now-value {
-      font-family: var(--font-mono);
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-main);
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    .now-action-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 12px;
-      background: rgba(56, 189, 248, 0.06);
-      border: 1px solid rgba(56, 189, 248, 0.2);
-      border-radius: 6px;
-      font-size: 12px;
-      color: var(--accent-blue);
-      font-family: var(--font-mono);
-    }
-
-    /* CHAT SECTION */
-    .chat-panel {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      min-height: 0;
-    }
-
-    .chat-messages {
-      flex: 1;
-      overflow-y: auto;
-      padding: 18px;
-      display: flex;
-      flex-direction: column;
-      gap: 14px;
-      min-height: 0;
-    }
-
-    .message-bubble {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      max-width: 82%;
-      animation: fadeIn 0.25s ease-out;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .message-bubble.user {
-      align-self: flex-end;
-    }
-
-    .message-bubble.elora {
-      align-self: flex-start;
-    }
-
-    .bubble-meta {
-      font-size: 11px;
-      color: var(--text-muted);
-      font-family: var(--font-mono);
-      display: flex;
-      gap: 8px;
-    }
-
-    .message-content {
-      padding: 12px 16px;
-      border-radius: 10px;
-      font-size: 13.5px;
-      line-height: 1.55;
-      user-select: text;
-      word-break: break-word;
-    }
-
-    .user .message-content {
-      background: linear-gradient(135deg, rgba(14, 116, 144, 0.85), rgba(30, 64, 175, 0.85));
-      color: #fff;
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      border-bottom-right-radius: 2px;
-    }
-
-    .elora .message-content {
-      background: rgba(18, 24, 38, 0.95);
-      border: 1px solid var(--card-border);
-      color: var(--text-main);
-      border-bottom-left-radius: 2px;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.3);
-    }
-
-    .elora .message-content pre {
-      background: #030712;
-      padding: 10px 12px;
-      border-radius: 6px;
-      margin-top: 8px;
-      overflow-x: auto;
-      font-family: var(--font-mono);
-      font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.06);
-    }
-
-    .chat-quick-actions {
-      display: flex;
-      gap: 8px;
-      padding: 10px 18px 0;
-      overflow-x: auto;
-    }
-
-    .chip {
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      padding: 4px 10px;
-      border-radius: 14px;
-      font-size: 11px;
-      color: var(--text-dim);
-      cursor: pointer;
-      white-space: nowrap;
-      transition: all 0.15s;
-    }
-
-    .chip:hover {
-      background: rgba(56, 189, 248, 0.15);
-      border-color: var(--accent-blue);
-      color: var(--accent-blue);
-    }
-
-    .chat-input-area {
-      padding: 14px 18px;
-      border-top: 1px solid var(--card-border);
-      background: rgba(0, 0, 0, 0.2);
-      display: flex;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .chat-input {
-      flex: 1;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid var(--card-border);
-      border-radius: 8px;
-      padding: 12px 14px;
-      font-size: 13.5px;
-      color: #fff;
-      font-family: var(--font-sans);
-      outline: none;
-      transition: border 0.15s;
-    }
-
-    .chat-input:focus {
-      border-color: var(--accent-blue);
-      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
-    }
-
-    .send-btn {
-      background: linear-gradient(135deg, var(--accent-cyan), #2563eb);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 12px 20px;
-      font-size: 13.5px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      box-shadow: 0 2px 10px rgba(6, 182, 212, 0.3);
-    }
-
-    .send-btn:hover {
-      opacity: 0.95;
-      transform: translateY(-1px);
-    }
-
-    .send-btn:active {
-      transform: translateY(0);
-    }
-
-    /* RIGHT PANEL: LEDGER TAIL */
-    .ledger-panel {
-      height: 100%;
-      min-height: 0;
-    }
-
-    .ledger-scroll {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      min-height: 0;
-      font-family: var(--font-mono);
-      user-select: text;
-    }
-
-    .ledger-entry {
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: 8px;
-      padding: 10px 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 12px;
-      transition: background 0.15s;
-      cursor: pointer;
-    }
-
-    .ledger-entry:hover {
-      background: rgba(255, 255, 255, 0.03);
-      border-color: rgba(56, 189, 248, 0.3);
-    }
-
-    .entry-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-
-    .entry-seq {
-      color: var(--accent-blue);
-      font-weight: 700;
-    }
-
-    .entry-time {
-      color: var(--text-muted);
-      font-size: 11px;
-    }
-
-    .entry-tags {
-      display: flex;
-      gap: 6px;
-    }
-
-    .organ-badge {
-      font-size: 10px;
-      padding: 2px 6px;
-      border-radius: 4px;
-      text-transform: uppercase;
-      font-weight: 700;
-      background: rgba(168, 85, 247, 0.15);
-      color: var(--accent-purple);
-      border: 1px solid rgba(168, 85, 247, 0.3);
-    }
-
-    .organ-broker { background: rgba(56, 189, 248, 0.15); color: var(--accent-blue); border-color: rgba(56, 189, 248, 0.3); }
-    .organ-daemon { background: rgba(16, 185, 129, 0.15); color: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.3); }
-    .organ-drive  { background: rgba(245, 158, 11, 0.15); color: var(--accent-amber); border-color: rgba(245, 158, 11, 0.3); }
-    .organ-absorb { background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); border-color: rgba(244, 63, 94, 0.3); }
-    .organ-ingest { background: rgba(6, 182, 212, 0.15); color: var(--accent-cyan); border-color: rgba(6, 182, 212, 0.3); }
-
-    .kind-label {
-      font-size: 11px;
-      color: var(--text-main);
-      font-weight: 600;
-    }
-
-    .entry-msg {
-      color: var(--text-dim);
-      font-size: 11.5px;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-
-    .entry-payload {
-      display: none;
-      background: #020617;
-      padding: 8px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      color: #38bdf8;
-      overflow-x: auto;
-      border: 1px solid rgba(56, 189, 248, 0.2);
-    }
-
-    .entry-payload.visible {
-      display: block;
-    }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
-  </style>
+  `style#genome-style` is filled at boot from /api/aesthetic, which returns CSS
+  compiled from a genome ELORA generated and recorded in its own ledger. Every
+  rule in styles.css refers only to those custom properties, so adopting a new
+  genome re-skins the entire console with no build step and without a single
+  hand-edited colour. A fallback set lives in styles.css for the case where the
+  API cannot be reached, and that case is stated on screen rather than hidden.
+-->
+<link rel="stylesheet" href="styles.css">
+<style id="genome-style"></style>
 </head>
 <body>
-<canvas id="ambient-canvas"></canvas>
 
-<div id="app-container">
-  <!-- Top Navigation Header -->
-  <header>
-    <div class="brand">
-      <div class="brand-logo">E</div>
-      <div class="brand-title">
-        ELORA RESIDENT
-        <span class="brand-version">v9.0 // FOREGROUND</span>
-      </div>
+<!-- Icon sprite. Every glyph in this console is defined here, so nothing depends
+     on an emoji font the machine may not have and nothing renders as a tofu box. -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="i-genome"><path d="M7 3c0 4 10 5 10 9s-10 5-10 9"/><path d="M17 3c0 4-10 5-10 9s10 5 10 9"/><path d="M9 7h6M9 17h6M8 12h8"/></g>
+    <g id="i-router"><circle cx="12" cy="12" r="3"/><path d="M3 12h6M15 12h6M12 5v4M12 15v4M6 5l2.5 2.5M18 5l-2.5 2.5M6 19l2.5-2.5M18 19l-2.5-2.5"/></g>
+    <g id="i-registry"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></g>
+    <g id="i-ledger"><path d="M5 3h11a3 3 0 0 1 3 3v15H8a3 3 0 0 1-3-3z"/><path d="M8 3v18"/><path d="M12 8h4M12 12h4"/></g>
+    <g id="i-unwired"><path d="M9 3v6M15 3v6"/><path d="M6 9h12v3a6 6 0 0 1-12 0z"/><path d="M12 18v3"/></g>
+    <g id="i-search"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.4-4.4"/></g>
+    <g id="i-evolve"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="M6.5 6.5l2.8 2.8M14.7 14.7l2.8 2.8M17.5 6.5l-2.8 2.8M9.3 14.7l-2.8 2.8"/></g>
+    <g id="i-refresh"><path d="M20 12a8 8 0 1 1-2.6-5.9"/><path d="M20 4v4h-4"/></g>
+    <g id="i-check"><path d="M4 12.5l5 5L20 6.5"/></g>
+    <g id="i-x"><path d="M6 6l12 12M18 6L6 18"/></g>
+    <g id="i-warn"><path d="M12 3.5L21 19H3z"/><path d="M12 9.5v4M12 16.2v.1"/></g>
+    <g id="i-send"><path d="M4 12l16-8-6 16-2.5-6.5z"/></g>
+    <g id="i-chip"><rect x="7" y="7" width="10" height="10" rx="2"/><path d="M10 3v2.5M14 3v2.5M10 18.5V21M14 18.5V21M3 10h2.5M3 14h2.5M18.5 10H21M18.5 14H21"/></g>
+    <g id="i-globe"><circle cx="12" cy="12" r="8.5"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3.5c2.2 2.4 3.3 5.3 3.3 8.5s-1.1 6.1-3.3 8.5c-2.2-2.4-3.3-5.3-3.3-8.5s1.1-6.1 3.3-8.5z"/></g>
+    <g id="i-terminal"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12.5 15H17"/></g>
+    <g id="i-clock"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g>
+    <g id="i-eye"><path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></g>
+    <g id="i-camera"><rect x="3" y="6.5" width="18" height="13" rx="2.5"/><circle cx="12" cy="13" r="3.6"/><path d="M8.5 6.5L10 4h4l1.5 2.5"/></g>
+  </defs>
+</svg>
+
+<div class="shell">
+
+  <nav class="rail" aria-label="Console sections">
+    <div class="rail__mark">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-genome"/></svg>
+      <span>ELORA</span>
     </div>
 
-    <div class="header-metrics">
-      <div class="chain-pill metric-pill">
-        <span>🔗</span>
-        <span id="chain-status">SHA-256 INTACT</span>
-      </div>
-      <div class="metric-pill">
-        <span>SKILLS:</span>
-        <strong id="skills-count">4</strong>
-      </div>
-      <div class="metabolism-badge">
-        <div class="pulse-dot"></div>
-        <span id="metabolism-state">ALIVE</span>
+    <ul class="rail__list">
+      <li><button type="button" class="rail__item" data-nav="genome" aria-current="page">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-genome"/></svg>
+        <span>Genome</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="router">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-router"/></svg>
+        <span>Router</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="registry">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-registry"/></svg>
+        <span>Registry</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="resident">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-terminal"/></svg>
+        <span>Resident</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="ledger">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ledger"/></svg>
+        <span>Ledger</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="unwired">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-unwired"/></svg>
+        <span>Not wired</span></button></li>
+    </ul>
+
+    <div class="rail__foot">
+      <span class="dot" id="rail-dot" data-state="pending"></span>
+      <div class="rail__foot-text">
+        <strong id="rail-state">connecting</strong>
+        <span id="rail-host">—</span>
       </div>
     </div>
-  </header>
+  </nav>
 
-  <!-- Main Split Layout -->
-  <main>
-    <!-- Left Column: NOW + CHAT -->
-    <div class="left-stack">
-      <!-- NOW SECTION -->
-      <section class="now-card">
-        <div class="panel-title">
-          <span>⚡</span>
-          <span>Now — Active Cognition</span>
-        </div>
-        <div class="now-grid">
-          <div class="now-item">
-            <span class="now-label">Active Task</span>
-            <span class="now-value" id="now-task">Idle (Listening to inbox)</span>
-          </div>
-          <div class="now-item">
-            <span class="now-label">Active Capability</span>
-            <span class="now-value" id="now-capability" style="color: var(--accent-cyan);">None</span>
-          </div>
-          <div class="now-item">
-            <span class="now-label">Execution Tier</span>
-            <span class="now-value" id="now-tier" style="color: var(--accent-amber);">QUARANTINE</span>
-          </div>
-          <div class="now-item">
-            <span class="now-label">Reactor Status</span>
-            <span class="now-value" id="now-status" style="color: var(--accent-emerald);">IDLE</span>
-          </div>
-        </div>
-        <div class="now-action-bar">
-          <span>Last Loop Action:</span>
-          <strong id="now-last-action" style="font-weight: 500;">idle</strong>
-        </div>
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar__lead">
+        <h1 id="view-title">Genome</h1>
+        <p id="view-sub" class="topbar__sub"></p>
+      </div>
+      <div class="topbar__meta" id="topbar-meta"></div>
+    </header>
+
+    <div class="views">
+      <section class="view" data-view="genome" tabindex="-1">
+        <h2 class="sr-only">Genome</h2>
+        <div id="genome-root" class="stack"></div>
       </section>
-
-      <!-- CHAT SECTION -->
-      <section class="panel chat-panel">
-        <div class="panel-header">
-          <div class="panel-title">
-            <span>💬</span>
-            <span>Dialogue & Task Interface</span>
-          </div>
-          <div class="metric-pill" id="inbox-status" style="font-size: 11px;">
-            INBOX: 0 PENDING
-          </div>
-        </div>
-
-        <div class="chat-messages" id="chat-messages">
-          <div class="message-bubble elora">
-            <div class="bubble-meta">
-              <strong>ELORA</strong>
-              <span>Resident Boot</span>
-            </div>
-            <div class="message-content">
-              I am ELORA, your sovereign desktop resident. I monitor the inbox, execute capabilities through the Broker, record proof to the Akashic Ledger, and retain memory in RAG. Ask me to browse, recall, ingest, or verify.
-            </div>
-          </div>
-        </div>
-
-        <div class="chat-quick-actions">
-          <div class="chip" onclick="fillInput('read https://example.com and tell me what it was about')">🔍 Read example.com</div>
-          <div class="chip" onclick="fillInput('what was the page you read earlier about?')">🧠 Recall from memory</div>
-          <div class="chip" onclick="fillInput('ingest tests/fixtures/sample.pdf')">📄 Ingest sample.pdf</div>
-          <div class="chip" onclick="fillInput('verify akashic ledger integrity')">🛡️ Verify ledger</div>
-        </div>
-
-        <div class="chat-input-area">
-          <input
-            type="text"
-            id="chat-input"
-            class="chat-input"
-            placeholder="Type a task instruction (writes to .elora/inbox)..."
-            autocomplete="off"
-          />
-          <button id="send-btn" class="send-btn" onclick="submitTask()">
-            <span>Send</span>
-            <span>→</span>
-          </button>
-        </div>
+      <section class="view" data-view="router" tabindex="-1" hidden>
+        <h2 class="sr-only">Router console</h2>
+        <div id="router-root" class="stack"></div>
+      </section>
+      <section class="view" data-view="registry" tabindex="-1" hidden>
+        <h2 class="sr-only">Capability and registry browser</h2>
+        <div id="registry-root" class="stack"></div>
+      </section>
+      <section class="view" data-view="resident" tabindex="-1" hidden>
+        <h2 class="sr-only">Resident — the native bridge</h2>
+        <div id="resident-root" class="stack"></div>
+      </section>
+      <section class="view" data-view="ledger" tabindex="-1" hidden>
+        <h2 class="sr-only">Ledger</h2>
+        <div id="ledger-root" class="stack"></div>
+      </section>
+      <section class="view" data-view="unwired" tabindex="-1" hidden>
+        <h2 class="sr-only">Not wired</h2>
+        <div id="unwired-root" class="stack"></div>
       </section>
     </div>
-
-    <!-- Right Column: LEDGER TAIL (LAST 20 EVENTS) -->
-    <section class="panel ledger-panel">
-      <div class="panel-header">
-        <div class="panel-title">
-          <span>📜</span>
-          <span>Akashic Ledger Tail (Last 20)</span>
-        </div>
-        <div class="metric-pill">
-          <span>SEQ:</span>
-          <strong id="ledger-seq-header">#0</strong>
-        </div>
-      </div>
-      <div class="ledger-scroll" id="ledger-scroll">
-        <!-- Rendered events go here -->
-      </div>
-    </section>
   </main>
 </div>
 
-<script>
-  // Ambient Canvas Animation (WebGPU spatial shader harness with Canvas2D fallback)
-  const canvas = document.getElementById("ambient-canvas");
-  const isWebGpuSupported = typeof navigator !== "undefined" && "gpu" in navigator;
-  // If WebGPU is supported, initialize device harness, otherwise render glowing spatial radial gradient
-  if (isWebGpuSupported) {
-    navigator.gpu.requestAdapter().then(adapter => {
-      if (adapter) {
-        adapter.requestDevice().then(device => {
-          console.log("[ELORA WebGPU] Initialized spatial canvas harness on", adapter);
-        }).catch(() => {});
-      }
-    }).catch(() => {});
-  }
+<div id="toaster" class="toaster" aria-live="polite"></div>
 
-  const ctx = canvas.getContext("2d");
-  let w, h;
-  function resize() {
-    w = canvas.width = window.innerWidth;
-    h = canvas.height = window.innerHeight;
-  }
-  window.addEventListener("resize", resize);
-  resize();
+<noscript><p class="noscript">This console reads live data over fetch. Enable JavaScript to use it.</p></noscript>
 
-  let t = 0;
-  function drawAmbient() {
-    t += 0.01;
-    ctx.clearRect(0, 0, w, h);
-    const grad = ctx.createRadialGradient(w * 0.3 + Math.sin(t) * 100, h * 0.4 + Math.cos(t) * 80, 50, w * 0.5, h * 0.5, Math.max(w, h) * 0.7);
-    grad.addColorStop(0, "rgba(56, 189, 248, 0.08)");
-    grad.addColorStop(0.5, "rgba(168, 85, 247, 0.05)");
-    grad.addColorStop(1, "rgba(7, 9, 14, 0)");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, w, h);
-    requestAnimationFrame(drawAmbient);
-  }
-  drawAmbient();
-
-  // Helper: fill input from quick chip
-  function fillInput(text) {
-    const input = document.getElementById("chat-input");
-    input.value = text;
-    input.focus();
-  }
-
-  // Tauri or Local Fetch Bridge
-  const hasTauri = !!window.__TAURI__;
-  const invoke = hasTauri ? (window.__TAURI__.invoke || (window.__TAURI__.tauri && window.__TAURI__.tauri.invoke)) : null;
-
-  async function invokeCommand(cmd, args = {}) {
-    if (invoke) {
-      return await invoke(cmd, args);
-    }
-    // Fallback if running via HTTP server
-    if (cmd === "get_metabolism_state" || cmd === "get_now_state") {
-      const res = await fetch("/.elora/state.json");
-      return await res.text();
-    }
-    if (cmd === "get_ledger_tail") {
-      const res = await fetch("/.elora/ledger_tail.json");
-      return await res.text();
-    }
-    if (cmd === "get_chat_history") {
-      const res = await fetch("/.elora/chat.json");
-      return await res.text();
-    }
-    throw new Error("Tauri not connected");
-  }
-
-  // Submit Task (writes to .elora/inbox)
-  async function submitTask() {
-    const input = document.getElementById("chat-input");
-    const text = input.value.trim();
-    if (!text) return;
-
-    input.value = "";
-
-    try {
-      if (invoke) {
-        const filename = await invoke("send_inbox_task", { prompt: text });
-        console.log("Task dropped:", filename);
-        poll();
-      } else {
-        // Fallback for direct browser: append chat
-        appendUserBubble(text, "Just now");
-      }
-    } catch (e) {
-      console.error("Failed to drop task:", e);
-    }
-  }
-
-  document.getElementById("chat-input").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitTask();
-  });
-
-  function appendUserBubble(text, timeStr = "Just now") {
-    const container = document.getElementById("chat-messages");
-    const bubble = document.createElement("div");
-    bubble.className = "message-bubble user";
-    bubble.innerHTML = `
-      <div class="bubble-meta">
-        <strong>You</strong>
-        <span>${escapeHtml(timeStr)}</span>
-      </div>
-      <div class="message-content">${escapeHtml(text)}</div>
-    `;
-    container.appendChild(bubble);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function appendEloraBubble(text, meta = "ELORA Assistant") {
-    const container = document.getElementById("chat-messages");
-    const bubble = document.createElement("div");
-    bubble.className = "message-bubble elora";
-    bubble.innerHTML = `
-      <div class="bubble-meta">
-        <strong>ELORA</strong>
-        <span>${escapeHtml(meta)}</span>
-      </div>
-      <div class="message-content">${formatMessageContent(text)}</div>
-    `;
-    container.appendChild(bubble);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function formatMessageContent(text) {
-    let safe = escapeHtml(text);
-    // highlight done
-    safe = safe.replace(/\bDONE\b/g, '<strong style="color: var(--accent-emerald);">DONE</strong>');
-    return safe;
-  }
-
-  function escapeHtml(str) {
-    if (!str) return "";
-    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  // Render Ledger Tail
-  let lastSeenSeq = -1;
-  function renderLedger(events) {
-    if (!Array.isArray(events) || events.length === 0) return;
-    const container = document.getElementById("ledger-scroll");
-
-    const latestSeq = events[0].seq;
-    if (latestSeq === lastSeenSeq) return;
-    lastSeenSeq = latestSeq;
-
-    document.getElementById("ledger-seq-header").textContent = `#${latestSeq}`;
-
-    container.innerHTML = "";
-    events.slice(0, 20).forEach((ev) => {
-      const entry = document.createElement("div");
-      entry.className = "ledger-entry";
-
-      const organClass = `organ-${(ev.organ || "").toLowerCase()}`;
-      const timeStr = ev.ts ? new Date(ev.ts * 1000).toLocaleTimeString() : "";
-
-      entry.innerHTML = `
-        <div class="entry-header">
-          <span class="entry-seq">#${ev.seq}</span>
-          <div class="entry-tags">
-            <span class="organ-badge ${organClass}">${ev.organ}</span>
-            <span class="kind-label">${ev.kind}</span>
-          </div>
-          <span class="entry-time">${timeStr}</span>
-        </div>
-        <div class="entry-msg">${escapeHtml(ev.message || "")}</div>
-        <pre class="entry-payload">${escapeHtml(JSON.stringify(ev.payload || {}, null, 2))}</pre>
-      `;
-
-      entry.addEventListener("click", () => {
-        const p = entry.querySelector(".entry-payload");
-        p.classList.toggle("visible");
-      });
-
-      container.appendChild(entry);
-    });
-  }
-
-  // Synchronize Chat Messages from .elora/chat.json
-  let renderedChatIds = new Set();
-  function syncChat(messages) {
-    if (!Array.isArray(messages)) return;
-    messages.forEach((m) => {
-      const key = m.task_id ? `${m.sender}-${m.task_id}` : `${m.sender}-${m.ts}-${(m.text || '').substring(0, 20)}`;
-      if (!renderedChatIds.has(key)) {
-        renderedChatIds.add(key);
-        if (m.sender === "user") {
-          appendUserBubble(m.text, m.ts ? new Date(m.ts * 1000).toLocaleTimeString() : "Just now");
-        } else {
-          appendEloraBubble(m.text, m.task_id ? `Task: ${m.task_id}` : "ELORA Sovereign");
-        }
-      }
-    });
-  }
-
-  // Update Now Section & Metrics
-  function updateState(state) {
-    if (!state) return;
-    document.getElementById("metabolism-state").textContent = state.state_name || "ALIVE";
-    document.getElementById("skills-count").textContent = state.skills_count || "4";
-
-    const taskElem = document.getElementById("now-task");
-    taskElem.textContent = state.current_task || "Idle (Listening to inbox)";
-    taskElem.style.color = state.current_task && state.current_task !== "Idle" ? "var(--accent-blue)" : "var(--text-main)";
-
-    document.getElementById("now-capability").textContent = state.current_capability || "none";
-    document.getElementById("now-tier").textContent = state.tier || "QUARANTINE";
-
-    const statusElem = document.getElementById("now-status");
-    statusElem.textContent = state.status || "IDLE";
-    if (state.status === "RUNNING" || state.status === "PROCESSING") {
-      statusElem.style.color = "var(--accent-cyan)";
-    } else if (state.status === "ERROR") {
-      statusElem.style.color = "var(--accent-rose)";
-    } else {
-      statusElem.style.color = "var(--accent-emerald)";
-    }
-
-    document.getElementById("now-last-action").textContent = state.last_action || "idle";
-  }
-
-  // Polling Loop (every 800ms)
-  async function poll() {
-    try {
-      // 1. Now & Metabolism State
-      const stateStr = await invokeCommand("get_now_state");
-      const state = typeof stateStr === "string" ? JSON.parse(stateStr) : stateStr;
-      updateState(state);
-
-      // 2. Ledger Tail
-      const ledgerStr = await invokeCommand("get_ledger_tail");
-      const ledger = typeof ledgerStr === "string" ? JSON.parse(ledgerStr) : ledgerStr;
-      renderLedger(ledger);
-
-      // 3. Chat History
-      const chatStr = await invokeCommand("get_chat_history");
-      const chat = typeof chatStr === "string" ? JSON.parse(chatStr) : chatStr;
-      syncChat(chat);
-    } catch (e) {
-      // Quiet poll error on initial startup before files are created
-    }
-  }
-
-  setInterval(poll, 800);
-  poll();
-</script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

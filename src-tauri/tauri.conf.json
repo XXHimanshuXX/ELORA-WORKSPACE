@@ -3,7 +3,8 @@
     "beforeDevCommand": "",
     "beforeBuildCommand": "",
     "devPath": "../overlay",
-    "distDir": "../overlay"
+    "distDir": "../overlay",
+    "withGlobalTauri": true
   },
   "package": {
     "productName": "ELORA OS",
@@ -45,7 +46,8 @@
         "height": 880,
         "transparent": true,
         "decorations": true,
-        "resizable": true
+        "resizable": true,
+        "url": "http://127.0.0.1:8765/"
       }
     ]
   }
