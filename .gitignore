@@ -34,3 +34,6 @@ Cargo.lock
 *.swo
 .DS_Store
 Thumbs.db
+
+# Probe scratch: logs, dumps and fetched design-token sources
+tools/_res/
