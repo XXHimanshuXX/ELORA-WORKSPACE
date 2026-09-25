@@ -12,7 +12,8 @@ What it is actually checking:
   3. every endpoint the frontend calls answers with the shape the frontend reads
   4. every `var(--el-*)` in styles.css is emitted by the genome, so nothing the
      sheet depends on is silently being served by the fallback block
-  5. the pill radius carries a unit (the bug this rig was extended to catch)
+  5. every radius token carries a unit, whatever the current genome's values
+     happen to be (the bug this rig was extended to catch)
 """
 
 import json
@@ -100,9 +101,20 @@ missing = sorted(referenced - emitted - EXTERNAL)
 check("every var styles.css uses is emitted by the genome", not missing,
       f"missing: {missing}" if missing else f"{len(referenced)} vars, all sourceable")
 
-check("radius tokens carry units",
-      "--el-radius-pill: 9999px;" in css and "--el-radius-card: 6px;" in css,
-      "pill would be dropped as invalid CSS without px")
+radius_tokens = re.findall(r"--el-radius-[a-z0-9-]+:\s*([^;]+);", css)
+unitless = [value.strip() for value in radius_tokens
+            if value.strip() != "0"
+            and not re.search(r"(px|rem|em|%|vh|vw|vmin|vmax)$", value.strip())]
+# Genome-agnostic on purpose. This used to assert two literals —
+# `--el-radius-pill: 9999px` and `--el-radius-card: 6px` — which only held for the
+# genome present when it was written (base radius 4, so card = base + 2 = 6). The
+# engine exists to change the genome, so that literal turned a perfectly valid
+# generation (base 24, card 26) into a failure while every unit was correct.
+# Assert the invariant the name claims: whatever the values are, each carries a
+# unit. value == "0" is the one legal unitless length.
+check("radius tokens carry units", len(radius_tokens) >= 4 and not unitless,
+      f"{len(radius_tokens)} radius tokens, all with units" if not unitless
+      else f"unitless: {unitless}")
 
 # --- 5. every remaining endpoint the frontend calls -------------------
 status, body = request("/api/aesthetic/genomes", headers=HDR)

@@ -216,3 +216,56 @@ The Metabolism decides whether the slime can afford to act; the armored subproce
 | WIRE-6 voice | Built not wired | Now through Metabolism ALERT state + saves 400MB idle until wakeword | deferred not refused |
 
 **v7.1 is no longer museum. Every claim either has automated inspection or doesn't ship.**
+
+---
+
+## 6. v7.2 — THE CONSOLE LAYER (Design Genome, Discovery, MCP)
+
+v7.1 closed the wiring debt between the organs. v7.2 closes the debt between the
+organism and the person watching it. Four additions, each with an inspection —
+none of them a mock, and none able to report success it did not measure.
+
+| Piece | File | What it does | Inspection |
+|-------|------|--------------|------------|
+| Design genome | `elora/core/aesthetic.py` | Derives ELORA's visual identity from a seed: colour built in OKLCH and gamut-mapped into sRGB by chroma reduction, plus spacing, radius, typography, density, elevation, motion | Contrast measured per token (WCAG); generations persisted, versioned and re-adoptable |
+| Discovery scanner | `elora/core/discovery.py` | Real filesystem scan: 1,833 distinct skills, 1,530 duplicate files excluded **and stated as a number**, 263 agents, 39 plugin manifests, 17 MCP servers | Two-layer credential redaction with a self-test that refuses to serve a leaking payload |
+| MCP client | `elora/core/mcp_client.py` | Real MCP over stdio, JSON-RPC 2.0, protocol `2024-11-05` | 110 tools enumerated and called through the gateway, not merely described |
+| Console server | `elora/dashboard/server.py` | Serves the resident console and its JSON API | `tools/_probe_dashboard.py` 25/25 — traversal refused (404), headerless refused (403), foreign origin refused (403), every preflight refused (403) |
+
+### 6.1 The Four Honesty Invariants
+
+A surface is where a system is most tempted to lie. These are enforced, not intended:
+
+1. **Absence is reported as absence.** Every reader returns
+   `{"available": false, "reason": ...}`. A missing state file can no longer
+   render as a healthy `ALIVE` with `chainOk: 1.0`, which is exactly what the
+   previous cwd-relative lookup produced under `cargo tauri dev`.
+2. **Truncation is displayed.** When the registry shows 400 of 1,454 on-disk
+   skills it says `TRUNCATED`. Duplicates are shown as an excluded count rather
+   than silently merged.
+3. **Refusal is a feature.** The server binds `127.0.0.1` only, requires an
+   `X-ELORA-Client` header, checks an Origin allowlist, and refuses every CORS
+   preflight. The Tauri window therefore loads `http://127.0.0.1:8765/` so it is
+   same-origin with its own API — a `tauri://` window carrying that custom header
+   would trigger precisely the preflight the server refuses by design.
+4. **Reproducibility beats convenience.** The gateway's bare `auto` alias is
+   deliberately not used: it is absent from the advertised catalogue (931 models,
+   38 `auto/*` aliases, none named `auto`), so it resolves to a different model
+   run to run and nothing measured against it is reproducible. `auto/best-coding`
+   is in the catalogue and resolves deterministically, so it is the default.
+
+### 6.2 What v7.2 Does Not Claim
+
+- **The console does not display the organism.** The WGSL shader is genuinely
+  verified by a real offscreen pass — `tools/verify_webgpu.py` renders 256×256 on
+  the adapter, reads the pixels back, and requires a non-zero frame
+  (`frame sha: adfb692e3540`, `non-zero: 168857`). But the rebuilt console mounts
+  no canvas, so the organism renders during verification and nowhere else.
+  `tools/tests/test_overlay.py::test_webgpu_harness_is_not_hosted_by_the_console`
+  asserts that gap so it cannot be forgotten.
+- **Re-skinning is not unattended.** The genome is data-backed and versioned, and
+  every CSS rule reads `--el-*` custom properties, so adopting a genome re-skins
+  the console with no build step. Adopting one remains the user's choice; the
+  window does not mutate its own identity on its own schedule.
+
+**v7.2 is the first version whose face is generated rather than hand-drawn, and the first where every number on screen traces to a scan that actually ran. The genome is the identity; the scan is the inventory; the client is the reach; the server is the membrane.**

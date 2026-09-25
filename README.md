@@ -3,7 +3,7 @@
 > **A Sovereign, Local-First Agentic Operating System**  
 > *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*  
 >  
-> `124 passed in 22.37s (17 modules) | cargo clippy 0 errors 0 warnings | preflight 0 fail 4 warn | smoke GREEN | MSI + NSIS bundled`
+> `151 passed in 48.36s (19 modules) | preflight 0 fail 4 warn | smoke GREEN (10-stage boot) | cargo check 0 warnings | MSI + NSIS bundled`
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
@@ -49,6 +49,29 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 - **WIRE-5 (`elora/slime/generation.py`)**: Local image generation organ gated at `State.ARMED` 4200MB with deterministic seed reproducibility.
 - **WIRE-6 (`elora/slime/voice.py`)**: Speech ASR/TTS organ gated at `State.ALERT` 1800MB with loud degradation markers when peripherals are absent.
 
+### 7. Design Genome, Discovery & MCP (v7.2)
+
+- **Design genome (`elora/core/aesthetic.py`)**: ELORA derives its own visual
+  identity instead of being handed one. A seeded genome builds colour in OKLCH
+  and gamut-maps into sRGB by chroma reduction, alongside spacing, radius,
+  typography, density, elevation and motion, carrying a WCAG contrast audit
+  measured per token. Generations are persisted, versioned and re-adoptable, and
+  the trend baseline is a dated offline snapshot by default — the console never
+  needs the network to render, and refreshing from live signals is opt-in.
+- **Discovery scanner (`elora/core/discovery.py`)**: a real filesystem scan of
+  the host, reporting 1,833 distinct skills, 1,530 duplicate files excluded and
+  stated as a number, 263 agents, 39 plugin manifests and 17 MCP servers, behind
+  two-layer credential redaction with a self-test that refuses to serve a
+  leaking payload.
+- **MCP client (`elora/core/mcp_client.py`)**: a real MCP client speaking
+  JSON-RPC 2.0 over stdio (protocol `2024-11-05`), which is how the gateway's
+  110 tools are enumerated and called.
+- **Console server (`elora/dashboard/server.py`)**: binds `127.0.0.1` only and
+  refuses any other host, requires an `X-ELORA-Client` header, checks an Origin
+  allowlist, and refuses every CORS preflight. The front-end treats absent state
+  as absent: truncated scans, excluded duplicates and missing credentials are all
+  displayed as themselves rather than smoothed into a healthy zero.
+
 ---
 
 ## Pull Request Lineage & Audit Scoreboard
@@ -63,6 +86,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 | **#6** | WIRE-6: `voice.py` Speech Organ (`State.ALERT` 1800MB) | `ed80995` | 120 | +4 | **ALERT** |
 | **#7** | Native BitNet 1.58 Rust PyO3 Extension (`elora_bitnet.pyd`) & `--once` | `05cf53a` | 120 | 6.12× speedup | **ACCELERATED** |
 | **#8** | Tauri 1.6 Sovereign Desktop Packaging & VirtIO SHM Ripple Bridge | `c0ec83f` | 124 | +4 | **SOVEREIGN RELEASE** |
+| **#9** | v7.2 Design Genome, Discovery Scanner, MCP Client & Resident Console | `b5f0794` | 151 | +27 | **SELF-STYLED** |
 
 ---
 
@@ -74,23 +98,33 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 │   ├── core/
 │   │   ├── absorb_pipeline.py    # Ingestion pipeline (fetch → gate → spec → bind)
 │   │   ├── absorption_gate.py    # AST allowlist and quarantine parser
+│   │   ├── aesthetic.py          # Design genome engine (OKLCH, WCAG audit, versions)
 │   │   ├── armored_subprocess.py # Sandboxed execution membrane & Job Objects
 │   │   ├── bitnet.py             # BitNet b1.58 ternary kernel
 │   │   ├── broker.py             # Capability broker & dual-key consent
 │   │   ├── capabilities.py       # Registered tools and permission tiers
 │   │   ├── crystallization.py    # Skill promotion and code synthesis
 │   │   ├── decay.py              # Skill usage decay and cold storage
+│   │   ├── discovery.py          # Real scan: skills, agents, plugins, MCP servers
+│   │   ├── drive.py              # Drive loop (inbox → intend → execute → reflect)
 │   │   ├── fs.py                 # Sandboxed filesystem utilities
 │   │   ├── loaders.py            # On-demand metabolic asset loaders
+│   │   ├── mcp_client.py         # MCP JSON-RPC 2.0 client over stdio
 │   │   ├── metabolism.py         # 6-state machine & RAM admission control
 │   │   ├── promotion.py          # Ledger-driven skill promotion
 │   │   ├── virtio_shm.py         # Lock-free SPSC shared-memory ring buffer
 │   │   └── wasm_gastric.py       # Fuel-metered WebAssembly sandbox
+│   ├── dashboard/
+│   │   └── server.py             # Local console HTTP server (127.0.0.1 only)
 │   ├── organs/
 │   │   └── akashic.py            # Tamper-evident hash-chained ledger
 │   ├── slime/
+│   │   ├── browser.py            # Headless page read & search
 │   │   ├── computer_use.py       # WIRE-3 screen capture & UIA control
 │   │   ├── generation.py         # WIRE-5 local image synthesis (ARMED 4200MB)
+│   │   ├── generation_api.py     # Generation request surface
+│   │   ├── ingest.py             # PDF/image ingestion into RAG memory
+│   │   ├── rag.py                # Persistent chromadb vector memory
 │   │   └── voice.py              # WIRE-6 speech recognition & synthesis (ALERT 1800MB)
 │   ├── brain.py                  # RealBrain (HTTP) and ScriptedBrain (CI)
 │   ├── daemon.py                 # Core reactor event loop & semantic scheduler
@@ -99,38 +133,74 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 ├── native/
 │   └── bitnet/                   # Rust PyO3 ternary matmul kernel (b1.58)
 ├── overlay/
-│   ├── index.html                # WebGPU organism visualization
+│   ├── app.js                    # Console front-end (ES module; no emoji, no innerHTML)
+│   ├── index.html                # Console shell; fills --el-* tokens from /api/aesthetic
+│   ├── styles.css                # Every rule reads --el-* custom properties
 │   ├── tauri_bridge.js           # Tauri JS bridge for state & ripple events
-│   └── organism.wgsl             # Spatial particle WGSL compute shader
+│   └── organism.wgsl             # WebGPU SDF organism shader (verified offscreen only)
 ├── src-tauri/                    # Tauri v1.6 desktop application
 │   ├── Cargo.toml                # Desktop app dependencies & sidecar permissions
-│   ├── tauri.conf.json           # Window configuration (transparent, undecorated)
+│   ├── tauri.conf.json           # Window loads http://127.0.0.1:8765/ (same-origin)
 │   ├── build.rs                  # Windows resource builder
 │   └── src/
-│       └── main.rs               # Sidecar process manager & IPC bridge
+│       └── main.rs               # Sidecar manager & read-only console commands
 ├── tools/
-│   ├── tests/                    # Ring 0 hermetic test suite (124 tests across 17 modules)
+│   ├── tests/                    # Ring 0 hermetic test suite (151 tests across 19 modules)
 │   ├── build_native.py           # Native Rust PyO3 compilation tool
 │   ├── live_demo.py              # Multi-turn autonomous agent execution demo
+│   ├── verify_webgpu.py          # Offscreen 256x256 render pass + pixel check
 │   ├── _cleanup_backups.py       # Maintenance utility
-│   └── _compile_all.py           # Bytecode compilation verification
-├── Docs/                         # Complete technical blueprints (v7 & v7.1)
+│   ├── _compile_all.py           # Bytecode compilation verification
+│   └── _probe_*.py               # Live probes: dashboard, MCP, router, abort, CSS
+├── Docs/                         # Complete technical blueprints (v7, v7.1, v7.2)
+├── prompts/                      # Reusable production prompts
+├── tests/fixtures/               # sample.pdf, huge.pdf, photo.png, clip.mp4
+├── vault/skills/                 # Crystallized skills (.md spec + .wasm binding)
 ├── run.py                        # Boot sequence, preflight, smoke, and live runner
 └── requirements.txt
 ```
 
 ---
 
-## Tauri Desktop Packaging & WebGPU Overlay
+## Tauri Desktop Packaging & The Resident Console
 
-ELORA provides a native desktop packaging wrapper via **Tauri v1.6** that renders the real-time WebGPU SDF organism overlay, connects to the kernel via a lock-free VirtIO SHM ring (`.elora/shm/overlay.ring`), and manages the ELORA daemon sidecar:
+ELORA ships a native desktop window via **Tauri v1.6**. The window *is* the
+console: it loads `http://127.0.0.1:8765/`, which the Rust side spawns a Python
+server to serve, so it stays **same-origin** with its own API.
 
-- **Transparent Overlay**: Undecorated, transparent 1280×800 desktop canvas rendering dynamic SDF metaball physics.
-- **VirtIO SHM Ripple Bridge**: Lock-free SPSC ring buffer where broker capability requests emit cryptographic ripple events.
-- **Sidecar Lifecycle**: Spawns `python run.py --brain bitnet`, streams telemetry into Akashic ledger, and drains on shutdown.
+- **Window**: 1400×880, decorated and resizable (`src-tauri/tauri.conf.json`),
+  titled *ELORA OS — The Resident*.
+- **Two sidecars**, each its own process so restarting the console does not kill
+  the brain:
+  - `python -m elora.dashboard.server --port 8765 --announce` — the console server.
+  - `python run.py --brain omniroute` — the resident brain, writing `.elora/state.json`.
+- **Read-only console commands** (`src-tauri/src/main.rs`):
+  `get_metabolism_state`, `get_now_state`, `get_ledger_tail`, `get_chat_history`,
+  plus `send_inbox_task` and `trigger_ripple`.
+- **Absence is reported as absence**: every reader returns
+  `{"available": false, "reason": ...}` when a file is missing or unparseable. A
+  missing state file can no longer render as a healthy `ALIVE` with
+  `chainOk: 1.0` — which is exactly what the previous cwd-relative lookup did
+  under `cargo tauri dev`, because that put the working directory at `src-tauri/`.
+
+> [!IMPORTANT]
+> **Why the window loads a URL instead of bundled assets.** The console sets a
+> custom `X-ELORA-Client` header on every request, and the server refuses all CORS
+> preflights as its CSRF defence. A cross-origin request carrying a custom header
+> triggers precisely that preflight, so a window loaded from `tauri://` would have
+> every data panel fail. Same-origin is a security requirement here, not a
+> convenience.
 
 > [!NOTE]
-> **Honest Rendering Audit**: In accordance with preflight honesty (`[WARN] leap: webgpu overlay shader verified + bridge verified; rendering UNVERIFIED`), while the WGSL shader syntax/structure and the SPSC SHM bridge are fully verified, WebGPU rendering execution itself requires an active GPU hardware adapter and is marked unverified in headless/CI runners.
+> **WebGPU, stated precisely.** The organism shader is verified by a real render
+> pass: `tools/verify_webgpu.py` renders 256×256 on the GPU adapter, reads the
+> pixels back, and requires a non-zero frame — on this machine,
+> `NVIDIA GeForce GTX 1050 (DiscreteGPU) via Vulkan (frame sha: adfb692e3540,
+> non-zero: 168857)`. What is *not* true is that a window currently displays it.
+> The rebuilt console mounts no canvas, so the organism renders during
+> verification and nowhere else;
+> `tools/tests/test_overlay.py::test_webgpu_harness_is_not_hosted_by_the_console`
+> asserts that gap so it cannot be quietly forgotten.
 
 ### Development & Verification
 Verify the Tauri application manifest and code:
@@ -150,15 +220,15 @@ cargo build --manifest-path src-tauri/Cargo.toml --release
 To bundle production Windows installers (MSI + NSIS Setup):
 ```bash
 cargo tauri build --manifest-path src-tauri/Cargo.toml
-# → src-tauri/target/release/bundle/msi/ELORA OS_7.1.0_x64_en-US.msi (2.50 MB MSI package)
-# → src-tauri/target/release/bundle/nsis/ELORA OS_7.1.0_x64-setup.exe (1.70 MB NSIS installer)
+# → src-tauri/target/release/bundle/msi/ELORA OS_7.2.0_x64_en-US.msi (2.50 MB MSI package)
+# → src-tauri/target/release/bundle/nsis/ELORA OS_7.2.0_x64-setup.exe (1.70 MB NSIS installer)
 ```
 
 ---
 
 ## Installation & Sovereign Verification
 
-Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) verifies all 124 rungs across 17 modules.
+Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) verifies all 151 rungs across 19 modules.
 
 ### 1. Clone & Setup
 ```bash
@@ -184,15 +254,20 @@ python run.py --check
 ```text
 -- ELORA preflight --
   [OK ] python  3.14 (need >=3.11)
-  [OK ] import metabolism  
-  [OK ] import broker  
-  [OK ] import capabilities  
-  [OK ] import armored_subprocess  
-  [OK ] import absorption_gate  
-  [OK ] import promotion  
-  [OK ] import crystallization  
-  [OK ] import decay  
-  [OK ] import daemon  
+  [OK ] import metabolism
+  [OK ] import broker
+  [OK ] import capabilities
+  [OK ] import armored_subprocess
+  [OK ] import absorption_gate
+  [OK ] import promotion
+  [OK ] import crystallization
+  [OK ] import decay
+  [OK ] import drive
+  [OK ] import daemon
+  [OK ] import browser
+  [OK ] import rag
+  [OK ] import ingest
+  [OK ] import generation_api
   [WARN] psutil + RAM  8064MB total (need >=4096; 8192 comfortable; ARMED gated by metabolism)
   [OK ] ollama  available
   [OK ] tauri  v1.6 installed
@@ -219,13 +294,15 @@ python run.py --smoke
 ```
 
 ```text
-[boot] 2/8 vault
-[boot] 3/8 metabolism (booting at ALIVE, never higher)
-[boot] 4/8 broker
-[boot] 5/8 promotion engine (replaying ledger)
-[boot] 6/8 crystallizer + decay + absorb
-[boot] 7/8 loaders (heavyweights stay asleep until needed)
-[boot] 8/8 daemon (registering itself as a skill - QUARANTINE)
+[boot] 2/10 vault
+[boot] 3/10 metabolism (booting at ALIVE, never higher)
+[boot] 4/10 broker
+[boot] 5/10 promotion engine (replaying ledger)
+[boot] 6/10 crystallizer + decay + absorb
+[boot] 7/10 loaders (heavyweights stay asleep until needed)
+[boot] 8/10 daemon (registering itself as a skill - QUARANTINE)
+[boot] 9/10 browser organ
+[boot] 10/10 ingestion pipeline
   [OK ] task loop -> DONE
   [OK ] real subprocess ran (smoke.txt written)
   [OK ] akashic chain verifies
@@ -236,7 +313,7 @@ python run.py --smoke
 ### 4. Run Full Test Suite
 ```bash
 pytest tools/tests
-# 124 passed across 17 test modules in tools/tests
+# 151 passed across 19 test modules in tools/tests
 ```
 
 ### 5. Multi-Turn Live Demonstration
@@ -248,19 +325,26 @@ python tools/live_demo.py
 ### 6. Run the Daemon (Brain Division of Labor)
 Start continuous polling on `.elora/inbox`:
 ```bash
+# Default: OmniRoute when .elora/secrets/omniroute_api_key exists, else local.
+# The bare model alias "auto" is deliberately NOT used — it is absent from the
+# gateway's advertised catalogue (931 models, 38 auto/* aliases, none named
+# "auto"), so the gateway resolves it to something different run to run and no
+# measurement taken against this brain is reproducible. "auto/best-coding" is in
+# the catalogue and resolves deterministically, so it is the default.
+python run.py --brain omniroute
+
 # Production Multi-Turn Planning (Ollama / LocalAI):
-# Emits <mcp_call> blocks with complex reasoning across capabilities
 python run.py --brain local
 
 # Sovereign Offline / Fallback (BitNet b1.58):
 # 380MB AWAKE addition-only kernel; returns DONE when unweighted (zero-hallucination)
 python run.py --brain bitnet
 
-# Process one inbox tick and exit cleanly:
-python run.py --brain bitnet --once
-
 # Offline / sleeping brain (for test harness):
 python run.py --brain none
+
+# Process one inbox tick and exit cleanly (any brain):
+python run.py --brain bitnet --once
 ```
 
 ---

@@ -563,3 +563,83 @@ Notice what's last: everything v6 listed as "New in v6 Slime." That's not demoti
 ---
 
 **This is v7 UPGRADE. Wires everything v6 left as "working, not wired." Fixes fakeness structurally, not heuristically. Makes honesty enforceable via ladder gates. Makes slime real via digestion not execution. Makes 8GB laptop viable via Metabolism. Build in order 0→9 or don't build at all.**
+
+---
+
+## 16. v7.2 DELTA — A SELF-STYLED SURFACE OVER A REAL INVENTORY
+
+v7 built the organs and made honesty structural. v7.2 asks the next question:
+what does an honest organism look like from outside, and what does it actually
+know about its own ecosystem?
+
+### 16.1 The face is derived, not decorated
+
+`elora/core/aesthetic.py` builds a **design genome** from a seed rather than
+hardcoding a palette: colour constructed in OKLCH and gamut-mapped into sRGB by
+chroma reduction (not clipped), with spacing, radius, typography, density,
+elevation and motion alongside it, and a WCAG contrast audit measured per token
+rather than assumed. Generations are persisted, versioned and re-adoptable, so
+identity acquires a history — and because the baseline is a dated offline
+snapshot, the console renders identically with the network unplugged. That is the
+Airplane Test applied to appearance.
+
+The hardcoded blue-glass theme is gone. Every rule in `overlay/styles.css` refers
+only to `--el-*` custom properties, which `overlay/index.html` fills at boot from
+`/api/aesthetic`. Adopting a genome re-skins the console with no build step and no
+hand-edited colour.
+
+### 16.2 Inventory replaces assumption
+
+`elora/core/discovery.py` performs a real filesystem scan and reports what is
+actually present: **1,833 distinct skills, 1,530 duplicate files excluded and
+stated as a number, 263 agents, 39 plugin manifests, 17 MCP servers** in about
+1.5s. Two-layer credential redaction runs in front of it, with a self-test that
+refuses to serve a leaking payload.
+
+The distinction that matters: a dashboard saying "everything is wired" is
+decoration. A dashboard saying *1,454 skills on disk, 400 shown, TRUNCATED* is
+instrumentation.
+
+### 16.3 The gateway becomes real
+
+`elora/core/mcp_client.py` speaks MCP over stdio (JSON-RPC 2.0, protocol
+`2024-11-05`), which is how 110 tools are enumerated and invoked. Before this the
+gateway was a claim in a configuration file; now it is a client with a protocol, a
+handshake, and a tool list that either answers or errors.
+
+Routing follows the same discipline. The bare `auto` alias is rejected as a
+default because it is absent from the advertised catalogue (931 models, 38
+`auto/*` aliases, none named `auto`) and resolves inconsistently, which makes
+every measurement taken against it unreproducible. `auto/best-coding` resolves
+deterministically and is the default.
+
+### 16.4 The membrane, and what it costs
+
+`elora/dashboard/server.py` binds `127.0.0.1` only, requires an `X-ELORA-Client`
+header, checks an Origin allowlist, and refuses every CORS preflight. The desktop
+window consequently loads `http://127.0.0.1:8765/` — same-origin — because a
+`tauri://` window carrying that custom header would need exactly the preflight the
+server refuses. The security decision constrained the packaging, and the packaging
+was changed to match rather than the reverse.
+
+| Claim | Inspection |
+|-------|------------|
+| Path traversal refused | 404 (`tools/_probe_dashboard.py`) |
+| Headerless request refused | 403 |
+| Foreign origin refused | 403 |
+| CORS preflight refused | 403, always |
+| Genome reproducible from a seed | same seed, same genome |
+| Snapshot is offline-first | renders with no network |
+| 151 tests across 19 modules | `pytest tools/tests` |
+
+### 16.5 Correction to the historical record
+
+Earlier revisions of the v7 documentation implied the dashboard rendered the
+WebGPU organism. It does not. The shader is genuinely verified by a real offscreen
+render pass (`tools/verify_webgpu.py`, `frame sha: adfb692e3540`, `non-zero:
+168857`), but the rebuilt console hosts no canvas, so that rendering happens during
+verification and nowhere else. Recording the correction is the point of the
+ladder: a claim that stops being true must be fixed in the same document that made
+it.
+
+**v7.2 makes the surface honest by making it derived, and the inventory honest by making it measured. The organism now has a face it generated and an inventory it scanned — and the one thing it still cannot do is show you its own body.**

@@ -1,6 +1,6 @@
 [package]
 name = "elora-tauri"
-version = "7.1.0"
+version = "7.2.0"
 description = "ELORA OS Desktop Overlay"
 authors = ["ELORA Architects"]
 edition = "2021"

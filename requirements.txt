@@ -1,8 +1,36 @@
 # ELORA OS dependencies
+#
+# Hard requirements. These are imported unconditionally — `import psutil` at
+# module level in metabolism/loaders, and `from PIL import Image, PngImagePlugin`
+# at elora/slime/generation.py:19 — so a clone missing either cannot boot, and
+# the test suite cannot even collect. Pillow was previously absent from this
+# file, which meant a fresh clone failed on `import elora.slime.generation`.
 psutil>=5.9.0
+Pillow>=10.0.0
 pytest>=8.0.0
+
+# RAG memory. elora/slime/rag.py constructs a persistent chromadb collection in
+# RagIndex.__init__ with no fallback, so recall is unavailable without it.
+chromadb>=0.4.0
+
+# Perception and actuation (elora/slime/computer_use.py, WIRE-3). Optional in the
+# sense that an absent pywinauto marks WIRE-3 unavailable rather than crashing —
+# but then screen control is simply not there, and preflight says so.
 pywinauto>=0.6.9
-wgpu>=0.32.0
+
+# Local image generation (elora/slime/generation.py, gated at State.ARMED).
+# diffusers depends on torch, but generation.py imports torch directly, so it is
+# declared here rather than relied on transitively. CPU wheels are large (~200MB).
+torch>=2.0.0
 diffusers>=0.30.0
 accelerate>=1.0.0
 
+# Offscreen GPU render verification for overlay/organism.wgsl
+# (tools/verify_webgpu.py runs a real 256x256 render pass and checks the pixels).
+wgpu>=0.32.0
+
+# Optional, and honestly degrading when absent: elora/slime/ingest.py falls back
+# to placeholder text if pypdf is missing, and elora/slime/browser.py falls back
+# to raw HTML if bs4 is missing. Install both for real documents and real pages.
+pypdf>=4.0.0
+beautifulsoup4>=4.12.0
