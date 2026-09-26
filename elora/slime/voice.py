@@ -65,17 +65,34 @@ def speak(text: str, out_path: Optional[str] = None) -> dict:
 
 
 class VoiceLoop:
-    def __init__(self, asr_model="base-int8", tts_model="piper-medium", wakeword=True):
+    def __init__(self, asr_model="base-int8", tts_model="piper-medium", wakeword=True, wake_phrase="hey elora", daemon=None):
         self.asr_model = asr_model
         self.tts_model = tts_model
         self.wakeword = wakeword
+        self.wake_phrase = (wake_phrase or "hey elora").strip().lower()
+        self.daemon = daemon
+        self.running = False
+
+    def process_utterance(self, text: str) -> dict:
+        """
+        Wake-phrase-first perception.
+        Only wakes and triggers command if the designated wake phrase is detected.
+        """
+        clean = (text or "").strip().lower()
+        if not self.wakeword:
+            return {"woken": True, "command": clean}
+        if self.wake_phrase in clean:
+            idx = clean.find(self.wake_phrase)
+            command = clean[idx + len(self.wake_phrase):].strip(" ,.!?")
+            return {"woken": True, "command": command, "phrase": self.wake_phrase}
+        return {"woken": False, "command": ""}
 
     def listen(self):
         try:
             import sherpa_onnx  # noqa: F401
             return {"status": "ok"}
         except Exception:
-            return {"degraded": "sherpa-onnx absent"}
+            return {"status": "warn", "degraded": "sherpa-onnx absent", "message": "[WARN] voice offline"}
 
 
 

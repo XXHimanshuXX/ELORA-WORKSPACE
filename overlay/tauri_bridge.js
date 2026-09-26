@@ -40,6 +40,23 @@ export function initTauriBridge(callbacks = {}) {
 
   return {
     isTauri: true,
+    sendInboxTask: async (prompt) => {
+      if (!invoke) return false;
+      try {
+        return await invoke("send_inbox_task", { prompt });
+      } catch (err) {
+        return false;
+      }
+    },
+    getChatHistory: async () => {
+      if (!invoke) return null;
+      try {
+        const res = await invoke("get_chat_history");
+        return typeof res === "string" ? JSON.parse(res) : res;
+      } catch (err) {
+        return null;
+      }
+    },
     cleanup: () => {
       clearInterval(intervalId);
       if (unlistenRipple) unlistenRipple();

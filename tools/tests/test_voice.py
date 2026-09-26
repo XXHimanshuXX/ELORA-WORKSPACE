@@ -111,3 +111,29 @@ def test_voice_alert_auto_decay(metabolism):
     metabolism._last_use[State.AWAKE] = time.time() - 1
     metabolism._housekeeping_once()
     assert metabolism.current_state() == State.ALIVE
+
+
+# ----------------------------------------------------------------------
+# RUNG 5 — Voice wakes on phrase only & degrades gracefully
+# ----------------------------------------------------------------------
+
+def test_voice_wakes_on_phrase_only():
+    from elora.slime.voice import VoiceLoop
+    loop = VoiceLoop(wake_phrase="hey elora")
+
+    # Utterance without wake phrase must not wake
+    ign = loop.process_utterance("what is the current time")
+    assert ign["woken"] is False
+    assert ign["command"] == ""
+
+    # Utterance with wake phrase wakes and parses command
+    woken = loop.process_utterance("hey elora check the vault")
+    assert woken["woken"] is True
+    assert woken["command"] == "check the vault"
+    assert woken["phrase"] == "hey elora"
+
+    # Degrades gracefully when audio hardware / sherpa-onnx absent
+    status = loop.listen()
+    assert "degraded" in status or status.get("status") == "ok"
+    if status.get("status") == "warn":
+        assert "[WARN] voice offline" in status.get("message", "")

@@ -26,6 +26,7 @@
    is what makes this import legal. It is the only part of this console that
    requires the desktop shell — everything else reads the same server over HTTP. */
 import { initTauriBridge } from './tauri_bridge.js';
+import { Organism } from './organism.js';
 
 /* ── the API ───────────────────────────────────────────────────────────── */
 
@@ -197,9 +198,13 @@ const state = {
   selectedServer: null,
   routerTool: 'health',
   chat: [],
+  chatHistory: [],
+  chatHistoryEncoded: '',
+  briefing: null,
+  organism: null,
   models: [],
   modelFilter: '',
-  view: 'genome',
+  view: 'resident',
   booted: false,
   bridge: null,          // the Tauri bridge handle, or null in a browser
   metabolism: null,      // the last native daemon-state payload
@@ -208,11 +213,11 @@ const state = {
 };
 
 const VIEW_TITLES = {
-  genome: ['Genome', 'The theme ELORA generated for itself, and the evidence it is legible.'],
-  router: ['Router', 'The live OmniRoute gateway and the real MCP tools it exposes.'],
-  registry: ['Registry', 'What ELORA can do, and what is actually installed on this machine.'],
-  resident: ['Resident', 'The native bridge — daemon state and live stdout as the desktop window sees them.'],
+  resident: ['Resident', 'The resident maid — autonomous cognition, dialogue, and metabolic presence.'],
   ledger: ['Ledger', 'The append-only record every generation and action is written to.'],
+  genome: ['Genome', 'The theme ELORA generated for itself, and the evidence it is legible.'],
+  registry: ['Registry', 'What ELORA can do, and what is actually installed on this machine.'],
+  router: ['Router', 'The live OmniRoute gateway and the real MCP tools it exposes.'],
   unwired: ['Not wired', 'Features that do not work yet, stated plainly.'],
 };
 
@@ -1060,12 +1065,8 @@ function renderUnwired(root) {
       ].map((line) => h('li', {}, icon('check'), h('span', { text: line })))))));
 }
 
-/* ── resident (the native bridge) ──────────────────────────────────────── */
+/* /* ── resident (the native bridge & resident maid) ──────────────────────── */
 
-/* Field names come from .elora/state.json, which the daemon writes:
-   {state, state_name, chainOk, current_task, current_capability, status,
-    last_action, skills_count, seq, ts}. Unknown keys are shown under their own
-   names rather than dropped, so a schema change is visible instead of silent. */
 const RESIDENT_LABELS = {
   state: 'state',
   state_name: 'state name',
@@ -1079,59 +1080,256 @@ const RESIDENT_LABELS = {
   ts: 'written at',
 };
 
-/* Installed by renderResident while that view exists, so the bridge callbacks
-   have something to repaint without knowing about the DOM themselves. */
 let residentRedraw = null;
+
+async function pollOrganism() {
+  try {
+    const s = await api('/api/organism_state');
+    const canvas = document.getElementById('organism-canvas');
+    const frame = document.querySelector('.organism-frame');
+    if (!s || s.available === false) {
+      if (state.organism && typeof state.organism._renderOffline === 'function') state.organism._renderOffline();
+      if (canvas) canvas.dataset.status = 'offline';
+      if (frame) frame.dataset.status = 'offline';
+      return;
+    }
+    if (state.organism && state.organism.running) {
+      state.organism.setState(s.metabolism_index);
+      state.organism.setSeed(s.seed);
+      state.organism.setHeadroom(s.ram_headroom);
+      if (s.ripple_events > 0) state.organism.ripple();
+      if (canvas) canvas.dataset.status = 'online';
+      if (frame) frame.dataset.status = 'online';
+    } else {
+      if (state.organism && typeof state.organism._renderOffline === 'function') state.organism._renderOffline();
+      if (canvas) canvas.dataset.status = 'offline';
+      if (frame) frame.dataset.status = 'offline';
+    }
+  } catch (err) {
+    const canvas = document.getElementById('organism-canvas');
+    const frame = document.querySelector('.organism-frame');
+    if (state.organism && typeof state.organism._renderOffline === 'function') state.organism._renderOffline();
+    if (canvas) canvas.dataset.status = 'offline';
+    if (frame) frame.dataset.status = 'offline';
+  }
+}
+
+async function syncBriefing() {
+  try {
+    const b = await api('/api/resident/briefing');
+    if (b && b.summary) {
+      state.briefing = b;
+      const el = document.getElementById('briefing-summary');
+      if (el) el.textContent = b.summary;
+    }
+  } catch (err) {
+    // quiet fallback
+  }
+}
+
+async function syncChat() {
+  try {
+    let messages = null;
+    if (state.bridge && typeof state.bridge.getChatHistory === 'function') {
+      const res = await state.bridge.getChatHistory();
+      if (Array.isArray(res)) messages = res;
+    }
+    if (!messages) {
+      const res = await api('/api/chat/history');
+      if (res && res.available && Array.isArray(res.messages)) {
+        messages = res.messages;
+      }
+    }
+    if (messages) {
+      const encoded = JSON.stringify(messages);
+      if (encoded !== state.chatHistoryEncoded) {
+        state.chatHistoryEncoded = encoded;
+        state.chatHistory = messages;
+        if (state.view === 'resident' && typeof residentRedraw === 'function') {
+          residentRedraw();
+        }
+      }
+    }
+  } catch (err) {
+    // quiet fallback
+  }
+}
+
+async function dispatchTask(prompt, capability = '') {
+  const clean = (prompt || '').trim();
+  if (!clean) return;
+
+  state.chatHistory.push({
+    sender: 'user',
+    text: clean,
+    ts: Date.now() / 1000,
+    status: 'queued',
+  });
+  if (typeof residentRedraw === 'function') residentRedraw();
+
+  let dispatched = false;
+  if (state.bridge && typeof state.bridge.sendInboxTask === 'function') {
+    const ok = await state.bridge.sendInboxTask(clean);
+    if (ok) dispatched = true;
+  }
+  if (!dispatched) {
+    try {
+      await api('/api/inbox/task', { method: 'POST', body: { prompt: clean, capability } });
+      dispatched = true;
+    } catch (err) {
+      toast('Task dispatch failed', 'danger', err.message);
+    }
+  }
+  if (dispatched) {
+    toast('Task queued in .elora/inbox', 'ok', clean.slice(0, 48));
+    if (state.organism) state.organism.ripple();
+  }
+  await syncChat();
+}
 
 function renderResident(root) {
   clear(root);
 
-  const bridge = state.bridge;
+  // 1. Organism Frame (3D WebGPU metaball creature)
+  const canvas = h('canvas', {
+    id: 'organism-canvas',
+    class: 'organism',
+    width: 280,
+    height: 280,
+    title: "ELORA's body — color reflects metabolic state, seed is her identity, ripple shows her acting",
+  });
+  const legend = h('div', { class: 'organism-legend' },
+    h('span', { class: 'dot', dataset: { state: 'ALIVE' } }), ' ALIVE ',
+    h('span', { class: 'dot', dataset: { state: 'AWAKE' } }), ' AWAKE ',
+    h('span', { class: 'dot', dataset: { state: 'ARMED' } }), ' ARMED ',
+  );
+  const fallback = h('div', { class: 'organism-fallback' },
+    icon('chip'),
+    h('span', { text: 'Organism Offline' }),
+    h('span', { class: 'mono', style: { fontSize: '0.72rem', color: 'var(--el-ink-faint)' }, text: 'WebGPU adapter required' }));
+  const organismFrame = h('div', { class: 'organism-frame', dataset: { status: 'offline' } }, canvas, fallback, legend);
 
-  if (!bridge || !bridge.isTauri) {
-    root.append(warnBanner(
-      'Browser mode — the native bridge is not mounted',
-      'window.__TAURI__ is absent, so the six Rust commands (daemon state, now, ledger tail, chat history, inbox task, ripple) cannot be invoked. Nothing else on these tabs is affected: they read the same server over HTTP.',
-      'Open this page in the ELORA desktop window to see the native panels.'));
-    root.append(card('What the native bridge adds', 'chip', cardBody(
-      h('ul', { class: 'ticks' }, [
-        'Daemon state read from .elora/state.json by the Rust side, so it still resolves when this server is down.',
-        'Daemon stdout relayed as ripple events — the string shown is the process\'s own output line, not a synthesised message.',
-        'send_inbox_task, which writes a real file into .elora/inbox for the daemon to pick up.',
-      ].map((line) => h('li', {}, icon('check'), h('span', { text: line })))))));
-    return;
+  if (!state.organism && canvas) {
+    state.organism = new Organism(canvas);
+    state.organism.init();
   }
 
-  const payload = state.metabolism;
+  // 2. Daily Briefing Card
+  const briefingText = state.briefing ? state.briefing.summary : 'Since 19:00 yesterday: read 0 pages, ingested 0 docs, crystallized 0 skills.';
+  const briefingBox = h('div', { class: 'briefing-card', id: 'briefing-card' },
+    h('div', { class: 'briefing-title' }, icon('terminal'), 'Daily Briefing'),
+    h('div', { class: 'briefing-text', id: 'briefing-summary', text: briefingText }));
 
+  // 3. NOW — Active Cognition Card
+  const payload = state.metabolism;
+  let cognitionCard;
   if (!payload) {
-    root.append(card('Daemon state', 'genome', cardBody(skeleton(4))));
+    cognitionCard = card('NOW — Active Cognition', 'chip', cardBody(skeleton(3)));
   } else if (payload.available === false) {
-    /* The Rust commands used to return a hardcoded `state_name: "ALIVE"` here.
-       An absent state file now looks like an absent state file. */
-    root.append(warnBanner('No daemon state to read', payload.reason,
-      'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.'));
+    cognitionCard = warnBanner('No daemon state to read', payload.reason,
+      'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.');
   } else {
     const data = (payload.data && typeof payload.data === 'object') ? payload.data : {};
-    const rows = Object.entries(data).map(([key, value]) => [
-      RESIDENT_LABELS[key] || key,
-      (value !== null && typeof value === 'object') ? JSON.stringify(value) : String(value),
-    ]);
-    root.append(card('Daemon state', 'genome', cardBody(
-      h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-5)' } },
-        chip(String(data.state_name || 'no state_name'),
-          data.state_name === 'ALIVE' ? 'ok' : 'warn'),
-        data.status ? chip(String(data.status), data.status === 'RUNNING' ? 'accent' : 'info') : null,
-        data.ts ? chip(`written ${new Date(data.ts * 1000).toLocaleString()}`) : null),
-      kv(rows),
-      h('p', { class: 'dim', style: { marginTop: 'var(--el-space-5)' },
-        text: 'Read straight from .elora/state.json by the Rust side. The metabolism and now commands return this same file — one source under two names, not two sources.' }))));
+    const rows = [
+      ['active task', data.current_task || 'Idle'],
+      ['capability', data.current_capability || 'none'],
+      ['execution tier', 'QUARANTINE'],
+      ['reactor status', data.status || 'IDLE'],
+      ['last loop action', data.last_action || 'none'],
+    ];
+    cognitionCard = card('NOW — Active Cognition', 'chip', cardBody(
+      h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-3)' } },
+        chip(String(data.state_name || 'ALIVE'), data.state_name === 'ALIVE' ? 'ok' : 'warn'),
+        data.status ? chip(String(data.status), data.status === 'RUNNING' ? 'accent' : 'info') : null),
+      kv(rows)
+    ));
   }
 
+  // 4. Dialogue & Task Interface (Chat Panel)
+  const chatLog = h('div', { class: 'chat__log', id: 'resident-chat-log' });
+  if (!state.chatHistory.length) {
+    chatLog.append(h('div', { class: 'empty', text: 'No conversation recorded yet. Submit a task instruction below.' }));
+  } else {
+    for (const msg of state.chatHistory) {
+      const isUser = msg.sender === 'user';
+      const bubble = h('div', { class: 'turn', dataset: { role: isUser ? 'user' : 'elora' } },
+        h('div', { class: 'turn__role', text: isUser ? 'You' : 'ELORA' },
+          msg.ts ? h('span', { class: 'turn__meta', style: { marginLeft: 'var(--el-space-3)' }, text: new Date(msg.ts * 1000).toLocaleTimeString() }) : null),
+        h('div', { class: 'turn__body', text: msg.text || '' }));
+      chatLog.append(bubble);
+    }
+  }
+
+  // Quick Action Buttons
+  const quickActions = h('div', { class: 'quick-actions' },
+    h('button', {
+      type: 'button', class: 'quick-btn',
+      dataset: { capability: 'net.read', task: 'read https://example.com and tell me what it was about' },
+      onClick: () => dispatchTask('read https://example.com and tell me what it was about', 'net.read'),
+    }, icon('search'), 'Read example.com'),
+    h('button', {
+      type: 'button', class: 'quick-btn',
+      dataset: { capability: 'rag.recall', task: 'what was the page you read earlier about?' },
+      onClick: () => dispatchTask('what was the page you read earlier about?', 'rag.recall'),
+    }, icon('brain'), 'Recall from memory'),
+    h('button', {
+      type: 'button', class: 'quick-btn',
+      dataset: { capability: 'doc.ingest', task: 'ingest tests/fixtures/sample.pdf' },
+      onClick: () => dispatchTask('ingest tests/fixtures/sample.pdf', 'doc.ingest'),
+    }, icon('file'), 'Ingest sample.pdf'),
+    h('button', {
+      type: 'button', class: 'quick-btn',
+      dataset: { capability: 'ledger.verify', task: 'verify akashic ledger integrity' },
+      onClick: () => dispatchTask('verify akashic ledger integrity', 'ledger.verify'),
+    }, icon('shield'), 'Verify ledger'),
+  );
+
+  const input = h('input', {
+    type: 'text',
+    id: 'chat-input',
+    class: 'input',
+    style: { flex: '1', minHeight: '44px' },
+    placeholder: 'Type a task instruction (writes to .elora/inbox)...',
+    autocomplete: 'off',
+    onKeydown: (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const val = input.value.trim();
+        if (val) {
+          input.value = '';
+          dispatchTask(val);
+        }
+      }
+    },
+  });
+
+  const sendBtn = h('button', {
+    type: 'button',
+    id: 'chat-send',
+    class: 'btn btn--primary',
+    onClick: () => {
+      const val = input.value.trim();
+      if (val) {
+        input.value = '';
+        dispatchTask(val);
+      }
+    },
+  }, icon('send'), 'Send');
+
+  const compose = h('div', { class: 'chat__compose' }, input, sendBtn);
+
+  const chatCard = card('Dialogue & Task Interface', 'terminal',
+    h('div', { class: 'chat' }, chatLog),
+    quickActions,
+    compose,
+    h('div', { class: 'card__note', style: { padding: '0 var(--el-space-5) var(--el-space-4)' },
+      text: 'Writing an instruction drops a file into .elora/inbox and logs the dispatch to the Akashic ledger.' }));
+
+  // 5. Ripple Channel / live stdout
   const feed = h('div', { class: 'events' });
   if (!state.ripples.length) {
     feed.append(h('div', { class: 'empty',
-      text: 'Nothing has arrived on the ripple channel yet. The daemon\'s stdout lines land here as they are printed.' }));
+      text: "Nothing has arrived on the ripple channel yet. The daemon's stdout lines land here as they are printed." }));
   } else {
     for (const line of state.ripples.slice(-40)) {
       feed.append(h('div', { class: 'event' },
@@ -1141,14 +1339,12 @@ function renderResident(root) {
     }
   }
 
-  root.append(h('section', { class: 'card' },
-    h('div', { class: 'card__head' },
-      h('h3', { class: 'card__title' }, icon('terminal'), 'Ripple channel'),
-      h('span', { class: 'topbar__meta' },
-        chip(`${state.ripples.length} line(s)`, state.ripples.length ? 'info' : 'warn'))),
-    feed,
-    h('div', { class: 'card__note', style: { padding: '0 var(--el-space-5) var(--el-space-4)' },
-      text: 'Emitted by the Tauri shell as the sidecar prints, and shown verbatim — these are the daemon\'s own words, which is why they are neither summarised nor prettified.' })));
+  const rippleCard = card('Ripple channel', 'terminal', feed);
+
+  // Group into responsive two-column layout
+  const aside = h('div', { class: 'resident-aside' }, organismFrame, briefingBox, cognitionCard);
+  const main = h('div', { class: 'resident-main' }, chatCard, rippleCard);
+  root.append(h('div', { class: 'resident-layout' }, aside, main));
 }
 
 /* The desktop window points at this server and the server is a sidecar, so the
@@ -1171,8 +1367,8 @@ async function waitForServer(attempts = 12, delayMs = 400) {
 
 async function boot() {
   if (!state.booted) {
-    const initial = (location.hash || '#genome').slice(1);
-    showView(Object.prototype.hasOwnProperty.call(VIEW_TITLES, initial) ? initial : 'genome');
+    const initial = (location.hash || '#resident').slice(1);
+    showView(Object.prototype.hasOwnProperty.call(VIEW_TITLES, initial) ? initial : 'resident');
     state.booted = true;
   }
   clear(document.getElementById('topbar-meta'));
@@ -1238,6 +1434,14 @@ async function boot() {
   renderLedger(document.getElementById('ledger-root'));
   renderUnwired(document.getElementById('unwired-root'));
 
+  // Start resident pollers
+  pollOrganism();
+  setInterval(pollOrganism, 1000);
+  syncBriefing();
+  setInterval(syncBriefing, 15000);
+  syncChat();
+  setInterval(syncChat, 2000);
+
   /* Registry end-to-end. The scan is genuinely slow (walks real directories), so
      it renders as soon as its payload lands rather than blocking the console. */
   try {
@@ -1267,7 +1471,7 @@ for (const button of document.querySelectorAll('[data-nav]')) {
    another. showView uses replaceState, which does not fire this event, so there
    is no loop. */
 window.addEventListener('hashchange', () => {
-  const name = (location.hash || '#genome').slice(1);
+  const name = (location.hash || '#resident').slice(1);
   if (Object.prototype.hasOwnProperty.call(VIEW_TITLES, name) && name !== state.view) {
     showView(name);
   }

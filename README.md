@@ -3,7 +3,7 @@
 > **A Sovereign, Local-First Agentic Operating System**  
 > *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*  
 >  
-> `151 passed in 48.36s (19 modules) | preflight 0 fail 4 warn | smoke GREEN (10-stage boot) | cargo check 0 warnings | MSI + NSIS bundled`
+> `158 passed in 87.21s (21 modules) | preflight 0 fail 4 warn | smoke GREEN (10-stage boot) | cargo check 0 warnings | MSI + NSIS bundled | v7.3 Resident`
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
@@ -87,6 +87,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 | **#7** | Native BitNet 1.58 Rust PyO3 Extension (`elora_bitnet.pyd`) & `--once` | `05cf53a` | 120 | 6.12× speedup | **ACCELERATED** |
 | **#8** | Tauri 1.6 Sovereign Desktop Packaging & VirtIO SHM Ripple Bridge | `c0ec83f` | 124 | +4 | **SOVEREIGN RELEASE** |
 | **#9** | v7.2 Design Genome, Discovery Scanner, MCP Client & Resident Console | `b5f0794` | 151 | +27 | **SELF-STYLED** |
+| **#10** | v7.3 Resident Front Door, 3D Organism Pet, Daily Briefing & Capability Buttons | HEAD | 158 | +7 | **RESIDENT MAID** |
 
 ---
 
@@ -145,7 +146,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 │   └── src/
 │       └── main.rs               # Sidecar manager & read-only console commands
 ├── tools/
-│   ├── tests/                    # Ring 0 hermetic test suite (151 tests across 19 modules)
+│   ├── tests/                    # Ring 0 hermetic test suite (158 tests across 21 modules)
 │   ├── build_native.py           # Native Rust PyO3 compilation tool
 │   ├── live_demo.py              # Multi-turn autonomous agent execution demo
 │   ├── verify_webgpu.py          # Offscreen 256x256 render pass + pixel check
@@ -228,7 +229,7 @@ cargo tauri build --manifest-path src-tauri/Cargo.toml
 
 ## Installation & Sovereign Verification
 
-Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) verifies all 151 rungs across 19 modules.
+Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) verifies all 158 rungs across 21 modules.
 
 ### 1. Clone & Setup
 ```bash
@@ -313,7 +314,7 @@ python run.py --smoke
 ### 4. Run Full Test Suite
 ```bash
 pytest tools/tests
-# 151 passed across 19 test modules in tools/tests
+# 158 passed across 21 test modules in tools/tests
 ```
 
 ### 5. Multi-Turn Live Demonstration
@@ -346,6 +347,18 @@ python run.py --brain none
 # Process one inbox tick and exit cleanly (any brain):
 python run.py --brain bitnet --once
 ```
+
+---
+
+## What ELORA Does Not Yet Do (Honesty & Limits)
+
+The culture of ELORA demands stating boundaries before marketing them away. In accordance with the four honesty invariants:
+
+1. **No Autonomous Web Crawling Beyond Allowlisted Domains**: Ingestion (`net.fetch`) and nutrient hunting (`drive.py`) are strictly restricted to curated, allowlisted repositories (e.g. GitHub raw skill repositories). ELORA does not autonomously spider arbitrary open-web links, scrape general search engine results, or bypass domain allowlists.
+2. **No Automated Academic / arXiv Scraping**: Academic paper indexing requires explicit local file drops or PDF paths into `.elora/inbox` or `tests/fixtures/sample.pdf`. Automated scrapers targeting preprint servers are not implemented.
+3. **No CAPTCHA or Anti-Bot Bypass**: The browser organ (`browser.py`) does not employ adversarial circumvention techniques, residential proxy rotators, or CAPTCHA solvers. Sites guarded by Cloudflare Turnstile, hCaptcha, or reCAPTCHA will refuse or block navigation, and that refusal is recorded as refusal in the Akashic ledger.
+4. **No Software Raymarching Simulation**: The 3D metaball organism (`overlay/organism.wgsl`) executes exclusively against a genuine WebGPU device/adapter (`navigator.gpu`). If the host environment lacks WebGPU support (such as software-only headless browsers), the console honestly displays `Organism Offline — WebGPU adapter required` rather than faking an artificial 2D canvas simulation.
+5. **No Synthetic Audio Without Hardware Peripherals**: If recording microphones or audio output devices are absent, the speech organ (`voice.py`) immediately reports a degraded warning and pauses perception rather than synthesizing fictitious transcription events.
 
 ---
 

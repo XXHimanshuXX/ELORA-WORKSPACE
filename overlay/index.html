@@ -42,6 +42,9 @@
     <g id="i-clock"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g>
     <g id="i-eye"><path d="M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6z"/><circle cx="12" cy="12" r="2.6"/></g>
     <g id="i-camera"><rect x="3" y="6.5" width="18" height="13" rx="2.5"/><circle cx="12" cy="13" r="3.6"/><path d="M8.5 6.5L10 4h4l1.5 2.5"/></g>
+    <g id="i-brain"><path d="M9.5 2a4 4 0 0 0-4 4c0 .4.06.77.16 1.13A4.5 4.5 0 0 0 3 11.5c0 2 1.3 3.7 3.1 4.3A5 5 0 0 0 11 20v2h2v-2a5 5 0 0 0 4.9-4.2c1.8-.6 3.1-2.3 3.1-4.3 0-1.9-1.2-3.5-2.8-4.2.1-.35.17-.72.17-1.11a4 4 0 0 0-4-4c-.7 0-1.3.18-1.9.5A3.9 3.9 0 0 0 9.5 2z"/></g>
+    <g id="i-file"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></g>
+    <g id="i-shield"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></g>
   </defs>
 </svg>
 
@@ -54,21 +57,21 @@
     </div>
 
     <ul class="rail__list">
-      <li><button type="button" class="rail__item" data-nav="genome" aria-current="page">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-genome"/></svg>
-        <span>Genome</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="router">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-router"/></svg>
-        <span>Router</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="registry">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-registry"/></svg>
-        <span>Registry</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="resident">
+      <li><button type="button" class="rail__item" data-nav="resident" aria-current="page">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-terminal"/></svg>
         <span>Resident</span></button></li>
       <li><button type="button" class="rail__item" data-nav="ledger">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ledger"/></svg>
         <span>Ledger</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="genome">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-genome"/></svg>
+        <span>Genome</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="registry">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-registry"/></svg>
+        <span>Registry</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="router">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-router"/></svg>
+        <span>Router</span></button></li>
       <li><button type="button" class="rail__item" data-nav="unwired">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-unwired"/></svg>
         <span>Not wired</span></button></li>
@@ -86,14 +89,18 @@
   <main class="main">
     <header class="topbar">
       <div class="topbar__lead">
-        <h1 id="view-title">Genome</h1>
-        <p id="view-sub" class="topbar__sub"></p>
+        <h1 id="view-title">Resident</h1>
+        <p id="view-sub" class="topbar__sub">The resident maid — autonomous cognition, dialogue, and metabolic presence.</p>
       </div>
       <div class="topbar__meta" id="topbar-meta"></div>
     </header>
 
     <div class="views">
-      <section class="view" data-view="genome" tabindex="-1">
+      <section class="view" data-view="resident" tabindex="-1">
+        <h2 class="sr-only">Resident — the native bridge</h2>
+        <div id="resident-root" class="stack"></div>
+      </section>
+      <section class="view" data-view="genome" tabindex="-1" hidden>
         <h2 class="sr-only">Genome</h2>
         <div id="genome-root" class="stack"></div>
       </section>
@@ -104,10 +111,6 @@
       <section class="view" data-view="registry" tabindex="-1" hidden>
         <h2 class="sr-only">Capability and registry browser</h2>
         <div id="registry-root" class="stack"></div>
-      </section>
-      <section class="view" data-view="resident" tabindex="-1" hidden>
-        <h2 class="sr-only">Resident — the native bridge</h2>
-        <div id="resident-root" class="stack"></div>
       </section>
       <section class="view" data-view="ledger" tabindex="-1" hidden>
         <h2 class="sr-only">Ledger</h2>

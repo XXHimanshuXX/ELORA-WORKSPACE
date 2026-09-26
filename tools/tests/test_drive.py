@@ -196,7 +196,7 @@ class TestDriveSafetyLines:
         assert len(drive_events) == 0
         assert all(v == 0.0 for v in drive._last_hunger_tick.values())
 
-    def test_nutrient_url_never_doubles(self, drive_env):
+    def test_drive_url_never_doubles(self, drive_env):
         """Handoff Fix 1: Expand never concatenates RAW_BASE onto an existing absolute URL.
         'https://raw.githubusercontent.com/https://' never appears in any absorption call."""
         drive = drive_env["drive"]

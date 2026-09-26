@@ -36,6 +36,7 @@ DESIGN RULES, and what each one costs.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import posixpath
@@ -780,6 +781,120 @@ def payload_plugins() -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------
+# Organism & Resident
+# ----------------------------------------------------------------------
+
+_STATE_INDEX = {
+    "CRYPTOBIOSIS": 0, "ALIVE": 1, "AWAKE": 2,
+    "ALERT": 3, "ARMED": 4, "DIGESTING": 5
+}
+
+
+def payload_organism_state(state_file: Optional[str] = None) -> dict[str, Any]:
+    """
+    Deterministic seed from vault identity, live metabolism, ripple count.
+    Absence reported as absence.
+    """
+    target_file = state_file or os.path.join(STATE_DIR, "state.json")
+    if not target_file or not os.path.exists(target_file):
+        return {"available": False, "reason": "state.json absent"}
+    try:
+        with open(target_file, "r", encoding="utf-8") as handle:
+            state = json.load(handle)
+    except (OSError, ValueError) as e:
+        return {"available": False, "reason": f"state.json unreadable: {e}"}
+
+    # Seed: hashed from the ledger genesis + skill count -> SAME SEED, SAME FACE
+    seed_src = f"{state.get('ledger_genesis','')}:{state.get('skills_count', state.get('skill_count', 0))}"
+    seed = int(hashlib.sha256(seed_src.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
+
+    vm = state.get("metabolism", state.get("state_name", "ALIVE"))
+    return {
+        "available": True,
+        "metabolism_index": _STATE_INDEX.get(vm, 1),
+        "seed": round(seed, 6),
+        "ram_headroom": state.get("ram_headroom", 0.7),
+        "ripple_events": state.get("ripple_events_recent", 0),
+    }
+
+
+def payload_resident_briefing() -> dict[str, Any]:
+    """Daily Briefing synthesized directly from Akashic Ledger."""
+    from elora.core.briefing import generate_daily_briefing
+    ledger = None
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            ledger = AkashicLedger(LEDGER_PATH)
+        except Exception:
+            ledger = None
+    return generate_daily_briefing(ledger=ledger)
+
+
+def payload_chat_history() -> dict[str, Any]:
+    """Read .elora/chat.json conversation history."""
+    chat_path = os.path.join(STATE_DIR, "chat.json")
+    if not os.path.exists(chat_path):
+        return {"available": False, "reason": "chat.json absent", "messages": []}
+    try:
+        with open(chat_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return {"available": True, "messages": data if isinstance(data, list) else []}
+    except Exception as exc:
+        return {"available": False, "reason": f"unreadable: {exc}", "messages": []}
+
+
+def payload_inbox_task(prompt: str) -> dict[str, Any]:
+    """Enqueues a task instruction into .elora/inbox and logs to Akashic ledger."""
+    clean = (prompt or "").strip()
+    if not clean:
+        raise ApiError(400, "empty-task", "prompt cannot be empty")
+    inbox_dir = os.path.join(STATE_DIR, "inbox")
+    os.makedirs(inbox_dir, exist_ok=True)
+    ts = int(time.time() * 1000)
+    filename = f"chat_{ts}.txt"
+    target = os.path.join(inbox_dir, filename)
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(clean)
+
+    chat_path = os.path.join(STATE_DIR, "chat.json")
+    messages = []
+    if os.path.exists(chat_path):
+        try:
+            with open(chat_path, "r", encoding="utf-8") as handle:
+                messages = json.load(handle)
+        except Exception:
+            messages = []
+    messages.append({
+        "sender": "user",
+        "text": clean,
+        "task_id": filename,
+        "ts": time.time(),
+        "status": "queued",
+    })
+    try:
+        with open(chat_path, "w", encoding="utf-8") as handle:
+            json.dump(messages, handle, indent=2)
+    except Exception:
+        pass
+
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            ledger = AkashicLedger(LEDGER_PATH)
+            ledger.append(
+                organ="inbox",
+                kind="task_queued",
+                message=f"task queued: {clean[:60]}",
+                payload={"filename": filename, "task": clean},
+            )
+        except Exception:
+            pass
+
+    return {"ok": True, "task_id": filename}
+
+
+# ----------------------------------------------------------------------
 # Routing
 # ----------------------------------------------------------------------
 
@@ -965,6 +1080,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(payload_ledger(limit))
             elif path == "/api/plugins":
                 self._send_json(payload_plugins())
+            elif path == "/api/organism_state":
+                self._send_json(payload_organism_state())
+            elif path == "/api/resident/briefing":
+                self._send_json(payload_resident_briefing())
+            elif path == "/api/chat/history":
+                self._send_json(payload_chat_history())
             else:
                 raise ApiError(404, "unknown-endpoint", f"no route for {path}")
         except ApiError as exc:
@@ -997,6 +1118,9 @@ class Handler(BaseHTTPRequestHandler):
                     str(body.get("model", "")),
                     body.get("history") if isinstance(body.get("history"), list) else [],
                 ))
+            elif path == "/api/inbox/task":
+                body = self._read_json()
+                self._send_json(payload_inbox_task(str(body.get("prompt", body.get("task", "")))))
             elif path == "/api/mcp/call":
                 body = self._read_json()
                 args = body.get("arguments")
