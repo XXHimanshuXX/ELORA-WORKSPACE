@@ -174,7 +174,7 @@ server to serve, so it stays **same-origin** with its own API.
 - **Two sidecars**, each its own process so restarting the console does not kill
   the brain:
   - `python -m elora.dashboard.server --port 8765 --announce` — the console server.
-  - `python run.py --brain omniroute` — the resident brain, writing `.elora/state.json`.
+  - `python run.py --resident` — starts the console server (detached) and the resident brain (omniroute if key present else local), writing `.elora/state.json`.
 - **Read-only console commands** (`src-tauri/src/main.rs`):
   `get_metabolism_state`, `get_now_state`, `get_ledger_tail`, `get_chat_history`,
   plus `send_inbox_task` and `trigger_ripple`.

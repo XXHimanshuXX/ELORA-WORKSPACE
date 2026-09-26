@@ -1347,6 +1347,11 @@ function renderResident(root) {
       dataset: { capability: 'ledger.verify', task: 'verify akashic ledger integrity' },
       onClick: () => dispatchTask('verify akashic ledger integrity', 'ledger.verify'),
     }, icon('shield'), 'Verify ledger'),
+    h('button', {
+      type: 'button', class: 'quick-btn',
+      dataset: { capability: 'browser.read', task: 'read README.md and summarize it' },
+      onClick: () => dispatchTask('read README.md and summarize it', 'browser.read'),
+    }, icon('file-text'), 'Read README'),
   );
 
   const input = h('input', {
