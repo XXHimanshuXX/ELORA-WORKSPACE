@@ -207,7 +207,8 @@ class Daemon:
             "CRITICAL TOOL ROUTING LAWS:\n"
             "1. MEMORY QUESTIONS: If the user asks about ANY previously read webpage, prior content, earlier task, or memory (e.g. 'what was the page you read earlier about?'), you MUST call 'rag.recall' with {\"query\": \"keywords\"}. Never call 'net.read' for memory questions.\n"
             "2. NEW WEBPAGES: If the user explicitly asks to read or browse a NEW URL (e.g. 'read https://...'), call 'net.read' with {\"url\": \"https://...\"}.\n"
-            "3. After receiving the tool result, explain the answer to the user and conclude with DONE.\n\n"
+            "3. GENERAL DIALOGUE: If the user is greeting you, making conversation, or asking a direct question that does not require external tool actions, respond directly and helpfully as ELORA without unnecessary tool calls, concluding with DONE.\n"
+            "4. After receiving tool results, explain the answer clearly to the user and conclude with DONE.\n\n"
             "REAL capability names (hallucinated names are rejected):\n"
             f"{names}\n"
             f"Closed registry: {known}\n"
@@ -321,15 +322,14 @@ class Daemon:
             calls, failures = extract_tool_calls(reply)
 
             if not calls and not failures:
-                if isinstance(reply, str):
-                    trimmed = reply.strip().upper()
-                    if trimmed.startswith("DONE") or trimmed.endswith("DONE") or "\nDONE" in trimmed or "DONE." in trimmed:
-                        task.state = TaskState.DONE
-                        return task
+                # Conversational completion, explanation, or protocol DONE
+                if isinstance(reply, str) and reply.strip():
+                    task.state = TaskState.DONE
+                    return task
                 if any(t.get("ok") for t in task.trace):
                     task.state = TaskState.DONE
                     return task
-                # no tool call, not DONE — ask again
+                # no tool call and empty reply — ask again
                 task.messages.append({
                     "role": "user",
                     "content": "Please emit your tool call using <mcp_call server=\"elora\" tool=\"NAME\">{}</mcp_call> or reply with DONE if complete."
@@ -449,6 +449,10 @@ class Daemon:
                     if msg.get("role") == "assistant":
                         final_answer = msg.get("content", "").strip()
                         break
+
+                clean_answer = re.sub(r'(?:\r?\n|\s)+DONE\.?$', '', final_answer).strip()
+                if clean_answer and clean_answer.upper() != "DONE":
+                    final_answer = clean_answer
 
                 tool_lines = []
                 for msg in task.messages:

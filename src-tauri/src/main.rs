@@ -197,6 +197,7 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 let port = CONSOLE_PORT.to_string();
                 let args = vec![
+                    "-u",
                     "-m",
                     "elora.dashboard.server",
                     "--port",
@@ -228,7 +229,7 @@ fn main() {
             let brain_handle = app.handle();
             let brain_root = root.clone();
             tauri::async_runtime::spawn(async move {
-                let args = vec!["run.py", "--brain", "omniroute"];
+                let args = vec!["-u", "run.py", "--brain", "omniroute"];
                 let cmd = Command::new("python").current_dir(brain_root).args(args);
                 if let Ok((mut rx, _child)) = cmd.spawn() {
                     while let Some(event) = rx.recv().await {
