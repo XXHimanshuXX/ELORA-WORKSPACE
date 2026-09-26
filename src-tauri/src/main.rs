@@ -27,9 +27,8 @@ const CONSOLE_PORT: u16 = 8765;
 /// healthy organism whether or not one was running — the precise failure mode
 /// this project was built to stop.
 ///
-/// This walks up from both the working directory and the executable directory,
-/// and returns None rather than inventing a value.
-fn elora_file(name: &str) -> Option<PathBuf> {
+/// Locate the project root containing .elora directory.
+fn elora_root() -> Option<PathBuf> {
     let mut starts: Vec<PathBuf> = Vec::new();
     if let Ok(cwd) = std::env::current_dir() {
         starts.push(cwd);
@@ -45,14 +44,24 @@ fn elora_file(name: &str) -> Option<PathBuf> {
         for _ in 0..5 {
             match cursor {
                 Some(dir) => {
-                    let candidate = dir.join(".elora").join(name);
-                    if candidate.is_file() {
-                        return Some(candidate);
+                    if dir.join(".elora").is_dir() {
+                        return Some(dir.to_path_buf());
                     }
                     cursor = dir.parent();
                 }
                 None => break,
             }
+        }
+    }
+    None
+}
+
+/// Locate a file inside the project's `.elora` directory.
+fn elora_file(name: &str) -> Option<PathBuf> {
+    if let Some(root) = elora_root() {
+        let candidate = root.join(".elora").join(name);
+        if candidate.is_file() {
+            return Some(candidate);
         }
     }
     None
@@ -178,10 +187,13 @@ fn trigger_ripple(organ: String, kind: String) -> Result<String, String> {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            let root = elora_root().unwrap_or_else(|| PathBuf::from("."));
+
             // The console server. The window's URL points at it, so this has to
             // start first; the frontend tolerates the race by retrying health
             // before it declares the server down.
             let console_handle = app.handle();
+            let server_root = root.clone();
             tauri::async_runtime::spawn(async move {
                 let port = CONSOLE_PORT.to_string();
                 let args = vec![
@@ -191,13 +203,20 @@ fn main() {
                     port.as_str(),
                     "--announce",
                 ];
-                if let Ok((mut rx, _child)) = Command::new("python").args(args).spawn() {
+                let cmd = Command::new("python").current_dir(server_root).args(args);
+                if let Ok((mut rx, _child)) = cmd.spawn() {
                     while let Some(event) = rx.recv().await {
-                        if let CommandEvent::Stdout(line) = event {
-                            println!("[console:server] {line}");
-                            if let Some(window) = console_handle.get_window("main") {
-                                let _ = window.emit("ripple", &line);
+                        match event {
+                            CommandEvent::Stdout(line) => {
+                                println!("[console:server] {line}");
+                                if let Some(window) = console_handle.get_window("main") {
+                                    let _ = window.emit("ripple", &line);
+                                }
                             }
+                            CommandEvent::Stderr(line) => {
+                                eprintln!("[console:server:err] {line}");
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -207,15 +226,23 @@ fn main() {
             // running even if the console server is restarted. Its stdout is what
             // the `ripple` event carries to the overlay.
             let brain_handle = app.handle();
+            let brain_root = root.clone();
             tauri::async_runtime::spawn(async move {
                 let args = vec!["run.py", "--brain", "omniroute"];
-                if let Ok((mut rx, _child)) = Command::new("python").args(args).spawn() {
+                let cmd = Command::new("python").current_dir(brain_root).args(args);
+                if let Ok((mut rx, _child)) = cmd.spawn() {
                     while let Some(event) = rx.recv().await {
-                        if let CommandEvent::Stdout(line) = event {
-                            println!("[resident:sidecar] {line}");
-                            if let Some(window) = brain_handle.get_window("main") {
-                                let _ = window.emit("ripple", &line);
+                        match event {
+                            CommandEvent::Stdout(line) => {
+                                println!("[resident:sidecar] {line}");
+                                if let Some(window) = brain_handle.get_window("main") {
+                                    let _ = window.emit("ripple", &line);
+                                }
                             }
+                            CommandEvent::Stderr(line) => {
+                                eprintln!("[resident:sidecar:err] {line}");
+                            }
+                            _ => {}
                         }
                     }
                 }
