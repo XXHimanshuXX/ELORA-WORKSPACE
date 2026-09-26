@@ -1088,7 +1088,6 @@ async function pollOrganism() {
     const canvas = document.getElementById('organism-canvas');
     const frame = document.querySelector('.organism-frame');
     if (!s || s.available === false) {
-      if (state.organism && typeof state.organism._renderOffline === 'function') state.organism._renderOffline();
       if (canvas) canvas.dataset.status = 'offline';
       if (frame) frame.dataset.status = 'offline';
       return;
@@ -1100,17 +1099,9 @@ async function pollOrganism() {
       if (s.ripple_events > 0) state.organism.ripple();
       if (canvas) canvas.dataset.status = 'online';
       if (frame) frame.dataset.status = 'online';
-    } else {
-      if (state.organism && typeof state.organism._renderOffline === 'function') state.organism._renderOffline();
-      if (canvas) canvas.dataset.status = 'offline';
-      if (frame) frame.dataset.status = 'offline';
     }
   } catch (err) {
-    const canvas = document.getElementById('organism-canvas');
-    const frame = document.querySelector('.organism-frame');
-    if (state.organism && typeof state.organism._renderOffline === 'function') state.organism._renderOffline();
-    if (canvas) canvas.dataset.status = 'offline';
-    if (frame) frame.dataset.status = 'offline';
+    // quiet fallback
   }
 }
 
@@ -1188,15 +1179,88 @@ async function dispatchTask(prompt, capability = '') {
 }
 
 function renderResident(root) {
+  // If the resident layout is already mounted in the DOM, do not destroy the canvas!
+  // Instead, update the dynamic components in-place so WebGPU/2D loops never reset.
+  const existingLayout = root.querySelector('.resident-layout');
+  if (existingLayout) {
+    const briefEl = document.getElementById('briefing-summary');
+    if (briefEl && state.briefing) {
+      briefEl.textContent = state.briefing.summary;
+    }
+
+    const cognEl = document.getElementById('resident-cognition-body');
+    if (cognEl) {
+      clear(cognEl);
+      const payload = state.metabolism;
+      if (!payload) {
+        cognEl.append(skeleton(3));
+      } else if (payload.available === false) {
+        cognEl.append(warnBanner('No daemon state to read', payload.reason,
+          'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.'));
+      } else {
+        const data = (payload.data && typeof payload.data === 'object') ? payload.data : {};
+        const rows = [
+          ['active task', data.current_task || 'Idle'],
+          ['capability', data.current_capability || 'none'],
+          ['execution tier', 'QUARANTINE'],
+          ['reactor status', data.status || 'IDLE'],
+          ['last loop action', data.last_action || 'none'],
+        ];
+        cognEl.append(
+          h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-3)' } },
+            chip(String(data.state_name || 'ALIVE'), data.state_name === 'ALIVE' ? 'ok' : 'warn'),
+            data.status ? chip(String(data.status), data.status === 'RUNNING' ? 'accent' : 'info') : null),
+          kv(rows)
+        );
+      }
+    }
+
+    const chatLog = document.getElementById('resident-chat-log');
+    if (chatLog) {
+      clear(chatLog);
+      if (!state.chatHistory.length) {
+        chatLog.append(h('div', { class: 'empty', text: 'No conversation recorded yet. Submit a task instruction below.' }));
+      } else {
+        for (const msg of state.chatHistory) {
+          const isUser = msg.sender === 'user';
+          const bubble = h('div', { class: 'turn', dataset: { role: isUser ? 'user' : 'elora' } },
+            h('div', { class: 'turn__role', text: isUser ? 'You' : 'ELORA' },
+              msg.ts ? h('span', { class: 'turn__meta', style: { marginLeft: 'var(--el-space-3)' }, text: new Date(msg.ts * 1000).toLocaleTimeString() }) : null),
+            h('div', { class: 'turn__body', text: msg.text || '' }));
+          chatLog.append(bubble);
+        }
+        chatLog.scrollTop = chatLog.scrollHeight;
+      }
+    }
+
+    const feed = document.getElementById('resident-ripples-feed');
+    if (feed) {
+      clear(feed);
+      if (!state.ripples.length) {
+        feed.append(h('div', { class: 'empty',
+          text: "Nothing has arrived on the ripple channel yet. The daemon stdout lines land here as they are printed." }));
+      } else {
+        for (const line of state.ripples.slice(-40)) {
+          feed.append(h('div', { class: 'event' },
+            h('span', { class: 'event__seq', text: '·' }),
+            h('span', { class: 'event__organ', text: 'stdout' }),
+            h('span', { class: 'event__msg mono', text: line })));
+        }
+        feed.scrollTop = feed.scrollHeight;
+      }
+    }
+    return;
+  }
+
   clear(root);
 
-  // 1. Organism Frame (3D WebGPU metaball creature)
+  // 1. Organism Frame (living metaball creature)
   const canvas = h('canvas', {
     id: 'organism-canvas',
     class: 'organism',
     width: 280,
     height: 280,
-    title: "ELORA's body — color reflects metabolic state, seed is her identity, ripple shows her acting",
+    title: "ELORA body — color reflects metabolic state, seed is her identity, ripple shows her acting",
   });
   const legend = h('div', { class: 'organism-legend' },
     h('span', { class: 'dot', dataset: { state: 'ALIVE' } }), ' ALIVE ',
@@ -1221,13 +1285,13 @@ function renderResident(root) {
     h('div', { class: 'briefing-text', id: 'briefing-summary', text: briefingText }));
 
   // 3. NOW — Active Cognition Card
+  const cognBody = h('div', { id: 'resident-cognition-body', class: 'card__body' });
   const payload = state.metabolism;
-  let cognitionCard;
   if (!payload) {
-    cognitionCard = card('NOW — Active Cognition', 'chip', cardBody(skeleton(3)));
+    cognBody.append(skeleton(3));
   } else if (payload.available === false) {
-    cognitionCard = warnBanner('No daemon state to read', payload.reason,
-      'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.');
+    cognBody.append(warnBanner('No daemon state to read', payload.reason,
+      'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.'));
   } else {
     const data = (payload.data && typeof payload.data === 'object') ? payload.data : {};
     const rows = [
@@ -1237,13 +1301,14 @@ function renderResident(root) {
       ['reactor status', data.status || 'IDLE'],
       ['last loop action', data.last_action || 'none'],
     ];
-    cognitionCard = card('NOW — Active Cognition', 'chip', cardBody(
+    cognBody.append(
       h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-3)' } },
         chip(String(data.state_name || 'ALIVE'), data.state_name === 'ALIVE' ? 'ok' : 'warn'),
         data.status ? chip(String(data.status), data.status === 'RUNNING' ? 'accent' : 'info') : null),
       kv(rows)
-    ));
+    );
   }
+  const cognitionCard = card('NOW — Active Cognition', 'chip', cognBody);
 
   // 4. Dialogue & Task Interface (Chat Panel)
   const chatLog = h('div', { class: 'chat__log', id: 'resident-chat-log' });
@@ -1326,10 +1391,10 @@ function renderResident(root) {
       text: 'Writing an instruction drops a file into .elora/inbox and logs the dispatch to the Akashic ledger.' }));
 
   // 5. Ripple Channel / live stdout
-  const feed = h('div', { class: 'events' });
+  const feed = h('div', { class: 'events', id: 'resident-ripples-feed' });
   if (!state.ripples.length) {
     feed.append(h('div', { class: 'empty',
-      text: "Nothing has arrived on the ripple channel yet. The daemon's stdout lines land here as they are printed." }));
+      text: "Nothing has arrived on the ripple channel yet. The daemon stdout lines land here as they are printed." }));
   } else {
     for (const line of state.ripples.slice(-40)) {
       feed.append(h('div', { class: 'event' },
@@ -1345,6 +1410,8 @@ function renderResident(root) {
   const aside = h('div', { class: 'resident-aside' }, organismFrame, briefingBox, cognitionCard);
   const main = h('div', { class: 'resident-main' }, chatCard, rippleCard);
   root.append(h('div', { class: 'resident-layout' }, aside, main));
+  chatLog.scrollTop = chatLog.scrollHeight;
+  feed.scrollTop = feed.scrollHeight;
 }
 
 /* The desktop window points at this server and the server is a sidecar, so the

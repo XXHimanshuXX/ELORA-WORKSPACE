@@ -34,6 +34,7 @@ import os
 import random
 import re
 import time
+from urllib.parse import urljoin
 from dataclasses import dataclass
 from typing import Optional
 
@@ -245,13 +246,14 @@ class DriveLoop:
                 return None
 
             last_event = events[-1]
-            raw_msg = last_event.get("message", "missing_skill")
-            if raw_msg.startswith("https://") or raw_msg.startswith("http://"):
-                candidate_url = raw_msg
-                gap = raw_msg.rstrip("/").split("/")[-1].replace(".py", "")
+            raw_msg = (last_event.get("payload", {}) or {}).get("candidate_url") or last_event.get("message", "missing_skill")
+            url_match = re.search(r'https?://[^\s"\'>]+', str(raw_msg))
+            if url_match:
+                candidate_url = url_match.group(0)
+                gap = candidate_url.rstrip("/").split("/")[-1].replace(".py", "")
             else:
-                gap = re.sub(r'[^a-zA-Z0-9_-]', '_', raw_msg.strip()).strip('_') or "missing_skill"
-                candidate_url = f"{RAW_BASE}{gap}.py"
+                gap = re.sub(r'[^a-zA-Z0-9_-]', '_', str(raw_msg).strip()).strip('_') or "missing_skill"
+                candidate_url = urljoin(RAW_BASE, f"{gap}.py")
         else:
             clean = candidate_url.strip()
             if clean.startswith("https://") or clean.startswith("http://"):
@@ -259,8 +261,14 @@ class DriveLoop:
                 gap = clean.rstrip("/").split("/")[-1].replace(".py", "")
             else:
                 stem = clean if clean.endswith(".py") else f"{clean}.py"
-                candidate_url = f"{RAW_BASE}{stem}"
+                candidate_url = urljoin(RAW_BASE, stem)
                 gap = clean.replace(".py", "")
+
+        # Defensive guard: never permit doubled raw URL prefix
+        if "https://raw.githubusercontent.com/https://" in candidate_url:
+            candidate_url = candidate_url.replace("https://raw.githubusercontent.com/https://", "https://")
+        if "https://raw.githubusercontent.com/http://" in candidate_url:
+            candidate_url = candidate_url.replace("https://raw.githubusercontent.com/http://", "http://")
 
         # Refusal memory cooldown: check if this nutrient was already refused within 7 days
         if self._is_nutrient_refused(candidate_url):

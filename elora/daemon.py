@@ -447,8 +447,22 @@ class Daemon:
                 final_answer = ""
                 for msg in reversed(task.messages):
                     if msg.get("role") == "assistant":
-                        final_answer = msg.get("content", "")
+                        final_answer = msg.get("content", "").strip()
                         break
+
+                tool_lines = []
+                for msg in task.messages:
+                    if msg.get("role") == "user" and str(msg.get("content", "")).startswith("result: "):
+                        res_str = msg.get("content", "")[8:].strip()
+                        if res_str:
+                            tool_lines.append(res_str)
+
+                if final_answer == "DONE" or not final_answer:
+                    if tool_lines:
+                        final_answer = "\n".join(tool_lines)
+                    elif status == "DONE_NO_WORK":
+                        final_answer = "DONE (no tool action taken)"
+
                 if user_text:
                     self._append_chat("user", user_text, task_id=task.id)
                 if final_answer:

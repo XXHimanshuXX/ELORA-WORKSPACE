@@ -25,7 +25,7 @@ def generate_daily_briefing(ledger: Any, vault: Optional[Any] = None, hours: int
     events = []
     if ledger is not None:
         if hasattr(ledger, "recent_events"):
-            events = ledger.recent_events(n=300)
+            events = ledger.recent_events(n=1000)
         elif hasattr(ledger, "events"):
             events = getattr(ledger, "events", [])
 
@@ -44,7 +44,7 @@ def generate_daily_briefing(ledger: Any, vault: Optional[Any] = None, hours: int
             pages_read += 1
         elif organ in ("rag", "doc", "absorb") and kind in ("ingest", "doc_ingested", "skill_absorbed"):
             docs_ingested += 1
-        elif organ in ("crystallizer", "promotion") and kind in ("skill_crystallized", "crystallize", "skill_registered"):
+        elif kind == "skill_crystallized":
             skills_crystallized += 1
         elif kind in ("task_finished", "task_done"):
             tasks_completed += 1
