@@ -207,3 +207,10 @@ class TestExtractToolCalls:
         calls, failures = extract_tool_calls(reply)
         assert calls == []
         assert len(failures) == 1
+
+
+class TestHeartbeatLiveness:
+    def test_heartbeat_loop_runs_without_name_error(self, loop, monkeypatch):
+        monkeypatch.setenv("ELORA_HEARTBEAT_SECONDS", "0")
+        loop["daemon"].run_forever(poll_seconds=0, max_iterations=2)
+        # Succeeded without raising NameError or UnboundLocalError

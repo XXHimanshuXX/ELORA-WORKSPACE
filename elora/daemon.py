@@ -521,6 +521,7 @@ class Daemon:
                 skills_count = len(getattr(getattr(self, "promotion", None), "skills", {})) if getattr(self, "promotion", None) else 1
                 seq = getattr(self.ledger, "seq", 0) if hasattr(self.ledger, "seq") else len(getattr(self.ledger, "events", []))
                 last_action = getattr(self.drive, "last_action", "idle") or "idle"
+                t_str = time.strftime("%H:%M:%S", time.localtime(now))
                 print(f"[{t_str}] heartbeat #{heartbeat_count} | state={state_name} | skills={skills_count} | ledger={seq} | last: {last_action}", flush=True)
 
             if max_iterations is not None and iterations >= max_iterations:
