@@ -450,6 +450,8 @@ def main():
                         help="preflight inspection")
     parser.add_argument("--smoke", action="store_true",
                         help="hermetic end-to-end test")
+    parser.add_argument("--resident", action="store_true",
+                        help="run as resident daemon with console dashboard server")
     parser.add_argument("--brain", choices=["local", "none", "bitnet", "omniroute"],
                         default="omniroute" if os.path.exists(os.path.join(STATE_DIR, "secrets", "omniroute_api_key")) else "local",
                         help="brain backend (default: omniroute if key present, else local)")
@@ -461,6 +463,11 @@ def main():
         sys.exit(preflight())
     if args.smoke:
         sys.exit(smoke())
+
+    if args.resident:
+        start_script = os.path.join(ROOT, "tools", "_start_server.py")
+        if os.path.exists(start_script):
+            subprocess.run([sys.executable, start_script], check=False)
 
     sys.exit(_boot_main(args))
 

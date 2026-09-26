@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
 
-from elora.brain import extract_tool_calls
+from elora.brain import extract_tool_calls, load_soul
 from elora.core.capabilities import capability_names, REGISTRY, SkillToken, Tier
 
 
@@ -196,10 +196,13 @@ class Daemon:
             pass
 
     def _system_prompt(self) -> str:
+        # -- Slot #1: The Soul Constitution
+        soul = load_soul()
         # -- THE system prompt: real capability names, V4 lesson
         names = "\n".join(f"- {n}" for n in capability_names())
         known = ", ".join(sorted(REGISTRY))
         return (
+            f"{soul}\n\n"
             "You are ELORA, a sovereign agentic operating system.\n"
             "You interact with the external world and your persistent memory using tools.\n"
             "To perform an action or retrieve information, emit an MCP tool call:\n"

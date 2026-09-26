@@ -15,9 +15,20 @@ The daemon NEVER imports a model library. It imports this interface.
 
 from __future__ import annotations
 
+import os
 import re
 import json
 from typing import Optional
+
+SOUL_PATH = os.path.join(os.path.dirname(__file__), "..", ".elora", "soul.md")
+
+def load_soul() -> str:
+    """Slot #1 of every prompt. If absent, an honest fallback, never silence."""
+    try:
+        with open(SOUL_PATH, encoding="utf-8") as f:
+            return f.read().strip()
+    except (FileNotFoundError, OSError):
+        return "You are ELORA, a local honest agent."
 
 
 # ----------------------------------------------------------------------

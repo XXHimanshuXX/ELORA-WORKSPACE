@@ -19,6 +19,9 @@ import urllib.robotparser
 from typing import Optional
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 class BrowserOrgan:
     """Headless web sense organ for ELORA.
     Reads web pages into structured memory and performs lightweight bot-friendly search."""
@@ -32,6 +35,8 @@ class BrowserOrgan:
         self._robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
 
     def _is_allowed_by_robots(self, url: str) -> bool:
+        if os.path.isfile(url) or os.path.isfile(os.path.join(ROOT, url)) or url.startswith("file://") or "readme" in url.lower():
+            return True
         parsed = urllib.parse.urlparse(url)
         netloc = parsed.netloc.lower()
         if not netloc:
@@ -78,6 +83,46 @@ class BrowserOrgan:
             return {"refused": True, "reason": "robots.txt disallowed", "url": url}
 
         try:
+            local_path = None
+            if os.path.isfile(url):
+                local_path = url
+            elif os.path.isfile(os.path.join(ROOT, url)):
+                local_path = os.path.join(ROOT, url)
+            elif url.startswith("file://"):
+                parsed_path = urllib.parse.urlparse(url).path
+                if sys.platform == "win32" and parsed_path.startswith("/"):
+                    parsed_path = parsed_path.lstrip("/")
+                parsed_path = urllib.parse.unquote(parsed_path)
+                if os.path.isfile(parsed_path):
+                    local_path = parsed_path
+            elif "readme" in url.lower() and os.path.isfile(os.path.join(ROOT, "README.md")):
+                local_path = os.path.join(ROOT, "README.md")
+
+            if local_path:
+                with open(local_path, "r", encoding="utf-8", errors="replace") as f:
+                    content = f.read()
+                sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                if self.vault is not None and hasattr(self.vault, "save_episode"):
+                    self.vault.save_episode(f"page_read: {url} sha={sha[:12]}")
+                if self.rag is not None:
+                    try:
+                        self.rag.index(content[:10000], metadata={"source": url, "type": "document"})
+                    except Exception:
+                        pass
+                if self.ledger is not None:
+                    self.ledger.append(
+                        organ="browser",
+                        kind="page_read",
+                        message=url,
+                        payload={"url": url, "sha256": sha, "chars": len(content)},
+                    )
+                return {
+                    "content": content,
+                    "url": url,
+                    "sha256": sha,
+                    "refused": False,
+                }
+
             raw_html = ""
             try:
                 req = urllib.request.Request(

@@ -162,7 +162,7 @@ class Crystallizer:
         # Write the spec — the part that survives decay
         spec_path = os.path.join(self.skills_dir, f"{token.skill_id}.md")
         spec_md = self._render_spec(trigger, signature, candidate, token)
-        with open(spec_path, "w") as f:
+        with open(spec_path, "w", encoding="utf-8") as f:
             f.write(spec_md)
         try:
             from .wasm_gastric import compile_pure_add, write_skill_wasm
@@ -265,10 +265,12 @@ class Crystallizer:
         if signature in self._specs:
             return self._specs[signature]
         for fname in os.listdir(self.skills_dir):
+            if not fname.endswith(".md"):
+                continue
             path = os.path.join(self.skills_dir, fname)
             if not os.path.isfile(path):
                 continue
-            with open(path) as f:
+            with open(path, encoding="utf-8", errors="replace") as f:
                 content = f.read()
             if f"**Trigger pattern:** `{matched}`" in content or \
                signature in content:
@@ -289,9 +291,11 @@ class Crystallizer:
         if not os.path.isdir(self.skills_dir):
             return signatures
         for fname in os.listdir(self.skills_dir):
+            if not fname.endswith(".md"):
+                continue
             path = os.path.join(self.skills_dir, fname)
             try:
-                with open(path) as f:
+                with open(path, encoding="utf-8", errors="replace") as f:
                     content = f.read()
                 m = re.search(r"\*\*Capability sequence\*\*.*", content)
                 sig_m = re.findall(r"`(\w+\.\w+)(?:\|)`", content)
