@@ -15,6 +15,7 @@ htmlcov/
 
 # Monkeycode & scratch uploads
 .monkeycode/
+.ohmyagent/
 
 # Rust / Cargo build artifacts
 native/bitnet/target/

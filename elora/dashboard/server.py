@@ -49,7 +49,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -94,6 +94,7 @@ class ApiError(Exception):
 # ----------------------------------------------------------------------
 # OmniRoute
 # ----------------------------------------------------------------------
+
 
 def omniroute_config() -> dict[str, Any]:
     key = ""
@@ -241,6 +242,7 @@ def resolve_model(requested: str = "") -> dict[str, Any]:
 # TTL cache
 # ----------------------------------------------------------------------
 
+
 class Cache:
     """A tiny TTL cache. Stores the error too, so a failure is cached as failure."""
 
@@ -303,6 +305,7 @@ CACHE = Cache()
 # ----------------------------------------------------------------------
 # Endpoint payloads
 # ----------------------------------------------------------------------
+
 
 def payload_health() -> dict[str, Any]:
     return {
@@ -784,6 +787,7 @@ def payload_plugins() -> dict[str, Any]:
 # Organism & Resident
 # ----------------------------------------------------------------------
 
+
 _STATE_INDEX = {
     "CRYPTOBIOSIS": 0, "ALIVE": 1, "AWAKE": 2,
     "ALERT": 3, "ARMED": 4, "DIGESTING": 5
@@ -897,6 +901,7 @@ def payload_inbox_task(prompt: str) -> dict[str, Any]:
 # ----------------------------------------------------------------------
 # Routing
 # ----------------------------------------------------------------------
+
 
 _STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -1113,11 +1118,178 @@ class Handler(BaseHTTPRequestHandler):
 
             if path == "/api/chat":
                 body = self._read_json()
-                self._send_json(payload_chat(
-                    str(body.get("message", "")),
-                    str(body.get("model", "")),
-                    body.get("history") if isinstance(body.get("history"), list) else [],
-                ))
+                message = str(body.get("message", ""))
+                model = str(body.get("model", ""))
+                history = body.get("history") if isinstance(body.get("history"), list) else []
+                
+                # FIXED: Now actually dispatch tool calls through the broker instead of just displaying them
+                from elora.brain import extract_tool_calls, TOOL_CALL_RE
+                from elora.core.broker import Broker, Result, Rejected, Deferred
+                from elora.core.capabilities import SkillToken, Tier
+                from elora.runtime import runtime_manager
+                
+                # Get the broker instance from the runtime manager
+                broker = runtime_manager.broker if hasattr(runtime_manager, 'broker') else None
+                if not broker:
+                    # Fallback: create a minimal broker if not available
+                    from elora.core.metabolism import Metabolism
+                    from elora.vault import Vault
+                    metabolism = Metabolism(cache_dir=os.path.join(STATE_DIR, "metabolism"))
+                    vault = Vault(os.path.join(STATE_DIR, "vault.db"))
+                    broker = Broker(metabolism=metabolism, ledger=None, vault=vault, consent_dir=os.path.join(STATE_DIR, "consent"))
+                
+                # Create a skill token for the dashboard (QUARANTINE tier for safety)
+                token = SkillToken(
+                    skill_id="elora:dashboard",
+                    tier=Tier.QUARANTINE,
+                    workspace=os.getcwd(),
+                    name="elora:dashboard",
+                    issued_at=time.time(),
+                )
+                
+                # Resolve model for consistency with daemon
+                config = omniroute_config()
+                picked = resolve_model(model or config["model"])
+                chosen = picked["model"]
+                
+                # Prepare messages
+                messages = []
+                for turn in (history or [])[-12:]:
+                    if isinstance(turn, dict) and turn.get("role") in ("user", "assistant"):
+                        messages.append({"role": turn["role"], "content": str(turn.get("content", ""))[:8000]})
+                messages.append({"role": "user", "content": message[:16000]})
+                
+                # Tool call execution loop - mirror daemon's handle_task method
+                max_iterations = 8
+                iteration = 0
+                final_content = ""
+                
+                while iteration < max_iterations:
+                    iteration += 1
+                    
+                    # Get completion from the brain
+                    started = time.monotonic()
+                    payload = _omni_request("/v1/chat/completions", timeout=180.0, method="POST", body=json.dumps({
+                        "model": chosen,
+                        "messages": messages,
+                        "stream": False,
+                    }).encode())
+                    latency_ms = int((time.monotonic() - started) * 1000)
+                    
+                    choices = payload.get("choices") if isinstance(payload, dict) else None
+                    if not isinstance(choices, list) or not choices:
+                        raise ApiError(502, "omniroute-no-choices",
+                                       f"completion returned no choices: {json.dumps(payload)[:400]}")
+                    first = choices[0] if isinstance(choices[0], dict) else {}
+                    content = ((first.get("message") or {}).get("content")
+                               if isinstance(first.get("message"), dict) else None)
+                    if content is None:
+                        raise ApiError(502, "omniroute-no-content",
+                                       f"choice carried no message.content: {json.dumps(first)[:400]}")
+                    
+                    # Extract tool calls from the response
+                    calls, failures = extract_tool_calls(content)
+                    
+                    # If no tool calls and no failures, we're done
+                    if not calls and not failures:
+                        # Check if it's a conversational completion or DONE signal
+                        stripped = TOOL_CALL_RE.sub("", content).strip()
+                        stripped = re.sub(r'(?:\r?\n|\s)+DONE\.?$', "", stripped).strip()
+                        if stripped and stripped.upper() != "DONE":
+                            final_content = stripped
+                        break
+                    
+                    # If there are malformed tool calls, report error and continue (like daemon)
+                    if failures:
+                        task.trace.append({"malformed": failures})
+                        task_messages = [{"role": "user", "content": f"malformed tool call: {failures}. "
+                               f"Use a real name from: {', '.join(sorted([n for n in dir(__import__('elora.core.capabilities').REGISTRY) if not n.startswith('_')]))}"}]
+                        # Add the assistant's response and the error message to continue the loop
+                        messages.append({"role": "assistant", "content": content})
+                        messages.extend(task_messages)
+                        
+                        # Update the body for next iteration
+                        body = json.dumps({
+                            "model": chosen,
+                            "messages": messages,
+                            "stream": False,
+                        }).encode()
+                        continue
+                    
+                    # Execute each tool call through the broker
+                    tool_results = []
+                    any_success = False
+                    for call in calls:
+                        name = call.get("tool")
+                        args = call.get("args") or {}
+                        
+                        # Execute through broker
+                        result = broker.request(token, name, args)
+                        
+                        # Process broker result
+                        if isinstance(result, Rejected):
+                            tool_results.append(f"rejected: {result.reason}")
+                        elif isinstance(result, Deferred):
+                            tool_results.append(f"deferred: {result.reason} retry_after={result.retry_after_s}")
+                        else:
+                            # Successful result
+                            stdout = ""
+                            if isinstance(result, Result) and result.execution:
+                                stdout = result.execution.stdout
+                            elif isinstance(result, Result):
+                                stdout = result.stdout
+                            tool_results.append(f"result: {stdout[:4000]}")
+                            any_success = True
+                    
+                    # If any tool calls were successful, we're done (like daemon)
+                    if any_success:
+                        # Return the concatenated successful tool results
+                        final_content = "\n".join([r for r in tool_results if r.startswith("result: ")])
+                        break
+                    
+                    # If we have tool results but none were successful, or we have no tool results
+                    # Feed results back and continue loop (unless max iterations)
+                    if iteration >= max_iterations:
+                        final_content = "Max iterations reached without successful tool execution"
+                        break
+                    
+                    # Feed tool results back into the conversation for next iteration
+                    if tool_results:
+                        # Add tool results to the conversation history
+                        messages.append({"role": "assistant", "content": content})
+                        messages.append({"role": "user", "content": "\n".join(tool_results)})
+                        
+                        # Update the body for next iteration
+                        body = json.dumps({
+                            "model": chosen,
+                            "messages": messages,
+                            "stream": False,
+                        }).encode()
+                        continue
+                    else:
+                        # No tool results, we're done
+                        final_content = content
+                        break
+                
+                # If we exited due to max iterations, use the last content
+                if not final_content and iteration >= max_iterations:
+                    final_content = content if 'content' in locals() else "Max iterations reached"
+                
+                usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+                return {
+                    "reply": final_content,
+                    "model_used": chosen,
+                    "model_chosen_by": picked["chosen_by"],
+                    "model_is_alias": picked["is_alias"],
+                    "model_requested": model or config["model"] or "(unset)",
+                    "latency_ms": latency_ms,
+                    "usage": {
+                        "prompt_tokens": usage.get("prompt_tokens"),
+                        "completion_tokens": usage.get("completion_tokens"),
+                        "total_tokens": usage.get("total_tokens"),
+                    },
+                    "upstream_id": payload.get("id", ""),
+                }
             elif path == "/api/inbox/task":
                 body = self._read_json()
                 self._send_json(payload_inbox_task(str(body.get("prompt", body.get("task", "")))))

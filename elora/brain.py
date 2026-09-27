@@ -138,10 +138,10 @@ class RealBrain(Brain):
 # ----------------------------------------------------------------------
 
 TOOL_CALL_RE = re.compile(
-    r'(?:<tool_call>\s*)?<?mcp_call\s+server="(?P<server>[^"]+)"\s+tool="(?P<tool>[^"]+)">\s*'
+    r'(?:<tool_call>\s*)?<mcp_call\s+server=["\'](?P<server>[^"\']+)["\']\s+tool=["\'](?P<tool>[^"\']+)["\']\s*>\s*'
     r'(?P<body>.*?)'
-    r'</?mcp_call>(?:\s*</tool_call>)?',
-    re.DOTALL,
+    r'</mcp_call>(?:\s*</tool_call>)?',
+    re.DOTALL | re.IGNORECASE,
 )
 
 
@@ -184,4 +184,10 @@ def extract_tool_calls(reply: str) -> list[dict]:
                     failures.append(m.group(0))
             except Exception:
                 failures.append(m.group(0))
+    # A displayed <mcp_call> that the regex missed is a hand, not chat.
+    # Never let it fall through as a conversational reply (V4 disease).
+    if calls or failures:
+        return calls, failures
+    if reply and "<mcp_call" in reply.lower():
+        failures.append(reply)
     return calls, failures

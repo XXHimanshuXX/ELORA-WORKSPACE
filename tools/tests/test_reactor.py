@@ -106,7 +106,7 @@ class TestFullLoop:
         drop(loop["inbox"], "runaway test")
         tasks = loop["daemon"].tick()
         assert tasks[0].state.name == "FAILED"
-        assert tasks[0].iterations <= 9      # max_iterations + 1
+        assert tasks[0].iterations <= 25     # owner will is 24 + 1; drive stays at 8
 
     def test_urgency_orders_execution(self, loop, tmp_path):
         drop(loop["inbox"], "do this eventually", "low.txt")

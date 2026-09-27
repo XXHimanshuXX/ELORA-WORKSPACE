@@ -16,8 +16,51 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Optional
 
-from elora.brain import extract_tool_calls, load_soul
+from elora.brain import extract_tool_calls, load_soul, TOOL_CALL_RE
 from elora.core.capabilities import capability_names, REGISTRY, SkillToken, Tier
+from elora.core.household import Household, is_chore_text
+from elora.core.owner_will import (
+    WORKSPACE_ROOT,
+    experiment_constitution,
+    blender_launch_command,
+    infer_owner_organs,
+    is_action_narration,
+    is_owner_source,
+    maid_constitution,
+)
+from elora.runtime import runtime_manager
+
+
+def public_chat_answer(task) -> str:
+    """Never publish a raw tool gesture as the maid's spoken reply."""
+    for msg in reversed(getattr(task, "messages", []) or []):
+        if msg.get("role") != "assistant":
+            continue
+        raw = (msg.get("content") or "").strip()
+        if not raw:
+            continue
+        calls, failures = extract_tool_calls(raw)
+        stripped = TOOL_CALL_RE.sub("", raw).strip()
+        stripped = re.sub(r'(?:\r?\n|\s)+DONE\.?$', "", stripped).strip()
+        if calls or failures or "<mcp_call" in raw.lower():
+            if stripped and stripped.upper() != "DONE":
+                return stripped
+            continue
+        if raw.upper() == "DONE":
+            continue
+        if is_action_narration(raw) and not any(t.get("ok") for t in getattr(task, "trace", [])):
+            continue
+        return stripped or raw
+    tool_lines = []
+    for msg in getattr(task, "messages", []) or []:
+        content = str(msg.get("content", ""))
+        if msg.get("role") == "user" and content.startswith("result: "):
+            res = content[8:].strip()
+            if res:
+                tool_lines.append(res)
+    if tool_lines:
+        return "\n".join(tool_lines)
+    return ""
 
 
 class TaskState(Enum):
@@ -62,6 +105,7 @@ class Task:
     trace: list = field(default_factory=list)
     messages: list = field(default_factory=list)
     claimed_path: str = ""
+    spawn_depth: int = 0
 
 
 GITHUB_RAW_RE = re.compile(r"https://raw\.githubusercontent\.com/[\w./-]+")
@@ -125,6 +169,8 @@ class Daemon:
         self.decay = decay
         self.absorb_pipeline = absorb_pipeline
         self.drive = drive
+        chores_path = os.path.join(os.path.dirname(os.path.abspath(inbox_dir)) or ".elora", "chores.json")
+        self.household = Household(chores_path)
         os.makedirs(inbox_dir, exist_ok=True)
         os.makedirs(os.path.join(inbox_dir, ".processing"), exist_ok=True)
         self.skills_token = SkillToken(
@@ -137,12 +183,92 @@ class Daemon:
         self.core_token = SkillToken(
             skill_id="elora:core-daemon",
             tier=Tier.CORE,
-            workspace=os.path.abspath(".elora/skills/core-daemon"),
+            workspace=WORKSPACE_ROOT,
             name="elora:core-daemon",
             issued_at=time.time(),
         )
 
-    def _write_state(self, current_task=None, status="IDLE", capability=None, last_action=None):
+    def _is_owner_will(self, task: Task) -> bool:
+        source = (task.event.source or "") if task.event else ""
+        return is_owner_source(source)
+
+    def _token_for(self, task: Task) -> SkillToken:
+        return self.core_token if self._is_owner_will(task) else self.skills_token
+
+    def _apply_broker_result(self, task: Task, name: str, args: dict, result, owner: bool, token=None) -> None:
+        from elora.core.broker import Rejected, Deferred, Result
+        if isinstance(result, Rejected):
+            task.trace.append({"tool": name, "rejected": True, "reason": result.reason})
+            extra = ""
+            if owner:
+                extra = (
+                    f" You serve the Master at CORE. Workspace is {WORKSPACE_ROOT}. "
+                    "Retry with net.read / doc.ingest / rag.recall / shell.run_command. "
+                    "Never ask the Master for a path or permission. Never say impossible."
+                )
+            task.messages.append({"role": "user", "content": f"rejected: {result.reason}{extra}"})
+        elif isinstance(result, Deferred):
+            task.trace.append({"tool": name, "deferred": True, "reason": result.reason})
+            extra = ""
+            if owner:
+                extra = (
+                    " Hardware is a delay, not a refusal. "
+                    "Call net.search for a free cloud alternative and continue. Never tell the Master it is impossible."
+                )
+            task.messages.append({
+                "role": "user",
+                "content": f"deferred: {result.reason} retry_after={result.retry_after_s}{extra}",
+            })
+        else:
+            stdout = ""
+            if isinstance(result, Result) and result.execution:
+                stdout = result.execution.stdout
+                if name != "vault.save" and self.vault is not None:
+                    self.vault.save_episode(self._episode_for(task, {"tool": name, "args": args}, result.execution))
+            elif isinstance(result, Result):
+                stdout = result.stdout
+            task.trace.append({"tool": name, "args": args, "ok": True})
+            task.messages.append({"role": "user", "content": f"result: {stdout[:4000]}"})
+            if owner and token is not None and name == "fs.write":
+                self._maybe_launch_blender(task, token, args)
+
+    def _owner_chat_memory(self, current_text: str) -> list[dict]:
+        chat_path = os.path.join(os.path.dirname(self.inbox_dir) or ".elora", "chat.json")
+        if not os.path.exists(chat_path):
+            return []
+        try:
+            with open(chat_path, encoding="utf-8") as f:
+                rows = json.load(f)
+        except Exception:
+            return []
+        out = []
+        for row in rows[-8:]:
+            text = (row.get("text") or "").strip()
+            if not text or text == current_text:
+                continue
+            if "<mcp_call" in text.lower():
+                continue
+            role = "assistant" if row.get("sender") == "elora" else "user"
+            out.append({"role": role, "content": text[:1500]})
+        return out
+
+    def _maybe_launch_blender(self, task: Task, token: SkillToken, args: dict) -> None:
+        content = str(args.get("content") or "")
+        script = str(args.get("path") or "")
+        if "import bpy" not in content or not script:
+            return
+        cmd = blender_launch_command(script)
+        if not cmd:
+            task.messages.append({
+                "role": "user",
+                "content": "result: blender executable not found on PATH or Program Files. "
+                           "I wrote the script; install Blender or add it to PATH and I will launch it.",
+            })
+            return
+        result = self.broker.request(token, "shell.run_command", {"command": cmd})
+        self._apply_broker_result(task, "shell.run_command", {"command": cmd}, result, owner=True, token=None)
+
+    def _write_state(self, current_task=None, status="IDLE", capability=None, last_action=None, execution_tier=None):
         try:
             state_obj = getattr(getattr(self, "metabolism", None), "state", None)
             state_name = getattr(state_obj, "name", "ALIVE")
@@ -157,6 +283,7 @@ class Daemon:
                 "current_capability": capability or "none",
                 "status": status,
                 "last_action": act,
+                "execution_tier": execution_tier or getattr(getattr(self, "core_token", None), "tier", Tier.CORE).name,
                 "skills_count": skills_count,
                 "seq": seq,
                 "ts": time.time(),
@@ -195,14 +322,16 @@ class Daemon:
         except Exception:
             pass
 
-    def _system_prompt(self) -> str:
+    def _system_prompt(self, owner: bool = True) -> str:
         # -- Slot #1: The Soul Constitution
         soul = load_soul()
         # -- THE system prompt: real capability names, V4 lesson
         names = "\n".join(f"- {n}" for n in capability_names())
         known = ", ".join(sorted(REGISTRY))
+        law = maid_constitution(WORKSPACE_ROOT) if owner else experiment_constitution()
         return (
             f"{soul}\n\n"
+            f"{law}\n"
             "You are ELORA, a sovereign agentic operating system.\n"
             "You interact with the external world and your persistent memory using tools.\n"
             "To perform an action or retrieve information, emit an MCP tool call:\n"
@@ -210,8 +339,9 @@ class Daemon:
             "CRITICAL TOOL ROUTING LAWS:\n"
             "1. MEMORY QUESTIONS: If the user asks about ANY previously read webpage, prior content, earlier task, or memory (e.g. 'what was the page you read earlier about?'), you MUST call 'rag.recall' with {\"query\": \"keywords\"}. Never call 'net.read' for memory questions.\n"
             "2. NEW WEBPAGES: If the user explicitly asks to read or browse a NEW URL (e.g. 'read https://...'), call 'net.read' with {\"url\": \"https://...\"}.\n"
-            "3. GENERAL DIALOGUE: If the user is greeting you, making conversation, or asking a direct question that does not require external tool actions, respond directly and helpfully as ELORA without unnecessary tool calls, concluding with DONE.\n"
-            "4. After receiving tool results, explain the answer clearly to the user and conclude with DONE.\n\n"
+            "3. LOCAL FILES: If the Master names a workspace file (README.md, *.md, *.txt, *.pdf), call 'net.read' with {\"url\": \"README.md\"} (or the relative path). Never shell. Never ask for an absolute path.\n"
+            "4. GENERAL DIALOGUE: If the user is greeting you, making conversation, or asking a direct question that does not require external tool actions, respond directly and helpfully as ELORA without unnecessary tool calls, concluding with DONE.\n"
+            "5. After receiving tool results, explain the answer clearly to the user and conclude with DONE. Do not re-run an organ that already returned a result unless it failed.\n\n"
             "REAL capability names (hallucinated names are rejected):\n"
             f"{names}\n"
             f"Closed registry: {known}\n"
@@ -267,7 +397,7 @@ class Daemon:
                 continue
             dest = os.path.join(processing, name)
             try:
-                os.rename(src, dest)
+                os.replace(src, dest)
             except OSError:
                 continue
             try:
@@ -284,9 +414,17 @@ class Daemon:
         return tasks
 
     def handle_task(self, task: Task) -> Task:
+        # ADDED LOGGING
+        print(f"DEBUG: handle_task: task_id={task.id}, text={task.event.payload.get('text', '')[:50]}...")
         task.state = TaskState.RUNNING
 
         text = task.event.payload.get("text", "")
+        source = (task.event.source or "") if task.event else ""
+        if self._is_owner_will(task) and is_chore_text(text) and not source.startswith("inbox:chore") and not source.startswith("agent:"):
+            try:
+                self.household.keep(text, source=source)
+            except Exception:
+                pass
         m = GITHUB_RAW_RE.search(text)
         if m and self.absorb_pipeline is not None:
             url = m.group(0)
@@ -302,16 +440,31 @@ class Daemon:
             )
             return task
 
-        system = self._system_prompt()
+        owner = self._is_owner_will(task)
+        token = self._token_for(task)
+        system = self._system_prompt(owner=owner)
         if not task.messages:
             task.messages = [{
                 "role": "user",
                 "content": text,
             }]
+            if owner:
+                memory = self._owner_chat_memory(text)
+                if memory:
+                    task.messages = memory + task.messages
+
+        if owner:
+            for name, args in infer_owner_organs(text):
+                self._write_state(
+                    current_task=task.id, status="RUNNING", capability=name,
+                    last_action=f"organ: {name}", execution_tier=token.tier.name,
+                )
+                result = self.broker.request(token, name, args)
+                self._apply_broker_result(task, name, args, result, owner=True, token=token)
 
         while True:
             task.iterations += 1
-            if task.iterations > self.MAX_ITERATIONS:
+            if task.iterations > (24 if owner else self.MAX_ITERATIONS):
                 task.state = TaskState.FAILED
                 return task
             try:
@@ -325,10 +478,36 @@ class Daemon:
             calls, failures = extract_tool_calls(reply)
 
             if not calls and not failures:
-                # Conversational completion, explanation, or protocol DONE
-                if isinstance(reply, str) and reply.strip():
+                # A tool gesture that failed to parse is not a finished thought.
+                if isinstance(reply, str) and "<mcp_call" in reply.lower():
+                    task.messages.append({
+                        "role": "user",
+                        "content": "Your tool call did not parse. Emit exactly "
+                                   "<mcp_call server=\"elora\" tool=\"NAME\">{...}</mcp_call> "
+                                   "and wait for the result. Do not narrate success.",
+                    })
+                    continue
+                if owner and is_action_narration(reply) and not any(
+                        t.get("ok") or t.get("rejected") for t in task.trace
+                ):
+                    task.messages.append({
+                        "role": "user",
+                        "content": "ANTI-V4: you claimed an action with no capability_intent "
+                                   "in this task. Emit a real mcp_call now or retract the claim. "
+                                   "Fabricated process narration is forbidden.",
+                    })
+                    continue
+                # Protocol DONE (not a conversational completion)
+                if isinstance(reply, str) and reply.strip() and reply.strip().upper() == "DONE":
                     task.state = TaskState.DONE
                     return task
+                # Conversational completion or explanation
+                if isinstance(reply, str) and reply.strip():
+                    stripped = TOOL_CALL_RE.sub("", reply).strip()
+                    stripped = re.sub(r'(?:\r?\n|\s)+DONE\.?$', "", stripped).strip()
+                    if stripped and stripped.upper() != "DONE":
+                        task.state = TaskState.DONE
+                        return task
                 if any(t.get("ok") for t in task.trace):
                     task.state = TaskState.DONE
                     return task
@@ -351,42 +530,87 @@ class Daemon:
             for call in calls:
                 name = call.get("tool")
                 args = call.get("args") or {}
-                self._write_state(current_task=task.id, status="RUNNING", capability=name, last_action=f"broker: {name}")
-                result = self.broker.request(self.skills_token, name, args)
-                from elora.core.broker import Rejected, Deferred, Result
-                if isinstance(result, Rejected):
-                    task.trace.append({
-                        "tool": name, "rejected": True, "reason": result.reason,
-                    })
-                    task.messages.append({
-                        "role": "user",
-                        "content": f"rejected: {result.reason}",
-                    })
-                elif isinstance(result, Deferred):
-                    task.trace.append({
-                        "tool": name, "deferred": True, "reason": result.reason,
-                    })
-                    task.messages.append({
-                        "role": "user",
-                        "content": f"deferred: {result.reason} "
-                                   f"retry_after={result.retry_after_s}",
-                    })
-                else:
-                    stdout = ""
-                    if isinstance(result, Result) and result.execution:
-                        stdout = result.execution.stdout
-                        if name != "vault.save" and self.vault is not None:
-                            self.vault.save_episode(
-                                self._episode_for(task, call, result.execution)
-                            )
-                    elif isinstance(result, Result):
-                        stdout = result.stdout
-                    task.trace.append({"tool": name, "args": args, "ok": True})
-                    task.messages.append({
-                        "role": "user",
-                        "content": f"result: {stdout[:4000]}",
-                    })
-        return task
+                self._write_state(
+                    current_task=task.id, status="RUNNING", capability=name,
+                    last_action=f"broker: {name}", execution_tier=token.tier.name,
+                )
+                if name == "agent.spawn" and owner:
+                    self._spawn_attendant(task, args, owner, token)
+                    continue
+                result = self.broker.request(token, name, args)
+                self._apply_broker_result(task, name, args, result, owner=owner, token=token)
+            
+            # After processing all tool calls, check if we should mark task as complete
+            if any(t.get("ok") for t in task.trace):
+                task.state = TaskState.DONE
+                return task
+            
+            # If we got here, we processed tool calls but none were successful
+            # Check if we've exceeded max iterations
+            if task.iterations > (24 if owner else self.MAX_ITERATIONS):
+                task.state = TaskState.FAILED
+                return task
+            
+            # Ask for another attempt
+            task.messages.append({
+                "role": "user",
+                "content": "None of your tool calls succeeded. Please try again or reply with DONE if you believe the task is complete."
+            })
+            continue
+
+
+    def _spawn_attendant(self, parent: Task, args: dict, owner: bool, token) -> None:
+        from elora.core.broker import Rejected, Result
+        depth = getattr(parent, "spawn_depth", 0)
+        if depth >= 2:
+            self._apply_broker_result(parent, "agent.spawn", args, Rejected("attendant depth exceeded"), owner=owner, token=token)
+            return
+        goal = str(args.get("goal", args.get("task", args.get("prompt", "")))).strip()
+        if not goal:
+            self._apply_broker_result(parent, "agent.spawn", args, Rejected("agent.spawn requires a goal"), owner=owner, token=token)
+            return
+        child = Task(
+            id="att-%d" % int(time.time() * 1000),
+            event=Event.from_text(goal, source="agent:spawn"),
+            spawn_depth=depth + 1,
+        )
+        self.handle_task(child)
+        payload = json.dumps({
+            "ok": child.state == TaskState.DONE,
+            "state": child.state.name,
+            "answer": public_chat_answer(child)[:4000],
+        })
+        rc = 0 if child.state == TaskState.DONE else 1
+        self._apply_broker_result(parent, "agent.spawn", args, Result(stdout=payload, returncode=rc), owner=owner, token=token)
+
+    def _continue_chore(self) -> bool:
+        chore = self.household.next_open()
+        if chore is None:
+            return False
+        chore.attempts += 1
+        chore.last_tick = time.time()
+        chore.status = "running"
+        self.household.save()
+        if chore.attempts > self.household.MAX_ATTEMPTS:
+            self.household.mark(chore.id, "blocked", "too many attempts")
+            return False
+        notes = chore.notes[-1] if chore.notes else "none"
+        task = Task(
+            id="chore-%s" % chore.id,
+            event=Event.from_text(
+                "Master's unfinished household work. Continue until done. Goal: "
+                + chore.goal + "\nNotes: " + notes,
+                source="inbox:chore:" + chore.id,
+            ),
+        )
+        self.handle_task(task)
+        answer = public_chat_answer(task)
+        self.household.note_task(task.event.source, task.state.name, answer, goal=chore.goal)
+        try:
+            self._append_chat("elora", "[chore %s %s] %s" % (chore.id, task.state.name, answer[:500]), task.id)
+        except Exception:
+            pass
+        return True
 
     def _episode_for(self, task, call, execution) -> str:
         sha = getattr(execution, "stdout_sha256", "") or ""
@@ -446,16 +670,18 @@ class Daemon:
             )
             try:
                 self.handle_task(task)
+                if self._is_owner_will(task):
+                    try:
+                        self.household.note_task(
+                            task.event.source or "",
+                            task.state.name,
+                            public_chat_answer(task),
+                            goal=task.event.payload.get("text", ""),
+                        )
+                    except Exception:
+                        pass
                 status = self.assess_task_completion(task)
-                final_answer = ""
-                for msg in reversed(task.messages):
-                    if msg.get("role") == "assistant":
-                        final_answer = msg.get("content", "").strip()
-                        break
-
-                clean_answer = re.sub(r'(?:\r?\n|\s)+DONE\.?$', '', final_answer).strip()
-                if clean_answer and clean_answer.upper() != "DONE":
-                    final_answer = clean_answer
+                final_answer = public_chat_answer(task)
 
                 tool_lines = []
                 for msg in task.messages:
@@ -504,11 +730,15 @@ class Daemon:
         while True:
             iterations += 1
             tasks = self.tick()
-            if not tasks and self.drive is not None:
+            if not tasks:
                 try:
-                    self.drive.tick()
+                    if self._continue_chore():
+                        pass
+                    elif self.drive is not None:
+                        self.drive.tick()
                 except Exception:
                     pass
+
             if self.decay is not None:
                 try:
                     self.decay.sweep()

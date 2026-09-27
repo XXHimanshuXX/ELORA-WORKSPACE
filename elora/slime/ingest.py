@@ -15,6 +15,9 @@ import sys
 from typing import Optional
 
 
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
 class IngestionPipeline:
     """Multimodal file ingestion into ELORA's RAG and Vault memory."""
 
@@ -41,6 +44,15 @@ class IngestionPipeline:
 
     def ingest(self, path: str) -> dict:
         """Ingests a file into RAG and Vault memory."""
+        if path and not os.path.exists(path):
+            candidate = os.path.join(ROOT, path)
+            if os.path.exists(candidate):
+                path = candidate
+            else:
+                base = os.path.basename(path)
+                candidate = os.path.join(ROOT, base)
+                if os.path.exists(candidate):
+                    path = candidate
         if not path or not os.path.exists(path):
             return {"error": f"file not found: {path}", "refused": True}
 

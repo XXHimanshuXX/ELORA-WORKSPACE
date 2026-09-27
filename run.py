@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 import time
 
 # Resolve repo root no matter where we're invoked from
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = HERE
 sys.path.insert(0, HERE)
 
 STATE_DIR = os.path.join(HERE, ".elora")

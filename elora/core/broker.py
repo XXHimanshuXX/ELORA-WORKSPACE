@@ -22,7 +22,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen, Request
 
 from .armored_subprocess import armored_run, ExecutionResult
-from .capabilities import REGISTRY, TIER_CEILING, Tier, SkillToken, Risk
+from .capabilities import REGISTRY, TIER_CEILING, Tier, SkillToken, Risk, CAPABILITY_ALIASES
 from .metabolism import Metabolism, Deferred as MetDeferred
 
 
@@ -75,6 +75,7 @@ class Broker:
         Rejections are never logged as executions.
         """
         # 1. EXIST — V4 killer: hallucinated names die here, with the truth
+        capability = CAPABILITY_ALIASES.get(capability, capability)
         cap = REGISTRY.get(capability)
         if cap is None:
             known = ", ".join(sorted(REGISTRY))
@@ -163,12 +164,33 @@ class Broker:
     # ------------------------------------------------------------------
 
     def _validate(self, cap, args: dict, token: SkillToken | None = None):
+        if cap.name == "git.commit":
+            if token is None or token.tier.value < Tier.CORE.value:
+                return Rejected("only CORE may git.commit")
+            if not str(args.get("message", args.get("m", ""))).strip():
+                return Rejected("git.commit requires a message")
+        if cap.name in ("chore.keep", "agent.spawn"):
+            if token is None or token.tier.value < Tier.TRUSTED.value:
+                return Rejected("only the household (TRUSTED+) may keep chores or send attendants")
+        if cap.name == "chore.keep":
+            if not str(args.get("goal", args.get("text", args.get("task", "")))).strip():
+                return Rejected("chore.keep requires a goal")
+        if cap.name == "agent.spawn":
+            return Rejected("agent.spawn must run in the reactor")
         if cap.name == "fs.write":
             path = args.get("path", "")
-            if not self._path_in_jail(path, cap.allowed_roots):
+            roots = tuple(cap.allowed_roots)
+            if token is not None and getattr(token, "tier", None) is not None:
+                if token.tier.value >= Tier.TRUSTED.value:
+                    extra = []
+                    if token.workspace:
+                        extra.append(os.path.abspath(token.workspace))
+                    extra.append(os.path.abspath("."))
+                    roots = roots + tuple(extra)
+            if not self._path_in_jail(path, roots):
                 return Rejected(
                     f"path '{path}' is not inside approved roots "
-                    f"{list(cap.allowed_roots)}"
+                    f"{list(roots)}"
                 )
         if cap.name == "net.fetch":
             url = args.get("url", "")
@@ -343,6 +365,48 @@ class Broker:
             query = args.get("query", args.get("q", ""))
             res = browser.search(query)
             return _trivial_result(json.dumps(res), token.workspace)
+        if cap.name in ("chore.keep", "chore.status"):
+            import json
+            from elora.core.household import Household
+            book = Household(os.path.join(self.vault_root, "chores.json"))
+            if cap.name == "chore.status":
+                return _trivial_result(json.dumps(book.status()), token.workspace or ".")
+            goal = str(args.get("goal", args.get("text", args.get("task", "")))).strip()
+            chore = book.keep(goal, source="broker")
+            return _trivial_result(json.dumps({"ok": True, "id": chore.id, "goal": chore.goal}),
+                                   token.workspace or ".")
+        if cap.name == "plugin.list":
+            import json
+            from elora.core.mcp_client import DEFAULT_SERVERS
+            return _trivial_result(json.dumps({
+                "ok": True,
+                "servers": sorted(DEFAULT_SERVERS.keys()),
+            }), token.workspace or ".")
+        if cap.name == "plugin.call":
+            import json
+            from elora.core.mcp_client import McpError, call_tool
+            server = str(args.get("server", args.get("mcp", "omniroute")))
+            tool = str(args.get("tool", args.get("name", "")))
+            arguments = args.get("arguments", args.get("args", {})) or {}
+            try:
+                result = call_tool(server, tool, arguments)
+                payload = {
+                    "ok": not getattr(result, "is_error", False),
+                    "server": server,
+                    "tool": tool,
+                    "text": getattr(result, "text", str(result)),
+                    "is_error": bool(getattr(result, "is_error", False)),
+                }
+            except McpError as exc:
+                payload = {"ok": False, "server": server, "tool": tool, "error": str(exc)}
+            return _trivial_result(json.dumps(payload), token.workspace or ".")
+        if cap.name in ("ws.list", "code.read", "code.search", "code.edit",
+                        "git.status", "git.diff", "git.commit"):
+            import json
+            from elora.slime.hands import dispatch as hands_dispatch
+            root = token.workspace if token.tier.value < Tier.TRUSTED.value else None
+            res = hands_dispatch(cap.name, args, root=root)
+            return _trivial_result(json.dumps(res), token.workspace or ".")
         if cap.name == "doc.ingest":
             import json
             from elora.slime.ingest import IngestionPipeline

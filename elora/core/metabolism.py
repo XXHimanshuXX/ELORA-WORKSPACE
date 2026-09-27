@@ -79,6 +79,9 @@ PROFILES: dict[State, StateProfile] = {
             "vault.recall", "vault.save",
             "schedule.tick", "screen.capture", "fs.write", "net.fetch",
             "screen.control", "net.read", "net.search", "doc.ingest", "rag.recall",
+            "ws.list", "code.read", "code.search", "code.edit",
+            "git.status", "git.diff", "git.commit",
+            "chore.keep", "chore.status", "agent.spawn", "plugin.list", "plugin.call",
         }),
     ),
     State.AWAKE: StateProfile(

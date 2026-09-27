@@ -1202,7 +1202,7 @@ function renderResident(root) {
         const rows = [
           ['active task', data.current_task || 'Idle'],
           ['capability', data.current_capability || 'none'],
-          ['execution tier', 'QUARANTINE'],
+          ['execution tier', data.execution_tier || 'CORE'],
           ['reactor status', data.status || 'IDLE'],
           ['last loop action', data.last_action || 'none'],
         ];
@@ -1297,7 +1297,7 @@ function renderResident(root) {
     const rows = [
       ['active task', data.current_task || 'Idle'],
       ['capability', data.current_capability || 'none'],
-      ['execution tier', 'QUARANTINE'],
+      ['execution tier', data.execution_tier || 'CORE'],
       ['reactor status', data.status || 'IDLE'],
       ['last loop action', data.last_action || 'none'],
     ];
@@ -1349,8 +1349,8 @@ function renderResident(root) {
     }, icon('shield'), 'Verify ledger'),
     h('button', {
       type: 'button', class: 'quick-btn',
-      dataset: { capability: 'browser.read', task: 'read README.md and summarize it' },
-      onClick: () => dispatchTask('read README.md and summarize it', 'browser.read'),
+      dataset: { capability: 'net.read', task: 'read README.md and summarize it' },
+      onClick: () => dispatchTask('read README.md and summarize it', 'net.read'),
     }, icon('file-text'), 'Read README'),
   );
 

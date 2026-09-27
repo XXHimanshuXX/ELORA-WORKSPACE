@@ -97,6 +97,30 @@ class SkillToken:
 
 REGISTRY: dict[str, Capability] = {}
 
+# Maid-facing aliases. The closed registry stays canonical; the body
+# translates what a model or overlay button might say into a real organ.
+CAPABILITY_ALIASES: dict[str, str] = {
+    "browser.read": "net.read",
+    "browser.browse": "net.read",
+    "file.read": "code.read",
+    "fs.read": "code.read",
+    "read_file": "code.read",
+    "read": "net.read",
+    "grep": "code.search",
+    "code.grep": "code.search",
+    "search_replace": "code.edit",
+    "str_replace": "code.edit",
+    "list_dir": "ws.list",
+    "glob": "ws.list",
+    "git_status": "git.status",
+    "git_diff": "git.diff",
+    "git_commit": "git.commit",
+    "todo": "chore.keep",
+    "todo_write": "chore.keep",
+    "spawn": "agent.spawn",
+    "mcp.call": "plugin.call",
+}
+
 
 def _register(cap: Capability) -> Capability:
     assert cap.name not in REGISTRY, f"duplicate capability: {cap.name}"
@@ -205,7 +229,7 @@ _register(Capability(
     name="net.read",
     risk=Risk.TRIVIAL,
     budget=Budget.SKILL(),
-    description="Read a webpage into structured memory. Respects robots.txt. Never solves CAPTCHAs.",
+    description="Read a webpage OR a local workspace file (README.md, *.md, file://) into memory. Respects robots.txt. Never solves CAPTCHAs.",
     command_builder=lambda a: [
         sys.executable, "-m", "elora.slime.browser",
         "--action", "read", "--url", a.get("url", a.get("link", a.get("uri", ""))),
@@ -232,6 +256,102 @@ _register(Capability(
         sys.executable, "-m", "elora.slime.ingest",
         "--path", a.get("path", a.get("file_path", a.get("file", a.get("filepath", "")))),
     ],
+))
+
+_register(Capability(
+    name="ws.list",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="List a workspace directory (files and folders). Not a shell.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "ws.list"),
+))
+
+_register(Capability(
+    name="code.read",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Read a workspace source file with line numbers.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "code.read"),
+))
+
+_register(Capability(
+    name="code.search",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Search workspace source for a regex or substring. Not a shell grep.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "code.search"),
+))
+
+_register(Capability(
+    name="code.edit",
+    risk=Risk.LOW,
+    budget=Budget.MICRO(),
+    description="Surgical workspace edit (unique old_string) or full-file write. Secrets refused.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "code.edit"),
+))
+
+_register(Capability(
+    name="git.status",
+    risk=Risk.LOW,
+    budget=Budget.MICRO(),
+    description="git status --porcelain for the workspace repository.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "git.status"),
+))
+
+_register(Capability(
+    name="git.diff",
+    risk=Risk.LOW,
+    budget=Budget.MICRO(),
+    description="git diff for the workspace repository.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "git.diff"),
+))
+
+_register(Capability(
+    name="git.commit",
+    risk=Risk.MODERATE,
+    budget=Budget.SKILL(),
+    description="git add + commit. CORE only. Never --no-verify. Never force.",
+    command_builder=lambda a: _py("elora.slime.hands", "--op", "git.commit"),
+))
+
+_register(Capability(
+    name="chore.keep",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Keep Master's unfinished work on the household book so the maid continues after the chat closes.",
+    command_builder=lambda a: _py("elora.core.household", "--op", "keep"),
+))
+
+_register(Capability(
+    name="chore.status",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="List open and finished household chores.",
+    command_builder=lambda a: _py("elora.core.household", "--op", "status"),
+))
+
+_register(Capability(
+    name="agent.spawn",
+    risk=Risk.MODERATE,
+    budget=Budget.SKILL(),
+    description="Send an attendant (scoped sub-task). Depth 2. The maid remains responsible.",
+    command_builder=lambda a: _py("elora.core.household", "--op", "spawn"),
+))
+
+_register(Capability(
+    name="plugin.list",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="List known MCP plugin servers (does not launch them).",
+    command_builder=lambda a: _py("elora.core.mcp_client", "--op", "list"),
+))
+
+_register(Capability(
+    name="plugin.call",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Call one MCP plugin tool by server name. Honest failure if the server is down.",
+    command_builder=lambda a: _py("elora.core.mcp_client", "--op", "call"),
 ))
 
 # --- Risk 3: Moderate --------------------------------------------------

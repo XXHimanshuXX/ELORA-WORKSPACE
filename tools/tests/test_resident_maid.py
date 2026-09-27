@@ -155,3 +155,112 @@ def test_organism_state_and_shader(tmp_path):
     assert "@fragment" in src and "fn fs" in src
     assert "struct Uniforms" in src
     assert "sdf_blob" in src
+
+
+def test_readme_button_uses_net_read_not_browser_read():
+    """The Read README organ is net.read. browser.read is not a real capability."""
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    app_js = open(os.path.join(root, "overlay", "app.js"), encoding="utf-8").read()
+    assert "dispatchTask('read README.md and summarize it', 'net.read')" in app_js
+    assert "capability: 'browser.read'" not in app_js
+    assert "execution_tier" in app_js
+
+
+def test_infer_owner_organs_readme_and_urls():
+    from elora.core.owner_will import infer_owner_organs, is_owner_source
+
+    calls = infer_owner_organs("read README.md and summarize it")
+    assert calls == [("net.read", {"url": "README.md"})]
+    calls = infer_owner_organs("read https://example.com and tell me what it was about")
+    assert calls[0][0] == "net.read"
+    assert calls[0][1]["url"].startswith("https://example.com")
+    calls = infer_owner_organs("ingest tests/fixtures/sample.pdf")
+    assert calls == [("doc.ingest", {"path": "tests/fixtures/sample.pdf"})]
+    assert is_owner_source("inbox:chat_1.txt") is True
+    assert is_owner_source("drive:self_experiment") is False
+
+
+def test_owner_readme_executes_net_read_at_core(tmp_path, monkeypatch):
+    """Master's will is CORE. The body reads README.md without shell and without asking for a path."""
+    from elora.brain import ScriptedBrain
+    from elora.core.broker import Broker
+    from elora.core.capabilities import Tier
+    from elora.core.metabolism import Metabolism
+    from elora.daemon import Daemon, Task, Event, TaskState
+    from conftest import FakeLedger, FakeVault
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    metabolism = Metabolism(cache_dir=str(tmp_path / "cache"), ram_hard_cap_mb=16000)
+    ledger, vault = FakeLedger(), FakeVault()
+    broker = Broker(metabolism=metabolism, ledger=ledger, vault=vault,
+                    consent_dir=str(tmp_path / "consent"), vault_root=str(tmp_path / "vault"))
+    brain = ScriptedBrain(script=["README describes ELORA OS. DONE"])
+    daemon = Daemon(brain=brain, broker=broker, metabolism=metabolism,
+                    ledger=ledger, vault=vault, inbox_dir=str(inbox))
+    try:
+        task = Task(
+            id="owner-readme",
+            event=Event.from_text("read README.md and summarize it", source="inbox:chat_readme.txt"),
+        )
+        daemon.handle_task(task)
+        assert task.state == TaskState.DONE
+        assert daemon._token_for(task).tier == Tier.CORE
+        ok_tools = [t.get("tool") for t in task.trace if t.get("ok")]
+        assert "net.read" in ok_tools
+        assert "shell.run_command" not in [t.get("tool") for t in task.trace]
+        combined = " ".join(m.get("content", "") for m in task.messages)
+        assert "result:" in combined
+        assert "Please provide the absolute path" not in combined
+    finally:
+        metabolism.shutdown()
+
+
+def test_drive_experiment_stays_quarantine(tmp_path):
+    from elora.brain import ScriptedBrain
+    from elora.core.broker import Broker
+    from elora.core.capabilities import Tier
+    from elora.core.metabolism import Metabolism
+    from elora.daemon import Daemon, Task, Event
+    from conftest import FakeLedger, FakeVault
+
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    metabolism = Metabolism(cache_dir=str(tmp_path / "cache"), ram_hard_cap_mb=16000)
+    ledger, vault = FakeLedger(), FakeVault()
+    broker = Broker(metabolism=metabolism, ledger=ledger, vault=vault,
+                    consent_dir=str(tmp_path / "consent"))
+    brain = ScriptedBrain(script=["DONE"])
+    daemon = Daemon(brain=brain, broker=broker, metabolism=metabolism,
+                    ledger=ledger, vault=vault, inbox_dir=str(inbox))
+    try:
+        task = Task(
+            id="exp",
+            event=Event.from_text("Verify skill x self-check and reply with DONE",
+                                  source="drive:self_experiment"),
+        )
+        assert daemon._token_for(task).tier == Tier.QUARANTINE
+        daemon.handle_task(task)
+        prompt = brain.calls[0]["system"] if brain.calls else ""
+        assert "QUARANTINE EXPERIMENT LAW" in prompt
+        assert "MASTER'S WILL LAW" not in prompt
+    finally:
+        metabolism.shutdown()
+
+
+def test_browser_read_alias_is_net_read(tmp_path):
+    from elora.core.broker import Broker, Result
+    from elora.core.capabilities import SkillToken, Tier
+    from elora.core.metabolism import Metabolism
+    from conftest import FakeLedger, FakeVault
+
+    metabolism = Metabolism(cache_dir=str(tmp_path / "cache"), ram_hard_cap_mb=16000)
+    broker = Broker(metabolism=metabolism, ledger=FakeLedger(), vault=FakeVault(),
+                    consent_dir=str(tmp_path / "consent"), vault_root=str(tmp_path / "vault"))
+    token = SkillToken(skill_id="t", tier=Tier.CORE, workspace=str(tmp_path), issued_at=0.0)
+    try:
+        res = broker.request(token, "browser.read", {"url": "README.md"})
+        assert isinstance(res, Result)
+        assert "ELORA" in (res.stdout or "") or "content" in (res.stdout or "")
+    finally:
+        metabolism.shutdown()
