@@ -416,6 +416,7 @@ def smoke() -> int:
                 exist_ok=True)
     assembled.daemon.skills_token.workspace = tmp
     assembled.daemon.skills_token.tier = Tier.TRUSTED
+    assembled.daemon.core_token.workspace = tmp
     os.makedirs(tmp, exist_ok=True)
 
     with open(os.path.join(assembled.daemon.inbox_dir, "task.txt"),

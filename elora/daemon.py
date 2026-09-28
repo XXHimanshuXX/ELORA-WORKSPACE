@@ -414,8 +414,6 @@ class Daemon:
         return tasks
 
     def handle_task(self, task: Task) -> Task:
-        # ADDED LOGGING
-        print(f"DEBUG: handle_task: task_id={task.id}, text={task.event.payload.get('text', '')[:50]}...")
         task.state = TaskState.RUNNING
 
         text = task.event.payload.get("text", "")
@@ -539,23 +537,22 @@ class Daemon:
                     continue
                 result = self.broker.request(token, name, args)
                 self._apply_broker_result(task, name, args, result, owner=owner, token=token)
-            
-            # After processing all tool calls, check if we should mark task as complete
-            if any(t.get("ok") for t in task.trace):
-                task.state = TaskState.DONE
-                return task
-            
-            # If we got here, we processed tool calls but none were successful
+
+            # After processing all tool calls, continue the loop to let the brain process the results
+            # Do not mark task as complete based solely on tool call success
             # Check if we've exceeded max iterations
             if task.iterations > (24 if owner else self.MAX_ITERATIONS):
                 task.state = TaskState.FAILED
                 return task
-            
-            # Ask for another attempt
-            task.messages.append({
-                "role": "user",
-                "content": "None of your tool calls succeeded. Please try again or reply with DONE if you believe the task is complete."
-            })
+
+            # Ask for another attempt if no tool calls succeeded, but we already added result messages
+            # If at least one tool call succeeded, the brain will have a chance to process the result
+            # If no tool calls succeeded, we ask for another attempt
+            if not any(t.get("ok") for t in task.trace):
+                task.messages.append({
+                    "role": "user",
+                    "content": "None of your tool calls succeeded. Please try again or reply with DONE if you believe the task is complete."
+                })
             continue
 
 

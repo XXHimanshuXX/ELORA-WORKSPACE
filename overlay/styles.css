@@ -14,25 +14,25 @@
    ========================================================================== */
 
 :root {
-  /* --- fallback palette (neutral; replaced wholesale by the genome) --- */
-  --el-canvas: #12110f;
-  --el-surface: #1c1a17;
-  --el-surface-raised: #272420;
-  --el-surface-sunken: #0c0b0a;
-  --el-surface-tint: #2a211c;
-  --el-border: #2b2823;
-  --el-border-strong: #474238;
-  --el-ink: #cfc9be;
-  --el-ink-strong: #f4f1ec;
-  --el-ink-muted: #9d968a;
-  --el-ink-faint: #726d64;
-  --el-accent: #c98a4b;
-  --el-accent-soft: #2a211c;
-  --el-accent-ink: #12110f;
-  --el-ok: #6fae72;
-  --el-warn: #d3a03c;
-  --el-danger: #d9705f;
-  --el-info: #6a9bc4;
+  /* --- fallback palette (void / ice; replaced wholesale by the genome) --- */
+  --el-canvas: #07080f;
+  --el-surface: #0e111c;
+  --el-surface-raised: #161b2c;
+  --el-surface-sunken: #05060c;
+  --el-surface-tint: #161b2c;
+  --el-border: #1a2236;
+  --el-border-strong: #2a3654;
+  --el-ink: #c9d4ea;
+  --el-ink-strong: #f3f6ff;
+  --el-ink-muted: #8b97b3;
+  --el-ink-faint: #5a647d;
+  --el-accent: #9ec5ff;
+  --el-accent-soft: rgba(158, 197, 255, 0.12);
+  --el-accent-ink: #07080f;
+  --el-ok: #5fd0b5;
+  --el-warn: #e0b45c;
+  --el-danger: #e07a6a;
+  --el-info: #9ec5ff;
 
   /* --- fallback typography --- */
   --el-font-sans: ui-sans-serif, -apple-system, "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
@@ -125,9 +125,31 @@ a { color: var(--el-accent); text-decoration-thickness: 1px; text-underline-offs
 .wrap { overflow-wrap: anywhere; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── orbits SVG (hive shell background) ────────────────────────────── */
+
+.orbits {
+  display: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+.orbits circle {
+  fill: none;
+  stroke: color-mix(in srgb, var(--el-accent) 20%, transparent);
+  stroke-width: 1.25;
+}
+.orbits circle.hot {
+  stroke: var(--el-accent);
+  stroke-width: 2;
+}
+
 /* ── shell ──────────────────────────────────────────────────────────── */
 
 .shell {
+  position: relative;
   display: grid;
   grid-template-columns: 208px minmax(0, 1fr);
   height: 100%;
@@ -667,9 +689,10 @@ details.disclosure > summary:hover { color: var(--el-ink); }
     border-bottom: var(--el-hairline) solid var(--el-border);
     overflow-x: auto;
   }
-  .rail__mark span, .rail__item span, .rail__foot-text { display: none; }
+  .rail__mark span, .rail__foot-text { display: none; }
   .rail__list { flex-direction: row; gap: var(--el-space-1); }
-  .rail__item { padding: var(--el-space-2); }
+  .rail__item { padding: var(--el-space-2) var(--el-space-3); }
+  .rail__item span { display: inline; }
   .rail__item[aria-current="page"] { box-shadow: inset 0 -2px 0 var(--el-accent); }
   .rail__foot { margin: 0 0 0 auto; border-top: 0; border-left: var(--el-hairline) solid var(--el-border); padding: var(--el-space-2); }
   .topbar, .views { padding-left: var(--el-space-5); padding-right: var(--el-space-5); }

@@ -49,6 +49,11 @@
 </svg>
 
 <div class="shell">
+  <svg class="orbits" id="orbits" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+    <circle id="r1" cx="50" cy="50" r="28"/>
+    <circle id="r2" cx="50" cy="50" r="38"/>
+    <circle id="r3" cx="50" cy="50" r="47"/>
+  </svg>
 
   <nav class="rail" aria-label="Console sections">
     <div class="rail__mark">
@@ -57,22 +62,22 @@
     </div>
 
     <ul class="rail__list">
-      <li><button type="button" class="rail__item" data-nav="resident" aria-current="page">
+      <li><button type="button" class="rail__item" data-nav="resident" aria-current="page" data-ring="1" data-deg="200">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-terminal"/></svg>
         <span>Resident</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="ledger">
+      <li><button type="button" class="rail__item" data-nav="ledger" data-ring="2" data-deg="40">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-ledger"/></svg>
         <span>Ledger</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="genome">
+      <li><button type="button" class="rail__item" data-nav="genome" data-ring="2" data-deg="110">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-genome"/></svg>
         <span>Genome</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="registry">
+      <li><button type="button" class="rail__item" data-nav="registry" data-ring="2" data-deg="155">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-registry"/></svg>
         <span>Registry</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="router">
+      <li><button type="button" class="rail__item" data-nav="router" data-ring="1" data-deg="340">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-router"/></svg>
         <span>Router</span></button></li>
-      <li><button type="button" class="rail__item" data-nav="unwired">
+      <li><button type="button" class="rail__item" data-nav="unwired" data-ring="3" data-deg="80">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-unwired"/></svg>
         <span>Not wired</span></button></li>
     </ul>

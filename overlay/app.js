@@ -226,8 +226,17 @@ const VIEW_TITLES = {
 function showView(name) {
   state.view = name;
   for (const button of document.querySelectorAll('[data-nav]')) {
-    if (button.dataset.nav === name) button.setAttribute('aria-current', 'page');
-    else button.removeAttribute('aria-current');
+    if (button.dataset.nav === name) {
+      button.setAttribute('aria-current', 'page');
+      const ringId = button.dataset.ring;
+      document.querySelectorAll('.orbits circle').forEach((c) => c.classList.remove('hot'));
+      if (ringId) {
+        const ring = document.getElementById('r' + ringId);
+        if (ring) ring.classList.add('hot');
+      }
+    } else {
+      button.removeAttribute('aria-current');
+    }
   }
   for (const view of document.querySelectorAll('.view')) {
     view.hidden = view.dataset.view !== name;
