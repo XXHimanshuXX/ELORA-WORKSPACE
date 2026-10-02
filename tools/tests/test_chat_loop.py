@@ -100,6 +100,40 @@ def test_chat_loop_back_after_tool_call(tmp_path):
             os.remove(dest)
 
 
+def test_chat_history_keeps_will_organs_and_voice_in_order(tmp_path):
+    env = _loop(tmp_path)
+    daemon = env["daemon"]
+    daemon._append_chat("user", "git status", "chat_1.txt")
+    daemon._append_chat("organ", "git.status: clean", "task-1", organ="git.status", status="ok")
+    daemon._append_chat("elora", "The workspace is clean.", "task-1")
+    rows = json.loads((tmp_path / "chat.json").read_text(encoding="utf-8"))
+    assert [row["sender"] for row in rows] == ["user", "organ", "elora"]
+    assert rows[1]["organ"] == "git.status"
+    assert rows[1]["status"] == "ok"
+    env["metabolism"].shutdown()
+
+
+def test_deterministic_owner_organ_does_not_inherit_stale_chat(tmp_path):
+    env = _loop(tmp_path)
+    (tmp_path / "chat.json").write_text(json.dumps([
+        {"sender": "elora", "text": "The London Bridge build is complete.", "ts": 1},
+    ]), encoding="utf-8")
+    env["brain"].script = ["DONE"]
+    task = Task(
+        id="fresh-status",
+        event=Event.from_text("git status", source="inbox:status.txt"),
+    )
+    try:
+        env["daemon"].handle_task(task)
+        prompt_messages = env["brain"].calls[0]["messages"]
+        assert not any("London Bridge" in str(message.get("content", ""))
+                       for message in prompt_messages)
+        assert any(str(message.get("content", "")).startswith("result:")
+                   for message in prompt_messages)
+    finally:
+        env["metabolism"].shutdown()
+
+
 def test_hallucinated_action_is_impossible(tmp_path):
     """Claiming 'I checked/searched/opened' without a capability_intent cannot be the spoken reply."""
     env = _loop(tmp_path)
@@ -150,3 +184,17 @@ def test_quarantine_still_cannot_write_workspace(tmp_path):
         assert not os.path.exists(dest)
     finally:
         env["metabolism"].shutdown()
+
+
+def test_narrow_post_code_edit_response_suppression():
+    task = Task(id="t1", event=Event.from_text("test"))
+    task.trace = [{"tool": "code.edit", "ok": True}]
+    task.messages = [{"role": "assistant", "content": "I wrote the file. DONE"}]
+    assert public_chat_answer(task) == ""
+
+    task.messages = [{"role": "assistant", "content": "The bug was due to cache. DONE"}]
+    assert public_chat_answer(task) == "The bug was due to cache."
+
+    task.trace = [{"tool": "fs.write", "ok": True}]
+    task.messages = [{"role": "assistant", "content": "I wrote the config file. DONE"}]
+    assert public_chat_answer(task) == "I wrote the config file."

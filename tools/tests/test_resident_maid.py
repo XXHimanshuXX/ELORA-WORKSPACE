@@ -3,8 +3,7 @@ test_resident_maid.py — ELORA v7.3 Resident & Maid inspection rungs.
 
 Verifies:
   1. test_chat_is_default_panel: The console defaults to the resident/chat front door.
-  2. test_quick_buttons_dispatch_real_capabilities: The 4 buttons dispatch real capabilities
-     (net.read, rag.recall, doc.ingest, ledger.verify) into .elora/inbox and record to ledger.
+  2. Resident language enters the inbox and the daemon records organ outcomes in the timeline.
   3. test_daily_briefing_generated_from_ledger: Synthesizes honest report from ledger events.
   4. test_seed_is_deterministic: Same vault identity -> same seed -> same face.
   5. test_seed_changes_with_identity: Different vault identity -> different seed.
@@ -19,6 +18,7 @@ import pytest
 from elora.core.briefing import generate_daily_briefing
 from elora.dashboard.server import (
     payload_organism_state,
+    payload_perception,
     payload_inbox_task,
     _STATE_INDEX,
 )
@@ -39,18 +39,22 @@ def test_chat_is_default_panel():
     # App.js defaults view to resident
     assert "view: 'resident'" in app_js
     assert "location.hash || '#resident'" in app_js
+    assert "id: 'house-still'" in app_js
+    assert "/api/perception" in app_js
 
 
-def test_quick_buttons_dispatch_real_capabilities(tmp_path, monkeypatch):
-    """Rung 2: Quick buttons map to real capability dispatches into .elora/inbox and ledger."""
+def test_resident_will_dispatches_to_inbox(tmp_path, monkeypatch):
+    """The Resident has one language-first compose and persists wills into the inbox."""
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     app_js = open(os.path.join(root, "overlay", "app.js"), encoding="utf-8").read()
-
-    # Four buttons map to real capabilities in app.js
-    assert 'net.read' in app_js
-    assert 'rag.recall' in app_js
-    assert 'doc.ingest' in app_js
-    assert 'ledger.verify' in app_js
+    assert "h('textarea'" in app_js
+    assert "e.key === 'Enter' && !e.shiftKey" in app_js
+    assert "api('/api/inbox/task'" in app_js
+    assert "quick-btn" not in app_js
+    assert "clear(chatLog)" not in app_js
+    assert "Nothing spoken yet." in app_js
+    assert "msg.sender === 'organ' && state.organism) state.organism.ripple()" in app_js
+    assert "Will → organs → voice" in app_js
 
     # Test server inbox task dispatching
     state_dir = tmp_path / ".elora"
@@ -157,12 +161,23 @@ def test_organism_state_and_shader(tmp_path):
     assert "sdf_blob" in src
 
 
-def test_readme_button_uses_net_read_not_browser_read():
-    """The Read README organ is net.read. browser.read is not a real capability."""
+def test_perception_absent_is_absent(tmp_path):
+    res = payload_perception(str(tmp_path / "missing_state.json"))
+    assert res["available"] is False
+    assert "state.json absent" in res["reason"]
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{}", encoding="utf-8")
+    res = payload_perception(str(state_file))
+    assert res["available"] is False
+    assert "no still" in res["reason"]
+
+
+def test_resident_language_is_not_a_capability_toolbar():
+    """Actions are inferred from the will and the resident does not expose tool shortcuts."""
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     app_js = open(os.path.join(root, "overlay", "app.js"), encoding="utf-8").read()
-    assert "dispatchTask('read README.md and summarize it', 'net.read')" in app_js
-    assert "capability: 'browser.read'" not in app_js
+    assert "dispatchTask('read README.md" not in app_js
+    assert "quickActions" not in app_js
     assert "execution_tier" in app_js
 
 
@@ -176,6 +191,20 @@ def test_infer_owner_organs_readme_and_urls():
     assert calls[0][1]["url"].startswith("https://example.com")
     calls = infer_owner_organs("ingest tests/fixtures/sample.pdf")
     assert calls == [("doc.ingest", {"path": "tests/fixtures/sample.pdf"})]
+    calls = infer_owner_organs("open chrome")
+    assert ("app.open", {"app": "chrome"}) in calls
+    calls = infer_owner_organs("run the tests")
+    assert ("sandbox.test", {}) in calls
+    calls = infer_owner_organs("git status")
+    assert ("git.status", {}) in calls
+    assert ("sandbox.repo_map", {"query": "fix the overlay task flow"}) in infer_owner_organs("fix the overlay task flow")
+    calls = infer_owner_organs("list plugins")
+    assert ("plugin.list", {}) in calls
+    calls = infer_owner_organs("open blender, connect to it, and build the London Bridge")
+    assert ("app.open", {"app": "blender"}) in calls
+    assert ("blender.run", {"script": "elora/slime/blender_connect.py"}) in calls
+    assert ("plugin.call", {"server": "blender", "tool": "ping"}) in calls
+    assert ("blender.run", {"script": "build_bridge.py"}) in calls
     assert is_owner_source("inbox:chat_1.txt") is True
     assert is_owner_source("drive:self_experiment") is False
 

@@ -147,3 +147,47 @@ class TestRung4TypeKeysFuelMetered:
         except RuntimeError as e:
             # pywinauto absent on host is expected and graceful
             assert "pywinauto absent" in str(e)
+
+
+class TestAppOpenAllowlist:
+    def test_unknown_app_refused(self):
+        res = computer_use.open_app("cmd.exe")
+        assert res["ok"] is False
+        assert "allowlist" in res["error"]
+
+    def test_empty_name_refused(self):
+        res = computer_use.open_app("")
+        assert res["ok"] is False
+
+    def test_notepad_dry_run(self, monkeypatch):
+        monkeypatch.setenv("ELORA_APP_OPEN", "dry")
+        exe = computer_use.resolve_allowed_app("notepad")
+        if not exe:
+            pytest.skip("notepad not on this host")
+        res = computer_use.open_app("notepad")
+        assert res["ok"] is True
+        assert res["dry"] is True
+        assert res["exe"]
+
+    def test_quarantine_cannot_open_app(self, broker, quarantine_token):
+        result = broker.request(quarantine_token, "app.open", {"app": "notepad"})
+        assert isinstance(result, Rejected)
+        assert "tier" in result.reason.lower()
+
+
+class TestDaemonPerceive:
+    def test_perceive_writes_last_perception(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        from elora.daemon import Daemon
+        from elora.core.metabolism import Metabolism
+        from conftest import FakeLedger, FakeVault
+        d = Daemon(brain=None, broker=None, metabolism=Metabolism(cache_dir=str(tmp_path / "m")), ledger=FakeLedger(), vault=FakeVault())
+        d._perceive()
+        state = json.loads((tmp_path / ".elora" / "state.json").read_text(encoding="utf-8"))
+        perc = state["last_perception"]
+        assert "available" in perc
+        if perc["available"]:
+            assert perc.get("synthetic") is False
+            assert os.path.isfile(perc["path"])
+        else:
+            assert perc.get("synthetic") is True or perc.get("reason")

@@ -200,6 +200,7 @@ const state = {
   chat: [],
   chatHistory: [],
   chatHistoryEncoded: '',
+  chatRendered: new Set(),
   briefing: null,
   organism: null,
   models: [],
@@ -210,10 +211,11 @@ const state = {
   metabolism: null,      // the last native daemon-state payload
   metabolismEncoded: '', // so an unchanged payload does not force a repaint
   ripples: [],           // raw daemon stdout lines received on the ripple channel
+  pollersStarted: false,
 };
 
 const VIEW_TITLES = {
-  resident: ['Resident', 'The resident maid — autonomous cognition, dialogue, and metabolic presence.'],
+  resident: ['Resident', 'Write a will. Watch the organs act; the ledger keeps the truth.'],
   ledger: ['Ledger', 'The append-only record every generation and action is written to.'],
   genome: ['Genome', 'The theme ELORA generated for itself, and the evidence it is legible.'],
   registry: ['Registry', 'What ELORA can do, and what is actually installed on this machine.'],
@@ -1034,9 +1036,9 @@ function renderUnwired(root) {
     },
     {
       icon: 'registry', title: 'Plugin system',
-      state: 'does not exist',
-      because: 'ELORA has no runtime plugin loader. This is not "disabled" — the code does not exist.',
-      needs: 'Nothing. The 39 plugin.json manifests found on this machine belong to other clients and are listed read-only on the Registry tab. They are not loaded into ELORA and cannot be.',
+      state: 'wired',
+      because: 'plugin.list / plugin.call launch the closed MCP set over stdio: omniroute, github, playwright, fetch, memory, filesystem, blender. Foreign plugin.json files on disk are still inventory only.',
+      needs: 'Blender MCP is live only while blender_connect.py is listening on 127.0.0.1:9876. ping reports darkness; it does not invent a scene.',
     },
     {
       icon: 'clock', title: 'Live trend baseline',
@@ -1045,17 +1047,17 @@ function renderUnwired(root) {
       needs: 'Press "Refresh from the web" on the Genome tab. It is optional by design — the offline baseline stays the default source of truth so the console never depends on the network to render.',
     },
     {
-      icon: 'eye', title: 'WebGPU organism background',
-      state: 'not hosted',
-      because: 'overlay/organism.wgsl exists, is structurally verified by tools/tests/test_overlay.py, and its uniforms are fed by metabolic state through elora/overlay_bridge.py. What no longer exists is a page that mounts a canvas for it: rebuilding this console around the generated genome removed the ambient shader layer the old page carried.',
-      needs: 'A canvas, a WebGPU bootstrap, and an honest fallback for when navigator.gpu is absent. Recorded here rather than quietly dropped, because README.md still lists it as a feature — and that test now asserts the gap out loud.',
+      icon: 'eye', title: 'WebGPU organism + house still',
+      state: 'wired on Resident',
+      because: 'The Resident aside mounts #organism-canvas (WebGPU with 2D fallback) and #house-still from /api/perception. index.html still has no canvas — the page is assembled in app.js.',
+      needs: 'Nothing for hosting. Hands (screen.control) stay off this console on purpose.',
     },
   ];
 
   for (const item of items) {
     root.append(card(item.title, item.icon, cardBody(
       h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-4)' } },
-        chip(item.state, item.state === 'does not exist' ? 'danger' : (item.state === 'partially wired' ? 'warn' : 'info'))),
+        chip(item.state, item.state === 'does not exist' ? 'danger' : (item.state === 'wired' || item.state === 'wired on Resident' ? 'ok' : (item.state === 'partially wired' ? 'warn' : 'info')))),
       kv([['what exists', item.because], ['what is needed', item.needs]]),
       h('p', { class: 'dim', style: { marginTop: 'var(--el-space-3)' },
         text: 'Source: elora/core/capabilities.py and elora/core/discovery.py. Both are read at runtime rather than transcribed here.' }))));
@@ -1091,11 +1093,50 @@ const RESIDENT_LABELS = {
 
 let residentRedraw = null;
 
+async function syncPerception() {
+  const img = document.getElementById('house-still');
+  const cap = document.getElementById('house-still-caption');
+  try {
+    const p = await api('/api/perception');
+    if (!p || p.available === false) {
+      if (img) {
+        img.removeAttribute('src');
+        img.hidden = true;
+      }
+      if (cap) cap.textContent = (p && p.reason) ? p.reason : 'no still yet';
+      return;
+    }
+    const response = await fetch(BASE + '/api/perception/still', { headers: CLIENT_HEADERS });
+    if (!response.ok) {
+      if (cap) cap.textContent = 'still unreadable';
+      return;
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    if (img) {
+      const prev = img.dataset.blob;
+      img.src = url;
+      img.hidden = false;
+      img.dataset.blob = url;
+      if (prev) URL.revokeObjectURL(prev);
+    }
+    if (cap) cap.textContent = p.synthetic ? 'synthetic (not sight)' : 'last still';
+  } catch (err) {
+    if (cap) cap.textContent = 'eyes unreachable';
+  }
+}
+
 async function pollOrganism() {
   try {
     const s = await api('/api/organism_state');
     const canvas = document.getElementById('organism-canvas');
     const frame = document.querySelector('.organism-frame');
+    const encoded = JSON.stringify(s);
+    if (encoded !== state.metabolismEncoded) {
+      state.metabolismEncoded = encoded;
+      state.metabolism = s;
+      if (typeof residentRedraw === 'function') residentRedraw();
+    }
     if (!s || s.available === false) {
       if (canvas) canvas.dataset.status = 'offline';
       if (frame) frame.dataset.status = 'offline';
@@ -1144,7 +1185,8 @@ async function syncChat() {
       const encoded = JSON.stringify(messages);
       if (encoded !== state.chatHistoryEncoded) {
         state.chatHistoryEncoded = encoded;
-        state.chatHistory = messages;
+        const localFailures = state.chatHistory.filter((msg) => msg.status === 'failed' && !msg.task_id);
+        state.chatHistory = [...messages, ...localFailures];
         if (state.view === 'resident' && typeof residentRedraw === 'function') {
           residentRedraw();
         }
@@ -1155,36 +1197,67 @@ async function syncChat() {
   }
 }
 
-async function dispatchTask(prompt, capability = '') {
+async function dispatchTask(prompt) {
   const clean = (prompt || '').trim();
   if (!clean) return;
-
-  state.chatHistory.push({
-    sender: 'user',
-    text: clean,
-    ts: Date.now() / 1000,
-    status: 'queued',
-  });
-  if (typeof residentRedraw === 'function') residentRedraw();
-
   let dispatched = false;
   if (state.bridge && typeof state.bridge.sendInboxTask === 'function') {
-    const ok = await state.bridge.sendInboxTask(clean);
-    if (ok) dispatched = true;
+    const result = await state.bridge.sendInboxTask(clean);
+    if (result) dispatched = true;
   }
   if (!dispatched) {
     try {
-      await api('/api/inbox/task', { method: 'POST', body: { prompt: clean, capability } });
+      await api('/api/inbox/task', { method: 'POST', body: { prompt: clean } });
       dispatched = true;
     } catch (err) {
       toast('Task dispatch failed', 'danger', err.message);
     }
   }
   if (dispatched) {
-    toast('Task queued in .elora/inbox', 'ok', clean.slice(0, 48));
+    toast('Will sent to inbox', 'ok', clean.slice(0, 48));
     if (state.organism) state.organism.ripple();
+  } else {
+    const failure = { sender: 'elora', text: 'Will could not reach the inbox.',
+      ts: Date.now() / 1000, status: 'failed' };
+    state.chatHistory.push(failure);
+    if (state.view === 'resident') appendResidentMessage(failure);
   }
   await syncChat();
+}
+
+function residentMessageKey(msg) {
+  return [msg.sender || '', msg.task_id || '', msg.organ || '', msg.status || '', msg.ts || '', msg.text || ''].join('|');
+}
+
+function appendResidentMessage(msg) {
+  const chatLog = document.getElementById('resident-chat-log');
+  if (!chatLog) return;
+  const key = residentMessageKey(msg);
+  if (state.chatRendered.has(key)) return;
+  const empty = chatLog.querySelector('.empty');
+  if (empty) empty.remove();
+  const isWill = msg.sender === 'user';
+  const label = isWill ? 'You' : (msg.sender === 'organ' ? (msg.organ || 'organ') : 'ELORA');
+  const suffix = msg.status === 'failed' ? ' · failed' : (msg.status === 'deferred' ? ' · deferred' : '');
+  
+  let bodyText = msg.text || '';
+  let organEvidence = null;
+  if (msg.sender === 'organ' && msg.result) {
+    try {
+      const res = typeof msg.result === 'string' ? JSON.parse(msg.result) : msg.result;
+      let preText = prettyMaybeJson(JSON.stringify(res, null, 2));
+      organEvidence = h('pre', { class: 'turn__evidence mono', style: { marginTop: 'var(--el-space-3)', padding: 'var(--el-space-3)', fontSize: '0.72rem', background: 'var(--el-surface-sunken)', borderRadius: 'var(--el-radius-control)', overflowX: 'hidden', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }, text: preText });
+    } catch(e) {}
+  }
+  
+  const row = h('div', { class: 'turn', dataset: { role: isWill ? 'user' : (msg.sender === 'organ' ? 'organ' : 'elora') } },
+    h('div', { class: 'turn__role', text: `${label}${suffix}` },
+      msg.ts ? h('span', { class: 'turn__meta', style: { marginLeft: 'var(--el-space-3)' }, text: new Date(msg.ts * 1000).toLocaleTimeString() }) : null),
+    h('div', { class: 'turn__body' }, h('span', { text: bodyText }), organEvidence));
+  chatLog.append(row);
+  state.chatRendered.add(key);
+  if (msg.sender === 'organ' && state.organism) state.organism.ripple();
+  chatLog.scrollTop = chatLog.scrollHeight;
 }
 
 function renderResident(root) {
@@ -1207,7 +1280,7 @@ function renderResident(root) {
         cognEl.append(warnBanner('No daemon state to read', payload.reason,
           'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.'));
       } else {
-        const data = (payload.data && typeof payload.data === 'object') ? payload.data : {};
+        const data = (payload.data && typeof payload.data === 'object') ? payload.data : payload;
         const rows = [
           ['active task', data.current_task || 'Idle'],
           ['capability', data.current_capability || 'none'],
@@ -1226,19 +1299,10 @@ function renderResident(root) {
 
     const chatLog = document.getElementById('resident-chat-log');
     if (chatLog) {
-      clear(chatLog);
       if (!state.chatHistory.length) {
-        chatLog.append(h('div', { class: 'empty', text: 'No conversation recorded yet. Submit a task instruction below.' }));
+        if (!chatLog.querySelector('.empty')) chatLog.append(h('div', { class: 'empty', text: 'Nothing spoken yet.' }));
       } else {
-        for (const msg of state.chatHistory) {
-          const isUser = msg.sender === 'user';
-          const bubble = h('div', { class: 'turn', dataset: { role: isUser ? 'user' : 'elora' } },
-            h('div', { class: 'turn__role', text: isUser ? 'You' : 'ELORA' },
-              msg.ts ? h('span', { class: 'turn__meta', style: { marginLeft: 'var(--el-space-3)' }, text: new Date(msg.ts * 1000).toLocaleTimeString() }) : null),
-            h('div', { class: 'turn__body', text: msg.text || '' }));
-          chatLog.append(bubble);
-        }
-        chatLog.scrollTop = chatLog.scrollHeight;
+        for (const msg of state.chatHistory) appendResidentMessage(msg);
       }
     }
 
@@ -1258,6 +1322,8 @@ function renderResident(root) {
         feed.scrollTop = feed.scrollHeight;
       }
     }
+    const stillCap = document.getElementById('house-still-caption');
+    if (stillCap && !stillCap.textContent) stillCap.textContent = 'no still yet';
     return;
   }
 
@@ -1281,6 +1347,9 @@ function renderResident(root) {
     h('span', { text: 'Organism Offline' }),
     h('span', { class: 'mono', style: { fontSize: '0.72rem', color: 'var(--el-ink-faint)' }, text: 'WebGPU adapter required' }));
   const organismFrame = h('div', { class: 'organism-frame', dataset: { status: 'offline' } }, canvas, fallback, legend);
+  const houseStill = h('figure', { class: 'house-still' },
+    h('img', { id: 'house-still', alt: 'Last house still', hidden: true }),
+    h('figcaption', { id: 'house-still-caption', class: 'mono', text: 'no still yet' }));
 
   if (!state.organism && canvas) {
     state.organism = new Organism(canvas);
@@ -1302,7 +1371,7 @@ function renderResident(root) {
     cognBody.append(warnBanner('No daemon state to read', payload.reason,
       'Rendered as absent, not as ALIVE. The daemon writes .elora/state.json when it runs.'));
   } else {
-    const data = (payload.data && typeof payload.data === 'object') ? payload.data : {};
+    const data = (payload.data && typeof payload.data === 'object') ? payload.data : payload;
     const rows = [
       ['active task', data.current_task || 'Idle'],
       ['capability', data.current_capability || 'none'],
@@ -1321,85 +1390,37 @@ function renderResident(root) {
 
   // 4. Dialogue & Task Interface (Chat Panel)
   const chatLog = h('div', { class: 'chat__log', id: 'resident-chat-log' });
+  state.chatRendered = new Set();
   if (!state.chatHistory.length) {
-    chatLog.append(h('div', { class: 'empty', text: 'No conversation recorded yet. Submit a task instruction below.' }));
+    chatLog.append(h('div', { class: 'empty', text: 'Nothing spoken yet.' }));
   } else {
     for (const msg of state.chatHistory) {
-      const isUser = msg.sender === 'user';
-      const bubble = h('div', { class: 'turn', dataset: { role: isUser ? 'user' : 'elora' } },
-        h('div', { class: 'turn__role', text: isUser ? 'You' : 'ELORA' },
-          msg.ts ? h('span', { class: 'turn__meta', style: { marginLeft: 'var(--el-space-3)' }, text: new Date(msg.ts * 1000).toLocaleTimeString() }) : null),
-        h('div', { class: 'turn__body', text: msg.text || '' }));
-      chatLog.append(bubble);
+      appendResidentMessage(msg);
     }
   }
 
-  // Quick Action Buttons
-  const quickActions = h('div', { class: 'quick-actions' },
-    h('button', {
-      type: 'button', class: 'quick-btn',
-      dataset: { capability: 'net.read', task: 'read https://example.com and tell me what it was about' },
-      onClick: () => dispatchTask('read https://example.com and tell me what it was about', 'net.read'),
-    }, icon('search'), 'Read example.com'),
-    h('button', {
-      type: 'button', class: 'quick-btn',
-      dataset: { capability: 'rag.recall', task: 'what was the page you read earlier about?' },
-      onClick: () => dispatchTask('what was the page you read earlier about?', 'rag.recall'),
-    }, icon('brain'), 'Recall from memory'),
-    h('button', {
-      type: 'button', class: 'quick-btn',
-      dataset: { capability: 'doc.ingest', task: 'ingest tests/fixtures/sample.pdf' },
-      onClick: () => dispatchTask('ingest tests/fixtures/sample.pdf', 'doc.ingest'),
-    }, icon('file'), 'Ingest sample.pdf'),
-    h('button', {
-      type: 'button', class: 'quick-btn',
-      dataset: { capability: 'ledger.verify', task: 'verify akashic ledger integrity' },
-      onClick: () => dispatchTask('verify akashic ledger integrity', 'ledger.verify'),
-    }, icon('shield'), 'Verify ledger'),
-    h('button', {
-      type: 'button', class: 'quick-btn',
-      dataset: { capability: 'net.read', task: 'read README.md and summarize it' },
-      onClick: () => dispatchTask('read README.md and summarize it', 'net.read'),
-    }, icon('file-text'), 'Read README'),
-  );
-
-  const input = h('input', {
-    type: 'text',
+  const input = h('textarea', {
     id: 'chat-input',
     class: 'input',
-    style: { flex: '1', minHeight: '44px' },
-    placeholder: 'Type a task instruction (writes to .elora/inbox)...',
-    autocomplete: 'off',
-    onKeydown: (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        const val = input.value.trim();
-        if (val) {
-          input.value = '';
-          dispatchTask(val);
-        }
-      }
-    },
+    rows: '2',
+    style: { flex: '1', fontFamily: 'var(--el-font-sans)' },
+    placeholder: 'Write to ELORA (Enter to send, Shift+Enter for new line)…',
   });
-
-  const sendBtn = h('button', {
-    type: 'button',
-    id: 'chat-send',
-    class: 'btn btn--primary',
-    onClick: () => {
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       const val = input.value.trim();
       if (val) {
         input.value = '';
         dispatchTask(val);
       }
-    },
-  }, icon('send'), 'Send');
+    }
+  });
 
-  const compose = h('div', { class: 'chat__compose' }, input, sendBtn);
+  const compose = h('div', { class: 'chat__compose' }, input);
 
-  const chatCard = card('Dialogue & Task Interface', 'terminal',
+  const chatCard = card('Will → organs → voice', 'terminal',
     h('div', { class: 'chat' }, chatLog),
-    quickActions,
     compose,
     h('div', { class: 'card__note', style: { padding: '0 var(--el-space-5) var(--el-space-4)' },
       text: 'Writing an instruction drops a file into .elora/inbox and logs the dispatch to the Akashic ledger.' }));
@@ -1421,7 +1442,7 @@ function renderResident(root) {
   const rippleCard = card('Ripple channel', 'terminal', feed);
 
   // Group into responsive two-column layout
-  const aside = h('div', { class: 'resident-aside' }, organismFrame, briefingBox, cognitionCard);
+  const aside = h('div', { class: 'resident-aside' }, organismFrame, houseStill, briefingBox, cognitionCard);
   const main = h('div', { class: 'resident-main' }, chatCard, rippleCard);
   root.append(h('div', { class: 'resident-layout' }, aside, main));
   chatLog.scrollTop = chatLog.scrollHeight;
@@ -1515,13 +1536,18 @@ async function boot() {
   renderLedger(document.getElementById('ledger-root'));
   renderUnwired(document.getElementById('unwired-root'));
 
-  // Start resident pollers
-  pollOrganism();
-  setInterval(pollOrganism, 1000);
-  syncBriefing();
-  setInterval(syncBriefing, 15000);
-  syncChat();
-  setInterval(syncChat, 2000);
+  // Start resident pollers once. boot() can retry; stacking intervals freezes the tab.
+  if (!state.pollersStarted) {
+    state.pollersStarted = true;
+    pollOrganism();
+    setInterval(pollOrganism, 1000);
+    syncPerception();
+    setInterval(syncPerception, 15000);
+    syncBriefing();
+    setInterval(syncBriefing, 15000);
+    syncChat();
+    setInterval(syncChat, 2000);
+  }
 
   /* Registry end-to-end. The scan is genuinely slow (walks real directories), so
      it renders as soon as its payload lands rather than blocking the console. */

@@ -74,6 +74,7 @@ class Broker:
         The liturgy. Returns Rejected, Deferred, or Result.
         Rejections are never logged as executions.
         """
+                
         # 1. EXIST — V4 killer: hallucinated names die here, with the truth
         capability = CAPABILITY_ALIASES.get(capability, capability)
         cap = REGISTRY.get(capability)
@@ -321,6 +322,10 @@ class Broker:
             return self._execute_screen_capture(token, args)
         if cap.name == "screen.control":
             return self._execute_screen_control(token, args)
+        if cap.name == "app.open":
+            return self._execute_app_open(token, args)
+        if cap.name == "blender.run":
+            return self._execute_blender_run(token, args)
         if cap.name == "generate.image":
             return self._execute_generate_image(token, args)
         if cap.name == "voice.listen":
@@ -400,6 +405,15 @@ class Broker:
             except McpError as exc:
                 payload = {"ok": False, "server": server, "tool": tool, "error": str(exc)}
             return _trivial_result(json.dumps(payload), token.workspace or ".")
+        if cap.name in ("sandbox.glob", "sandbox.test", "sandbox.check",
+                        "sandbox.status", "plugin.marketplace",
+                        "sandbox.repo_map", "sandbox.checkpoint",
+                        "sandbox.restore", "sandbox.diagnose"):
+            import json
+            from elora.slime.sandbox import dispatch as sandbox_dispatch
+            root = token.workspace if token.tier.value < Tier.TRUSTED.value else None
+            res = sandbox_dispatch(cap.name, args, root=root)
+            return _trivial_result(json.dumps(res), token.workspace or ".")
         if cap.name in ("ws.list", "code.read", "code.search", "code.edit",
                         "git.status", "git.diff", "git.commit"):
             import json
@@ -509,6 +523,37 @@ class Broker:
                 stderr_sha256=hashlib.sha256(err_msg.encode("utf-8")).hexdigest(),
                 stdout="", stderr=err_msg, work_dir=token.workspace or ".",
             )
+
+    def _execute_blender_run(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import blender as blender_organ
+        script = str(args.get("script", args.get("path", "")))
+        gui = str(args.get("gui", "1")).lower() not in ("0", "false", "no")
+        res = blender_organ.run_script(script, work_dir=token.workspace or os.getcwd(), gui=gui)
+        body = json.dumps(res)
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        return ExecutionResult(
+            returncode=0 if res.get("ok") else 1,
+            timed_out=False, killed_by=None, duration_s=0.0,
+            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+            stdout=body, stderr="" if res.get("ok") else str(res.get("error", "")),
+            work_dir=token.workspace or ".",
+        )
+
+    def _execute_app_open(self, token: SkillToken, args: dict) -> ExecutionResult:
+        import hashlib, json
+        from elora.slime import computer_use
+        name = str(args.get("app", args.get("name", args.get("target", ""))))
+        res = computer_use.open_app(name)
+        body = json.dumps(res)
+        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+        return ExecutionResult(
+            returncode=0 if res.get("ok") else 1,
+            timed_out=False, killed_by=None, duration_s=0.0,
+            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+            stdout=body, stderr="" if res.get("ok") else str(res.get("error", "")),
+            work_dir=token.workspace or ".",
+        )
 
     def _execute_generate_image(self, token: SkillToken, args: dict) -> ExecutionResult:
         import hashlib, json

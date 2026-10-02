@@ -19,7 +19,7 @@ def test_small_talk_is_not_a_chore():
 
 
 def test_caps_registered():
-    for name in ("chore.keep", "chore.status", "agent.spawn", "plugin.list", "plugin.call"):
+    for name in ("chore.keep", "chore.status", "agent.spawn", "plugin.list", "plugin.call", "plugin.marketplace", "app.open", "blender.run", "sandbox.test", "sandbox.glob"):
         assert name in REGISTRY
 
 
@@ -119,6 +119,8 @@ def test_plugin_list_does_not_launch(tmp_path):
         payload = json.loads(res.stdout)
         assert payload["ok"] is True
         assert "omniroute" in payload["servers"]
+        for name in ("github", "playwright", "fetch", "memory", "blender"):
+            assert name in payload["servers"]
     finally:
         metabolism.shutdown()
 

@@ -542,6 +542,25 @@ input:focus, textarea:focus, select:focus { border-color: var(--el-accent); outl
   color: var(--el-ink-muted);
   align-items: center;
 }
+.house-still {
+  margin: 0;
+  padding: var(--el-space-3);
+  background: var(--el-surface-raised);
+  border: var(--el-hairline) solid var(--el-border);
+  border-radius: var(--el-radius-card);
+}
+.house-still img {
+  display: block;
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  background: var(--el-surface-sunken);
+}
+.house-still figcaption {
+  margin-top: var(--el-space-2);
+  font-size: var(--el-t-1);
+  color: var(--el-ink-muted);
+}
 .briefing-card {
   display: flex;
   flex-direction: column;

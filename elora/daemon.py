@@ -22,7 +22,6 @@ from elora.core.household import Household, is_chore_text
 from elora.core.owner_will import (
     WORKSPACE_ROOT,
     experiment_constitution,
-    blender_launch_command,
     infer_owner_organs,
     is_action_narration,
     is_owner_source,
@@ -33,6 +32,7 @@ from elora.runtime import runtime_manager
 
 def public_chat_answer(task) -> str:
     """Never publish a raw tool gesture as the maid's spoken reply."""
+    has_code_edit = any(t.get("tool") == "code.edit" and t.get("ok") for t in getattr(task, "trace", []))
     for msg in reversed(getattr(task, "messages", []) or []):
         if msg.get("role") != "assistant":
             continue
@@ -44,12 +44,17 @@ def public_chat_answer(task) -> str:
         stripped = re.sub(r'(?:\r?\n|\s)+DONE\.?$', "", stripped).strip()
         if calls or failures or "<mcp_call" in raw.lower():
             if stripped and stripped.upper() != "DONE":
+                if has_code_edit and is_action_narration(stripped):
+                    continue
                 return stripped
             continue
         if raw.upper() == "DONE":
             continue
-        if is_action_narration(raw) and not any(t.get("ok") for t in getattr(task, "trace", [])):
-            continue
+        if is_action_narration(raw):
+            if has_code_edit:
+                continue
+            if not any(t.get("ok") for t in getattr(task, "trace", [])):
+                continue
         return stripped or raw
     tool_lines = []
     for msg in getattr(task, "messages", []) or []:
@@ -199,6 +204,8 @@ class Daemon:
         from elora.core.broker import Rejected, Deferred, Result
         if isinstance(result, Rejected):
             task.trace.append({"tool": name, "rejected": True, "reason": result.reason})
+            self._append_chat("organ", f"{name}: rejected — {result.reason}", task.id,
+                              organ=name, status="failed")
             extra = ""
             if owner:
                 extra = (
@@ -209,6 +216,8 @@ class Daemon:
             task.messages.append({"role": "user", "content": f"rejected: {result.reason}{extra}"})
         elif isinstance(result, Deferred):
             task.trace.append({"tool": name, "deferred": True, "reason": result.reason})
+            self._append_chat("organ", f"{name}: deferred — {result.reason}", task.id,
+                              organ=name, status="deferred")
             extra = ""
             if owner:
                 extra = (
@@ -229,8 +238,16 @@ class Daemon:
                 stdout = result.stdout
             task.trace.append({"tool": name, "args": args, "ok": True})
             task.messages.append({"role": "user", "content": f"result: {stdout[:4000]}"})
+            short_result = " ".join(str(stdout or "completed").split())[:360]
+            self._append_chat("organ", f"{name}: {short_result or 'completed'}", task.id,
+                              organ=name, status="ok")
             if owner and token is not None and name == "fs.write":
                 self._maybe_launch_blender(task, token, args)
+            if owner and token is not None and name == "code.edit":
+                edited = str(args.get("path") or args.get("file") or "")
+                if edited:
+                    diag = self.broker.request(token, "sandbox.diagnose", {"path": edited})
+                    self._apply_broker_result(task, "sandbox.diagnose", {"path": edited}, diag, owner=True, token=None)
 
     def _owner_chat_memory(self, current_text: str) -> list[dict]:
         chat_path = os.path.join(os.path.dirname(self.inbox_dir) or ".elora", "chat.json")
@@ -257,24 +274,26 @@ class Daemon:
         script = str(args.get("path") or "")
         if "import bpy" not in content or not script:
             return
-        cmd = blender_launch_command(script)
-        if not cmd:
-            task.messages.append({
-                "role": "user",
-                "content": "result: blender executable not found on PATH or Program Files. "
-                           "I wrote the script; install Blender or add it to PATH and I will launch it.",
-            })
-            return
-        result = self.broker.request(token, "shell.run_command", {"command": cmd})
-        self._apply_broker_result(task, "shell.run_command", {"command": cmd}, result, owner=True, token=None)
+        result = self.broker.request(token, "blender.run", {"script": script})
+        self._apply_broker_result(task, "blender.run", {"script": script}, result, owner=True, token=None)
 
-    def _write_state(self, current_task=None, status="IDLE", capability=None, last_action=None, execution_tier=None):
+    def _write_state(self, current_task=None, status="IDLE", capability=None, last_action=None, execution_tier=None, last_perception=None):
         try:
+            state_path = os.path.join(".elora", "state.json")
+            os.makedirs(".elora", exist_ok=True)
+            prev = {}
+            if os.path.exists(state_path):
+                try:
+                    with open(state_path, encoding="utf-8") as handle:
+                        prev = json.load(handle) or {}
+                except (OSError, json.JSONDecodeError, TypeError):
+                    prev = {}
             state_obj = getattr(getattr(self, "metabolism", None), "state", None)
             state_name = getattr(state_obj, "name", "ALIVE")
             skills_count = len(getattr(getattr(self, "promotion", None), "skills", {})) if getattr(self, "promotion", None) else 1
             seq = getattr(self.ledger, "seq", 0) if hasattr(self.ledger, "seq") else len(getattr(self.ledger, "events", []))
             act = last_action or getattr(getattr(self, "drive", None), "last_action", "idle") or "idle"
+            perception = last_perception if last_perception is not None else prev.get("last_perception")
             data = {
                 "state": getattr(state_obj, "value", 1) if state_obj else 1,
                 "state_name": state_name,
@@ -288,17 +307,54 @@ class Daemon:
                 "seq": seq,
                 "ts": time.time(),
             }
-            state_path = os.path.join(".elora", "state.json")
-            os.makedirs(".elora", exist_ok=True)
+            if perception is not None:
+                data["last_perception"] = perception
             with open(state_path + ".tmp", "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
             os.replace(state_path + ".tmp", state_path)
         except Exception:
             pass
 
-    def _append_chat(self, sender: str, text: str, task_id: str | None = None):
+    def _perceive(self) -> None:
+        """Eyes on the house. Synthetic frames are recorded as absence, not as sight."""
         try:
-            chat_path = os.path.join(".elora", "chat.json")
+            from elora.slime.computer_use import capture
+            res = capture()
+            if res.get("synthetic"):
+                perception = {
+                    "available": False,
+                    "reason": "no display",
+                    "synthetic": True,
+                    "ts": time.time(),
+                }
+            else:
+                perception = {
+                    "available": True,
+                    "path": res.get("path"),
+                    "sha256": res.get("sha256"),
+                    "width": res.get("width"),
+                    "height": res.get("height"),
+                    "synthetic": False,
+                    "ts": time.time(),
+                }
+            self._write_state(status="IDLE", last_action="perceive", last_perception=perception)
+            if hasattr(self.ledger, "append"):
+                self.ledger.append(
+                    organ="eyes", kind="perceive",
+                    message="screen.capture",
+                    payload={"available": perception.get("available"), "synthetic": perception.get("synthetic")},
+                )
+        except Exception as exc:
+            self._write_state(
+                status="IDLE",
+                last_action="perceive",
+                last_perception={"available": False, "reason": str(exc), "ts": time.time()},
+            )
+
+    def _append_chat(self, sender: str, text: str, task_id: str | None = None,
+                     organ: str | None = None, status: str | None = None):
+        try:
+            chat_path = os.path.join(os.path.dirname(self.inbox_dir) or ".elora", "chat.json")
             messages = []
             if os.path.exists(chat_path):
                 try:
@@ -309,12 +365,17 @@ class Daemon:
             if sender == "user" and task_id:
                 if any(m.get("task_id") == task_id and m.get("sender") == "user" for m in messages):
                     return
-            messages.append({
+            entry = {
                 "sender": sender,
                 "text": text,
                 "task_id": task_id,
                 "ts": time.time(),
-            })
+            }
+            if organ:
+                entry["organ"] = organ
+            if status:
+                entry["status"] = status
+            messages.append(entry)
             messages = messages[-100:]
             with open(chat_path + ".tmp", "w", encoding="utf-8") as f:
                 json.dump(messages, f, indent=2)
@@ -441,18 +502,22 @@ class Daemon:
         owner = self._is_owner_will(task)
         token = self._token_for(task)
         system = self._system_prompt(owner=owner)
+        owner_calls = infer_owner_organs(text) if owner else []
         if not task.messages:
             task.messages = [{
                 "role": "user",
                 "content": text,
             }]
-            if owner:
+            # Old conversation can carry a confident answer from an unrelated
+            # task. Deterministic organ tasks already have their own evidence;
+            # only memory-recall wills need prior chat in the model context.
+            if owner and any(name == "rag.recall" for name, _ in owner_calls):
                 memory = self._owner_chat_memory(text)
                 if memory:
                     task.messages = memory + task.messages
 
         if owner:
-            for name, args in infer_owner_organs(text):
+            for name, args in owner_calls:
                 self._write_state(
                     current_task=task.id, status="RUNNING", capability=name,
                     last_action=f"organ: {name}", execution_tier=token.tier.name,
@@ -694,9 +759,15 @@ class Daemon:
                         final_answer = "DONE (no tool action taken)"
 
                 if user_text:
-                    self._append_chat("user", user_text, task_id=task.id)
+                    queued_id = os.path.basename(task.claimed_path) if task.claimed_path else task.id
+                    self._append_chat("user", user_text, task_id=queued_id)
                 if final_answer:
                     self._append_chat("elora", final_answer, task_id=task.id)
+                elif task.state == TaskState.FAILED:
+                    detail = next((str(item.get("error")) for item in reversed(task.trace)
+                                   if item.get("error")), "the task could not be completed")
+                    self._append_chat("elora", f"Task failed: {detail}", task_id=task.id,
+                                      status="failed")
                 self.ledger.append(
                     organ="daemon", kind="task_finished",
                     message=task.id, payload={"status": status, "answer": final_answer},
@@ -721,7 +792,9 @@ class Daemon:
     def run_forever(self, poll_seconds: int | None = None, max_iterations: int | None = None):
         interval = poll_seconds if poll_seconds is not None else self.poll_seconds
         heartbeat_interval_s = int(os.environ.get("ELORA_HEARTBEAT_SECONDS", "300"))
+        perception_interval_s = int(os.environ.get("ELORA_PERCEPTION_SECONDS", "60"))
         last_heartbeat = time.time()
+        last_perception_at = 0.0
         heartbeat_count = 0
         iterations = 0
         while True:
@@ -735,6 +808,13 @@ class Daemon:
                         self.drive.tick()
                 except Exception:
                     pass
+                now = time.time()
+                if now - last_perception_at >= perception_interval_s:
+                    last_perception_at = now
+                    try:
+                        self._perceive()
+                    except Exception:
+                        pass
 
             if self.decay is not None:
                 try:

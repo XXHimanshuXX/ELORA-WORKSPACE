@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import weakref
 from collections import deque
@@ -168,6 +169,16 @@ def _read_secret(name: str) -> str:
         return ""
 
 
+def _github_env() -> dict[str, str]:
+    """PAT from .elora/secrets. Missing token is allowed; the server will fail calls honestly."""
+    env: dict[str, str] = {}
+    token = _read_secret("github_token") or _read_secret("github_personal_access_token")
+    if token:
+        env["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
+        env["GITHUB_TOKEN"] = token
+    return env
+
+
 def _omniroute_env() -> dict[str, str]:
     """
     The environment OmniRoute's MCP server needs in order to authenticate.
@@ -205,6 +216,32 @@ DEFAULT_SERVERS: dict[str, McpServerSpec] = {
         name="filesystem",
         command="npx",
         args=["-y", "@modelcontextprotocol/server-filesystem", "D:/Coding/ELORA Workspace"],
+    ),
+    "github": McpServerSpec(
+        name="github",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-github"],
+        env=_github_env(),
+    ),
+    "playwright": McpServerSpec(
+        name="playwright",
+        command="npx",
+        args=["-y", "@playwright/mcp"],
+    ),
+    "fetch": McpServerSpec(
+        name="fetch",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-fetch"],
+    ),
+    "memory": McpServerSpec(
+        name="memory",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-memory"],
+    ),
+    "blender": McpServerSpec(
+        name="blender",
+        command=sys.executable,
+        args=["-u", "-m", "elora.core.blender_mcp"],
     ),
 }
 

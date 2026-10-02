@@ -73,6 +73,62 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
     ):
         calls.append(("net.read", {"url": "README.md"}))
 
+    _APP_WORDS = (
+        ("chrome", "chrome"),
+        ("google chrome", "chrome"),
+        ("edge", "edge"),
+        ("firefox", "firefox"),
+        ("notepad", "notepad"),
+        ("explorer", "explorer"),
+        ("file explorer", "explorer"),
+        ("calculator", "calc"),
+        ("calc", "calc"),
+        ("vs code", "code"),
+        ("vscode", "code"),
+        ("visual studio code", "code"),
+        ("browser", "browser"),
+        ("blender", "blender"),
+    )
+    if any(w in lower for w in ("open ", "launch ", "start ")):
+        for needle, app in sorted(_APP_WORDS, key=lambda x: -len(x[0])):
+            if needle in lower:
+                calls.append(("app.open", {"app": app}))
+                break
+
+    if "screenshot" in lower or "capture the screen" in lower or "look at the screen" in lower:
+        calls.append(("screen.capture", {}))
+
+    if any(re.search(rf"\b{verb}\b", lower) for verb in (
+        "implement", "refactor", "fix", "repair", "change", "edit", "modify")) or any(
+            phrase in lower for phrase in ("where is ", "how does ")
+    ):
+        calls.append(("sandbox.repo_map", {"query": text.strip()[:80]}))
+
+    if any(w in lower for w in ("pytest", "run the tests", "run tests", "test suite", "run unit tests")):
+        calls.append(("sandbox.test", {}))
+    if any(w in lower for w in ("run.py --check", "preflight", "run check", "sandbox.check")):
+        calls.append(("sandbox.check", {}))
+    if "git status" in lower:
+        calls.append(("git.status", {}))
+    if "git diff" in lower:
+        calls.append(("git.diff", {}))
+    if any(w in lower for w in ("plugin.list", "list plugins", "what plugins", "mcp servers")):
+        calls.append(("plugin.list", {}))
+    if "marketplace" in lower:
+        calls.append(("plugin.marketplace", {}))
+    if any(w in lower for w in ("list files", "workspace tree", "list the repo", "list the workspace")):
+        calls.append(("ws.list", {"path": "."}))
+    m_search = re.search(r"\b(?:search|find|grep)\s+(?:for\s+)?['\"]?([A-Za-z0-9_./:-]{2,})", text, re.I)
+    if m_search and "blender" not in lower:
+        calls.append(("code.search", {"query": m_search.group(1)}))
+
+    if "blender" in lower and "connect" in lower:
+        calls.append(("blender.run", {"script": "elora/slime/blender_connect.py"}))
+        calls.append(("plugin.call", {"server": "blender", "tool": "ping"}))
+
+    if "blender" in lower and any(w in lower for w in ("build", "london", "bridge", "bpy", ".blend")):
+        calls.append(("blender.run", {"script": "build_bridge.py"}))
+
     seen: set[tuple] = set()
     out: list[tuple[str, dict]] = []
     for name, args in calls:
@@ -95,12 +151,17 @@ def maid_constitution(workspace: str) -> str:
         "When Master leaves the room you do not clock out. Unfinished work stays a chore "
         "(chore.keep / chore.status). The daemon continues it.\n"
         "Send attendants for parallel work: agent.spawn {\"goal\": \"...\"}. Depth 2. You remain the maid.\n"
-        "Plugins: plugin.list, plugin.call {\"server\": \"omniroute\", \"tool\": \"NAME\", \"arguments\": {}}. "
+        "Plugins: plugin.list, plugin.call {\"server\": \"github|playwright|fetch|memory|omniroute|blender\", \"tool\": \"NAME\", \"arguments\": {}}. "
         "OmniRoute is a sense organ, not a replacement for your hands.\n"
-        "HANDS of the house (do not send Master to Cursor/VS Code/Claude/Codex):\n"
-        "  ws.list, code.read, code.search, code.edit, git.status, git.diff, git.commit,\n"
-        "  shell.run_command for pytest/python/build. Never skip tests. Never --no-verify.\n"
+        "HANDS of the house (do not send Master to Cursor/VS Code/Claude/Codex — you ARE the IDE):\n"
+        "  ws.list, code.read, code.search, code.edit, sandbox.glob, sandbox.test, sandbox.check, sandbox.status,\n"
+        "  Hidden controls (use them, do not describe them): sandbox.repo_map, sandbox.diagnose, sandbox.checkpoint, sandbox.restore.\n"
+        "  git.status, git.diff, git.commit, plugin.list, plugin.call, plugin.marketplace.\n"
+        "  Never skip tests. Never --no-verify. Never ask Master to open another IDE.\n"
         "Local docs: net.read {\"url\": \"README.md\"}. Web: net.read / net.search. Memory: rag.recall.\n"
+        "Eyes: screen.capture. Glass: app.open {\"app\": \"chrome|edge|firefox|notepad|explorer|code|calc|blender\"} then screen.control.\n"
+        "Blender: blender.run {\"script\": \"elora/slime/blender_connect.py\"} then plugin.call {\"server\": \"blender\", \"tool\": \"ping\"}. "
+        "Build: blender.run {\"script\": \"build_bridge.py\"}. Script must live in the workspace. Never shell blender.\n"
         "If a tool is rejected, immediately retry a legal organ. Never stop to interview the Master.\n"
         "Hardware is a delay, not a refusal: if a capability is deferred for RAM, "
         "call net.search for a free cloud alternative and continue the task.\n"

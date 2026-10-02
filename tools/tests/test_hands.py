@@ -50,10 +50,36 @@ def test_code_edit_unique_replace_and_secret_refuse(tmp_path):
     assert not refused["ok"]
 
 
+def test_code_edit_refuses_write_when_checkpoint_fails(tmp_path, monkeypatch):
+    target = tmp_path / "guarded.py"
+    target.write_text("value = 1\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "elora.slime.control_plane.snapshot_file",
+        lambda *args, **kwargs: {"ok": False, "error": "checkpoint store unavailable"},
+    )
+    result = code_edit("guarded.py", content="value = 2\n", root=str(tmp_path))
+    assert result["ok"] is False
+    assert "checkpoint failed" in result["error"]
+    assert target.read_text(encoding="utf-8") == "value = 1\n"
+
+
 def test_path_cannot_escape_root(tmp_path):
     res = dispatch("code.read", {"path": "../outside.py"}, root=str(tmp_path))
     assert res["ok"] is False
     assert "escapes" in res["error"]
+
+
+def test_hands_skips_elora_quarantine(tmp_path):
+    elora_dir = tmp_path / ".elora"
+    elora_dir.mkdir(parents=True, exist_ok=True)
+    target = elora_dir / "forbidden.py"
+    target.write_text("def hello():\n    return 42\n", encoding="utf-8")
+    listed = ws_list(".", root=str(tmp_path))
+    assert listed["ok"]
+    assert not any(e["name"] == ".elora" for e in listed["entries"])
+    hits = code_search("hello", glob=".py", root=str(tmp_path))
+    assert hits["ok"]
+    assert len(hits["hits"]) == 0
 
 
 def test_broker_core_can_search_workspace(tmp_path):

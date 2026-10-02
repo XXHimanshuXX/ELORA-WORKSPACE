@@ -111,7 +111,14 @@ CAPABILITY_ALIASES: dict[str, str] = {
     "search_replace": "code.edit",
     "str_replace": "code.edit",
     "list_dir": "ws.list",
-    "glob": "ws.list",
+    "glob": "sandbox.glob",
+    "pytest": "sandbox.test",
+    "run_tests": "sandbox.test",
+    "marketplace": "plugin.marketplace",
+    "repo_map": "sandbox.repo_map",
+    "diagnose": "sandbox.diagnose",
+    "checkpoint": "sandbox.checkpoint",
+    "restore": "sandbox.restore",
     "git_status": "git.status",
     "git_diff": "git.diff",
     "git_commit": "git.commit",
@@ -119,6 +126,11 @@ CAPABILITY_ALIASES: dict[str, str] = {
     "todo_write": "chore.keep",
     "spawn": "agent.spawn",
     "mcp.call": "plugin.call",
+    "open_app": "app.open",
+    "launch": "app.open",
+    "start_app": "app.open",
+    "blender": "blender.run",
+    "bpy": "blender.run",
 }
 
 
@@ -354,6 +366,78 @@ _register(Capability(
     command_builder=lambda a: _py("elora.core.mcp_client", "--op", "call"),
 ))
 
+_register(Capability(
+    name="plugin.marketplace",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Catalogue of MCP servers ELORA may run. Unknown packages cannot be installed.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "plugin.marketplace"),
+))
+
+_register(Capability(
+    name="sandbox.glob",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Find workspace files by glob. Not a shell find.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.glob"),
+))
+
+_register(Capability(
+    name="sandbox.test",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Run pytest on a jailed tools/tests path. Not an arbitrary shell.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.test"),
+))
+
+_register(Capability(
+    name="sandbox.check",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Run python run.py --check in the workspace.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.check"),
+))
+
+_register(Capability(
+    name="sandbox.status",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Workspace root, git porcelain, and installed MCP names.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.status"),
+))
+
+_register(Capability(
+    name="sandbox.repo_map",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Hidden control: compact symbol map of the workspace. Not a grep dump.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.repo_map"),
+))
+
+_register(Capability(
+    name="sandbox.checkpoint",
+    risk=Risk.LOW,
+    budget=Budget.MICRO(),
+    description="Hidden control: snapshot one jailed file before mutation. Secrets refused.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.checkpoint"),
+))
+
+_register(Capability(
+    name="sandbox.restore",
+    risk=Risk.MODERATE,
+    budget=Budget.SKILL(),
+    description="Hidden control: restore the last checkpoint for one jailed path.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.restore"),
+))
+
+_register(Capability(
+    name="sandbox.diagnose",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Hidden control: syntax-diagnose one file (py_compile). Run after every edit.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "sandbox.diagnose"),
+))
+
 # --- Risk 3: Moderate --------------------------------------------------
 
 _register(Capability(
@@ -366,6 +450,29 @@ _register(Capability(
         "guardrail, not a sandbox — the armored runner provides the cage."
     ),
     command_builder=_shell_argv,
+))
+
+_register(Capability(
+    name="blender.run",
+    risk=Risk.MODERATE,
+    budget=Budget.SKILL(),
+    description="Run one workspace-jailed Blender Python script. Not an arbitrary path, not shell.",
+    command_builder=lambda a: [
+        sys.executable, "-m", "elora.slime.blender",
+        "--script", str(a.get("script", a.get("path", ""))),
+    ],
+))
+
+_register(Capability(
+    name="app.open",
+    risk=Risk.MODERATE,
+    budget=Budget.SKILL(),
+    description="Open one allowlisted desktop app (browser, editor, explorer, notepad). Not an arbitrary path.",
+    command_builder=lambda a: [
+        sys.executable, "-m", "elora.slime.computer_use",
+        "--action", "open",
+        "--app", str(a.get("app", a.get("name", ""))),
+    ],
 ))
 
 _register(Capability(

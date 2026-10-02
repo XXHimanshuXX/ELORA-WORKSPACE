@@ -19,7 +19,7 @@ from elora.core.owner_will import WORKSPACE_ROOT
 
 SKIP_DIRS = {
     ".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build",
-    ".pytest_cache", ".mypy_cache", "target", ".next",
+    ".pytest_cache", ".mypy_cache", "target", ".next", ".elora",
 }
 SECRET_FRAGMENTS = (
     os.path.join(".elora", "secrets"),
@@ -156,6 +156,15 @@ def code_edit(path: str, old_string: str | None = None, new_string: str | None =
         return {"ok": False, "error": str(e)}
     if _is_secret(resolved):
         return {"ok": False, "error": "refused: secrets are not writable by hands"}
+    if os.path.isfile(resolved):
+        try:
+            from elora.slime.control_plane import snapshot_file
+            checkpoint = snapshot_file(resolved, root=root)
+        except Exception as exc:
+            return {"ok": False, "error": f"checkpoint failed: {exc}", "path": _rel(resolved)}
+        if not checkpoint.get("ok"):
+            return {"ok": False, "error": f"checkpoint failed: {checkpoint.get('error', 'unknown error')}",
+                    "path": _rel(resolved)}
     os.makedirs(os.path.dirname(resolved) or ".", exist_ok=True)
     if old_string:
         if not os.path.isfile(resolved):

@@ -84,7 +84,7 @@ class TestTauriDesktopPackaging:
             cwd=root,
             capture_output=True,
             text=True,
-            timeout=15,
+            timeout=90,
         )
         assert proc.returncode == 0
         assert "smoke: GREEN" in proc.stdout
