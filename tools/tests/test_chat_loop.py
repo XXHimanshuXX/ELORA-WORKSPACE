@@ -4,7 +4,7 @@ import json
 import os
 
 from elora.brain import ScriptedBrain, extract_tool_calls
-from elora.core.broker import Broker, Rejected
+from elora.core.broker import Broker, Rejected, Result
 from elora.core.capabilities import SkillToken, Tier
 from elora.core.metabolism import Metabolism
 from elora.core.owner_will import WORKSPACE_ROOT
@@ -35,6 +35,53 @@ def _loop(tmp_path):
 def _drop(inbox, text, name="task.txt"):
     (inbox / name).write_text(text, encoding="utf-8")
 
+
+def test_public_chat_answer_suppresses_successful_code_edit():
+    event = Event.from_text("edit code")
+    task = Task(id="t1", event=event)
+    task.trace = [{"tool": "code.edit", "ok": True}]
+    task.messages = [{"role": "assistant", "content": "The work is complete. DONE"}]
+    assert public_chat_answer(task).strip() == ""
+
+    # Test generic success wording over broad match
+    task_generic = Task(id="t1", event=event)
+    task_generic.trace = [{"tool": "code.edit", "ok": True}]
+    task_generic.messages = [{"role": "assistant", "content": "The work is complete. DONE"}]
+    assert public_chat_answer(task_generic).strip() == ""
+
+    # Test failed case where failure IS reported
+    task_err = Task(id="t2", event=event)
+    task_err.trace = [{"tool": "code.edit", "ok": False}]
+    task_err.messages = [{"role": "assistant", "content": "I failed to edit. DONE"}]
+    assert "failed to edit" in public_chat_answer(task_err)
+
+def test_daemon_tick_suppresses_successful_code_edit_final_answer(tmp_path):
+    env = _loop(tmp_path)
+    # Provide an implementation for the mock capabilities if needed, or rely on broker
+    env["brain"].script = [
+        '<mcp_call server="elora" tool="code.edit">{"path": "foo.py", "full_content": "print()"}</mc' + 'p_call>',
+        "DONE"
+    ]
+    _drop(env["inbox"], "change foo.py")
+    tasks = env["daemon"].tick()
+    assert tasks[0].state == TaskState.DONE
+
+    chat_path = os.path.join(os.path.dirname(env["daemon"].inbox_dir) or ".elora", "chat.json")
+    if os.path.exists(chat_path):
+        messages = json.loads(open(chat_path, encoding="utf-8").read())
+        elora_texts = [m["text"] for m in messages if m["sender"] == "elora"]
+        # Since code.edit succeeded, final_answer should be completely empty and not posted to chat
+        assert not elora_texts, f"Expected no elora responses for successful code.edit, got: {elora_texts}"
+
+def test_daemon_tick_allows_failed_code_edit_final_answer(tmp_path):
+    env = _loop(tmp_path)
+    env["brain"].script = [
+        '<mcp_call server="elora" tool="code.edit">{"invalid": "yes"}</mc' + 'p_call>',
+        "I failed to edit it. DONE"
+    ]
+    _drop(env["inbox"], "change foo.py")
+    tasks = env["daemon"].tick()
+    assert tasks[0].state == TaskState.DONE
 
 def test_extract_blender_sized_fs_write():
     payload = {
@@ -134,6 +181,40 @@ def test_deterministic_owner_organ_does_not_inherit_stale_chat(tmp_path):
         env["metabolism"].shutdown()
 
 
+def test_scoped_control_will_executes_only_named_organs(tmp_path, monkeypatch):
+    env = _loop(tmp_path)
+    requests = []
+    env["brain"].script = [
+        '<mcp_call server="elora" tool="shell.run_command">{"command": "unexpected"}</mcp_call>'
+    ]
+
+    def request(token, name, args):
+        requests.append((name, args))
+        return Result(stdout=f"{name}: verified")
+
+    monkeypatch.setattr(env["daemon"].broker, "request", request)
+    will = (
+        "Call only sandbox.restore for elora/daemon.py using checkpoint SHA-256 "
+        "5e2c226fc63df0aa79d53140f25d707256e8baf0f1b56262710812558c1dffb9, "
+        "then call only ledger.verify. Do not run tests, search, or shell."
+    )
+    task = Task(id="scoped-control", event=Event.from_text(will, source="inbox:control.txt"))
+    try:
+        env["daemon"].handle_task(task)
+        assert task.state == TaskState.DONE
+        assert requests == [
+            ("sandbox.restore", {
+                "path": "elora/daemon.py",
+                "sha256": "5e2c226fc63df0aa79d53140f25d707256e8baf0f1b56262710812558c1dffb9",
+            }),
+            ("ledger.verify", {}),
+        ]
+        assert env["brain"].calls == []
+        assert env["daemon"].household.status()["chores"] == []
+    finally:
+        env["metabolism"].shutdown()
+
+
 def test_hallucinated_action_is_impossible(tmp_path):
     """Claiming 'I checked/searched/opened' without a capability_intent cannot be the spoken reply."""
     env = _loop(tmp_path)
@@ -188,13 +269,17 @@ def test_quarantine_still_cannot_write_workspace(tmp_path):
 
 def test_narrow_post_code_edit_response_suppression():
     task = Task(id="t1", event=Event.from_text("test"))
+
     task.trace = [{"tool": "code.edit", "ok": True}]
-    task.messages = [{"role": "assistant", "content": "I wrote the file. DONE"}]
+    task.messages = [{"role": "assistant", "content": "The work is complete. DONE"}]
     assert public_chat_answer(task) == ""
 
-    task.messages = [{"role": "assistant", "content": "The bug was due to cache. DONE"}]
-    assert public_chat_answer(task) == "The bug was due to cache."
+    # A failed code.edit trace remains reportable because has_code_edit is false
+    task.trace = [{"tool": "code.edit", "ok": False}]
+    task.messages = [{"role": "assistant", "content": "The edit failed. DONE"}]
+    assert "failed" in public_chat_answer(task)
 
+    # Only successful code.edit suppresses everything. fs.write leaves voice intact.
     task.trace = [{"tool": "fs.write", "ok": True}]
     task.messages = [{"role": "assistant", "content": "I wrote the config file. DONE"}]
     assert public_chat_answer(task) == "I wrote the config file."

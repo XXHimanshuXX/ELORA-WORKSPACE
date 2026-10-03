@@ -74,6 +74,28 @@ def test_unfinished_work_is_kept_and_continued(tmp_path):
         metabolism.shutdown()
 
 
+def test_pending_master_will_preempts_unattended_chore(tmp_path):
+    metabolism = Metabolism(cache_dir=str(tmp_path / "cache"), ram_hard_cap_mb=16000)
+    ledger, vault = FakeLedger(), FakeVault()
+    broker = Broker(metabolism=metabolism, ledger=ledger, vault=vault,
+                    consent_dir=str(tmp_path / "consent"), vault_root=str(tmp_path / "vault"))
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    brain = ScriptedBrain(script=["This stale chore must not run. DONE"])
+    daemon = Daemon(brain=brain, broker=broker, metabolism=metabolism,
+                    ledger=ledger, vault=vault, inbox_dir=str(inbox))
+    try:
+        chore = daemon.household.keep("continue old project work")
+        (inbox / "master-will.txt").write_text("git status", encoding="utf-8")
+
+        assert daemon._continue_chore() is False
+        assert chore.attempts == 0
+        assert chore.status == "open"
+        assert brain.calls == []
+    finally:
+        metabolism.shutdown()
+
+
 def test_attendant_spawn(tmp_path):
     metabolism = Metabolism(cache_dir=str(tmp_path / "cache"), ram_hard_cap_mb=16000)
     ledger, vault = FakeLedger(), FakeVault()

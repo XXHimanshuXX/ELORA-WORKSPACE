@@ -25,6 +25,41 @@ _ACTION_NARRATION_RE = re.compile(
     r"\bI (?:checked|searched|opened|launched|wrote|ran|built|created|confirmed|looked)\b",
     re.I,
 )
+_NEGATION_RE = re.compile(
+    r"\b(?:do not|don't|doesn't|never|must not|should not|avoid|without|not allowed|not needed)\b",
+    re.I,
+)
+_DIRECT_CONTROL_RE = re.compile(
+    r"\b(?:sandbox\.(?:repo_map|checkpoint|restore|diagnose|test|check)|ledger\.verify)\b",
+    re.I,
+)
+
+
+def _positive_intent_text(text: str) -> str:
+    """Remove explicitly negated clauses before deterministic organ matching."""
+    positive: list[str] = []
+    for sentence in re.split(r"(?<=[.!?])\s+|[;\r\n]+", text or ""):
+        for clause in re.split(
+            r",\s*(?=(?:do not|don't|doesn't|never|must not|should not|avoid|without)\b)",
+            sentence,
+            flags=re.I,
+        ):
+            clause = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", clause).strip()
+            if clause and not _NEGATION_RE.search(clause):
+                positive.append(clause)
+    return " ".join(positive)
+
+
+def is_direct_control_will(text: str) -> bool:
+    """Whether the Master explicitly limits a will to hidden control organs."""
+    positive = _positive_intent_text(text)
+    scope = re.search(
+        r"\b(?:call|run|execute)\s+only\b|\bonly\s+(?:call|run|execute)\b|"
+        r"\bno other organs?\b|\bstop after\b|\bexactly one\b",
+        text or "",
+        re.I,
+    )
+    return bool(scope and _DIRECT_CONTROL_RE.search(positive))
 
 
 def is_owner_source(source: str | None) -> bool:
@@ -41,13 +76,60 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
     """
     if not text or not text.strip():
         return []
+    intent = _positive_intent_text(text)
+    if not intent:
+        return []
     calls: list[tuple[str, dict]] = []
-    lower = text.lower()
+    lower = intent.lower()
 
-    for url in _URL_RE.findall(text):
+    for url in _URL_RE.findall(intent):
         if _GITHUB_RAW in url:
             continue
         calls.append(("net.read", {"url": url.rstrip(".,;:")}))
+
+    direct_map = re.search(r"\bsandbox\.repo_map\b", lower)
+    if direct_map:
+        query = re.search(
+            r"\bsandbox\.repo_map\b.*?\bquery\s*[:=]?\s*['\"]([^'\"]+)['\"]",
+            intent,
+            re.I,
+        )
+        calls.append(("sandbox.repo_map", {"query": query.group(1) if query else intent.strip()[:160]}))
+
+    path_match = re.search(
+        r"\b(?:sandbox\.(?:restore|checkpoint|diagnose))\b"
+        r"(?:\s+(?:for\s+|path\s*[:=]\s*))['\"]?([\w./\\-]+)",
+        intent,
+        re.I,
+    )
+    for control_name in ("sandbox.checkpoint", "sandbox.restore", "sandbox.diagnose"):
+        if control_name in lower and path_match and path_match.group(0).lower().startswith(control_name):
+            args = {"path": path_match.group(1).rstrip(".,;:")}
+            if control_name == "sandbox.restore":
+                digest = re.search(
+                    r"\b(?:sha-?256|checkpoint(?:\s+sha-?256)?)\s*[:=]?\s*([a-f0-9]{64})\b",
+                    intent,
+                    re.I,
+                )
+                if digest:
+                    args["sha256"] = digest.group(1).lower()
+            calls.append((control_name, args))
+
+    if "sandbox.check" in lower:
+        calls.append(("sandbox.check", {}))
+    test_request = any(w in lower for w in ("pytest", "run the tests", "run tests", "test suite", "run unit tests", "sandbox.test"))
+    if test_request:
+        target = re.search(
+            r"\b(?:sandbox\.test|pytest|run the tests|run tests|test suite|run unit tests)\b"
+            r"(?:\s+only)?(?:\s+for)?\s+([\w./\\-]+)",
+            intent,
+            re.I,
+        )
+        target_value = target.group(1).rstrip(".,;:") if target else ""
+        test_args = {"target": target_value} if target_value and ("/" in target_value or "\\" in target_value or ".py" in target_value) else {}
+        calls.append(("sandbox.test", test_args))
+    if "ledger.verify" in lower:
+        calls.append(("ledger.verify", {}))
 
     if "ledger" in lower and any(w in lower for w in ("verify", "check", "integrity", "audit")):
         calls.append(("ledger.verify", {}))
@@ -60,7 +142,7 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
     )):
         calls.append(("rag.recall", {"query": text.strip()}))
 
-    for raw in _FILE_RE.findall(text):
+    for raw in _FILE_RE.findall(intent):
         path = raw.strip(".,;:)'\"")
         ext = os.path.splitext(path.lower())[1]
         if "ingest" in lower or ext in {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".mp4"}:
@@ -98,13 +180,17 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
     if "screenshot" in lower or "capture the screen" in lower or "look at the screen" in lower:
         calls.append(("screen.capture", {}))
 
-    if any(re.search(rf"\b{verb}\b", lower) for verb in (
-        "implement", "refactor", "fix", "repair", "change", "edit", "modify")) or any(
-            phrase in lower for phrase in ("where is ", "how does ")
-    ):
-        calls.append(("sandbox.repo_map", {"query": text.strip()[:80]}))
+    implementation_intent = re.search(
+        r"(?:^|\b(?:please|then|and|now|must|need to|want to)\s+)"
+        r"(?:implement|refactor|fix|repair|change|edit|modify)\b",
+        lower,
+    )
+    if not direct_map and (implementation_intent or any(
+        phrase in lower for phrase in ("where is ", "how does ")
+    )):
+        calls.append(("sandbox.repo_map", {"query": intent.strip()[:80]}))
 
-    if any(w in lower for w in ("pytest", "run the tests", "run tests", "test suite", "run unit tests")):
+    if not test_request and any(w in lower for w in ("pytest", "run the tests", "run tests", "test suite", "run unit tests")):
         calls.append(("sandbox.test", {}))
     if any(w in lower for w in ("run.py --check", "preflight", "run check", "sandbox.check")):
         calls.append(("sandbox.check", {}))
@@ -118,7 +204,7 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
         calls.append(("plugin.marketplace", {}))
     if any(w in lower for w in ("list files", "workspace tree", "list the repo", "list the workspace")):
         calls.append(("ws.list", {"path": "."}))
-    m_search = re.search(r"\b(?:search|find|grep)\s+(?:for\s+)?['\"]?([A-Za-z0-9_./:-]{2,})", text, re.I)
+    m_search = re.search(r"\b(?:search|find|grep)\s+(?:for\s+)?['\"]?([A-Za-z0-9_./:-]{2,})", intent, re.I)
     if m_search and "blender" not in lower:
         calls.append(("code.search", {"query": m_search.group(1)}))
 

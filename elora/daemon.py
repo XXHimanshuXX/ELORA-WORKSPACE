@@ -23,6 +23,7 @@ from elora.core.owner_will import (
     WORKSPACE_ROOT,
     experiment_constitution,
     infer_owner_organs,
+    is_direct_control_will,
     is_action_narration,
     is_owner_source,
     maid_constitution,
@@ -32,7 +33,9 @@ from elora.runtime import runtime_manager
 
 def public_chat_answer(task) -> str:
     """Never publish a raw tool gesture as the maid's spoken reply."""
-    has_code_edit = any(t.get("tool") == "code.edit" and t.get("ok") for t in getattr(task, "trace", []))
+    has_code_edit = any(t.get("tool") == "code.edit" and bool(t.get("ok")) for t in getattr(task, "trace", []))
+    if has_code_edit:
+        return ""
     for msg in reversed(getattr(task, "messages", []) or []):
         if msg.get("role") != "assistant":
             continue
@@ -44,15 +47,11 @@ def public_chat_answer(task) -> str:
         stripped = re.sub(r'(?:\r?\n|\s)+DONE\.?$', "", stripped).strip()
         if calls or failures or "<mcp_call" in raw.lower():
             if stripped and stripped.upper() != "DONE":
-                if has_code_edit and is_action_narration(stripped):
-                    continue
                 return stripped
             continue
         if raw.upper() == "DONE":
             continue
         if is_action_narration(raw):
-            if has_code_edit:
-                continue
             if not any(t.get("ok") for t in getattr(task, "trace", [])):
                 continue
         return stripped or raw
@@ -479,7 +478,10 @@ class Daemon:
 
         text = task.event.payload.get("text", "")
         source = (task.event.source or "") if task.event else ""
-        if self._is_owner_will(task) and is_chore_text(text) and not source.startswith("inbox:chore") and not source.startswith("agent:"):
+        owner = self._is_owner_will(task)
+        owner_calls = infer_owner_organs(text) if owner else []
+        direct_control = owner and is_direct_control_will(text)
+        if owner and not direct_control and is_chore_text(text) and not source.startswith("inbox:chore") and not source.startswith("agent:"):
             try:
                 self.household.keep(text, source=source)
             except Exception:
@@ -499,10 +501,8 @@ class Daemon:
             )
             return task
 
-        owner = self._is_owner_will(task)
         token = self._token_for(task)
         system = self._system_prompt(owner=owner)
-        owner_calls = infer_owner_organs(text) if owner else []
         if not task.messages:
             task.messages = [{
                 "role": "user",
@@ -525,7 +525,20 @@ class Daemon:
                 result = self.broker.request(token, name, args)
                 self._apply_broker_result(task, name, args, result, owner=True, token=token)
 
+        if direct_control:
+            organ_results = [entry for entry in task.trace if entry.get("tool")]
+            task.state = (
+                TaskState.DONE
+                if len(organ_results) == len(owner_calls) and all(entry.get("ok") for entry in organ_results)
+                else TaskState.FAILED
+            )
+            return task
+
         while True:
+            if source.startswith("inbox:chore:") and self._has_pending_inbox():
+                task.trace.append({"interrupted": "new Master will arrived; chore yielded"})
+                task.state = TaskState.FAILED
+                return task
             task.iterations += 1
             if task.iterations > (24 if owner else self.MAX_ITERATIONS):
                 task.state = TaskState.FAILED
@@ -534,6 +547,11 @@ class Daemon:
                 reply = self.brain.complete(system, task.messages)
             except Exception as e:
                 task.trace.append({"error": str(e)})
+                task.state = TaskState.FAILED
+                return task
+
+            if source.startswith("inbox:chore:") and self._has_pending_inbox():
+                task.trace.append({"interrupted": "new Master will arrived; chore yielded"})
                 task.state = TaskState.FAILED
                 return task
 
@@ -646,6 +664,8 @@ class Daemon:
         self._apply_broker_result(parent, "agent.spawn", args, Result(stdout=payload, returncode=rc), owner=owner, token=token)
 
     def _continue_chore(self) -> bool:
+        if self._has_pending_inbox():
+            return False
         chore = self.household.next_open()
         if chore is None:
             return False
@@ -673,6 +693,17 @@ class Daemon:
         except Exception:
             pass
         return True
+
+    def _has_pending_inbox(self) -> bool:
+        """Keep unattended chores from running across a waiting Master will."""
+        try:
+            return any(
+                not name.startswith(".")
+                and os.path.isfile(os.path.join(self.inbox_dir, name))
+                for name in os.listdir(self.inbox_dir)
+            )
+        except OSError:
+            return False
 
     def _episode_for(self, task, call, execution) -> str:
         sha = getattr(execution, "stdout_sha256", "") or ""
@@ -744,19 +775,21 @@ class Daemon:
                         pass
                 status = self.assess_task_completion(task)
                 final_answer = public_chat_answer(task)
+                has_code_edit_success = any(t.get("tool") == "code.edit" and bool(t.get("ok")) for t in getattr(task, "trace", []))
 
-                tool_lines = []
-                for msg in task.messages:
-                    if msg.get("role") == "user" and str(msg.get("content", "")).startswith("result: "):
-                        res_str = msg.get("content", "")[8:].strip()
-                        if res_str:
-                            tool_lines.append(res_str)
+                if not has_code_edit_success:
+                    tool_lines = []
+                    for msg in task.messages:
+                        if msg.get("role") == "user" and str(msg.get("content", "")).startswith("result: "):
+                            res_str = msg.get("content", "")[8:].strip()
+                            if res_str:
+                                tool_lines.append(res_str)
 
-                if final_answer == "DONE" or not final_answer:
-                    if tool_lines:
-                        final_answer = "\n".join(tool_lines)
-                    elif status == "DONE_NO_WORK":
-                        final_answer = "DONE (no tool action taken)"
+                    if final_answer == "DONE" or not final_answer:
+                        if tool_lines:
+                            final_answer = "\n".join(tool_lines)
+                        elif status == "DONE_NO_WORK":
+                            final_answer = "DONE (no tool action taken)"
 
                 if user_text:
                     queued_id = os.path.basename(task.claimed_path) if task.claimed_path else task.id

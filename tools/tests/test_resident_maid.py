@@ -182,7 +182,7 @@ def test_resident_language_is_not_a_capability_toolbar():
 
 
 def test_infer_owner_organs_readme_and_urls():
-    from elora.core.owner_will import infer_owner_organs, is_owner_source
+    from elora.core.owner_will import infer_owner_organs, is_direct_control_will, is_owner_source
 
     calls = infer_owner_organs("read README.md and summarize it")
     assert calls == [("net.read", {"url": "README.md"})]
@@ -195,6 +195,9 @@ def test_infer_owner_organs_readme_and_urls():
     assert ("app.open", {"app": "chrome"}) in calls
     calls = infer_owner_organs("run the tests")
     assert ("sandbox.test", {}) in calls
+    assert infer_owner_organs("sandbox.test only tools/tests/test_chat_loop.py") == [
+        ("sandbox.test", {"target": "tools/tests/test_chat_loop.py"})
+    ]
     calls = infer_owner_organs("git status")
     assert ("git.status", {}) in calls
     assert ("sandbox.repo_map", {"query": "fix the overlay task flow"}) in infer_owner_organs("fix the overlay task flow")
@@ -205,6 +208,25 @@ def test_infer_owner_organs_readme_and_urls():
     assert ("blender.run", {"script": "elora/slime/blender_connect.py"}) in calls
     assert ("plugin.call", {"server": "blender", "tool": "ping"}) in calls
     assert ("blender.run", {"script": "build_bridge.py"}) in calls
+
+    bounded = (
+        "Call only sandbox.restore for elora/daemon.py using checkpoint SHA-256 "
+        "5e2c226fc63df0aa79d53140f25d707256e8baf0f1b56262710812558c1dffb9, "
+        "then call only ledger.verify. Do not run tests, sandbox.check, search, "
+        "open app, or shell."
+    )
+    assert infer_owner_organs(bounded) == [
+        ("sandbox.restore", {
+            "path": "elora/daemon.py",
+            "sha256": "5e2c226fc63df0aa79d53140f25d707256e8baf0f1b56262710812558c1dffb9",
+        }),
+        ("ledger.verify", {}),
+    ]
+    assert is_direct_control_will(bounded)
+    assert infer_owner_organs(
+        "Do not run tests, git status/diff, plugins, marketplace, list files, "
+        "search/grep, README, ledger, open app, screenshot, or Blender."
+    ) == []
     assert is_owner_source("inbox:chat_1.txt") is True
     assert is_owner_source("drive:self_experiment") is False
 

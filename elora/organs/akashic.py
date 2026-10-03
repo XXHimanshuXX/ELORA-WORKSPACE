@@ -13,6 +13,7 @@ import json
 import os
 import sqlite3
 import sys
+import threading
 import time
 from typing import Any, Optional
 
@@ -24,6 +25,7 @@ class AkashicLedger:
         if parent:
             os.makedirs(parent, exist_ok=True)
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._append_lock = threading.RLock()
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute(
@@ -77,32 +79,42 @@ class AkashicLedger:
         ts = time.time()
         payload_str = json.dumps(payload if payload is not None else {},
                                  sort_keys=True, default=str)
-        prev_hash = self._last_hash()
-        digest = hashlib.sha256(
-            f"{prev_hash}{organ}{kind}{message}{payload_str}{ts}".encode()
-        ).hexdigest()
-        self.conn.execute(
-            "INSERT INTO events (ts, organ, kind, message, payload, prev_hash, hash) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (ts, organ, kind, message, payload_str, prev_hash, digest),
-        )
-        self.conn.commit()
-        seq = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        rec = {
-            "seq": seq, "ts": ts, "organ": organ, "kind": kind,
-            "message": message, "payload": json.loads(payload_str),
-            "prev_hash": prev_hash, "hash": digest,
-        }
-        self._events.append(rec)
-        try:
-            tail_dir = os.path.dirname(os.path.abspath(self.db_path))
-            tail_path = os.path.join(tail_dir, "ledger_tail.json")
-            tail = self.recent_events(n=25)
-            with open(tail_path + ".tmp", "w", encoding="utf-8") as f:
-                json.dump(tail, f, indent=2)
-            os.replace(tail_path + ".tmp", tail_path)
-        except Exception:
-            pass
+        # The parent read and insert must be one serialized write transaction.
+        # SQLite's write lock coordinates separate ledger connections/processes;
+        # the instance lock also protects this shared connection across threads.
+        with self._append_lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                prev_hash = self._last_hash()
+                digest = hashlib.sha256(
+                    f"{prev_hash}{organ}{kind}{message}{payload_str}{ts}".encode()
+                ).hexdigest()
+                self.conn.execute(
+                    "INSERT INTO events (ts, organ, kind, message, payload, prev_hash, hash) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (ts, organ, kind, message, payload_str, prev_hash, digest),
+                )
+                seq = self.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                self.conn.commit()
+            except BaseException:
+                self.conn.rollback()
+                raise
+            rec = {
+                "seq": seq, "ts": ts, "organ": organ, "kind": kind,
+                "message": message, "payload": json.loads(payload_str),
+                "prev_hash": prev_hash, "hash": digest,
+            }
+            self._events.append(rec)
+            try:
+                tail_dir = os.path.dirname(os.path.abspath(self.db_path))
+                tail_path = os.path.join(tail_dir, "ledger_tail.json")
+                tail_tmp = f"{tail_path}.{os.getpid()}.{threading.get_ident()}.tmp"
+                tail = self.recent_events(n=25)
+                with open(tail_tmp, "w", encoding="utf-8") as f:
+                    json.dump(tail, f, indent=2)
+                os.replace(tail_tmp, tail_path)
+            except Exception:
+                pass
         return digest
 
     def recent_events(self, kind: Optional[str] = None, n: int = 50) -> list[dict]:
