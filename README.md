@@ -3,7 +3,7 @@
 > **A Sovereign, Local-First Agentic Operating System**  
 > *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*  
 >  
-> `185 passed, 1 fail (tauri sidecar mock) in 106s (23 modules) | preflight 0 fail 4 warn | smoke GREEN (10-stage boot) | cargo check 0 warnings | MSI + NSIS bundled | v7.4 Household`
+> `234 passed, 0 fail (27 modules) | preflight 0 fail 4 warn | smoke GREEN (10-stage boot) | cargo check 0 warnings | MSI + NSIS bundled | v7.4 Household`
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
@@ -103,8 +103,8 @@ python run.py --resident
 | **#8** | Tauri 1.6 Sovereign Desktop Packaging & VirtIO SHM Ripple Bridge | `c0ec83f` | 124 | +4 | **SOVEREIGN RELEASE** |
 | **#9** | v7.2 Design Genome, Discovery Scanner, MCP Client & Resident Console | `b5f0794` | 151 | +27 | **SELF-STYLED** |
 | **#10** | v7.3 Resident Front Door, 3D Organism Pet, Daily Briefing & Capability Buttons | `9eae5f7` | 158 | +7 | **RESIDENT MAID** |
-| **#11** | v7.4 Household chore book, coding hands, owner-will organs | HEAD | 185 pass / 1 fail | +household | **HOUSEHOLD** |
-| **#12** | Dashboard Chat Handler Tool Call Execution Fix | [current] | 185 pass / 1 fix | +tool-execution | **EXECUTION READY** |
+| **#11** | v7.4 Household chore book, coding hands, owner-will organs | HEAD | 234 pass / 0 fail | +household | **HOUSEHOLD** |
+| **#12** | Dashboard Chat Handler Tool Call Execution Fix | [current] | 234 pass / 0 fail | +tool-execution | **EXECUTION READY** |
 
 ---
 
@@ -128,7 +128,7 @@ python run.py --resident
 
 ## Installation & Sovereign Verification
 
-Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) currently reports **185 passed, 1 failed** (`test_tauri_sidecar_spawn_mock`) across 23 modules.
+Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) currently reports **234 passed, 0 failed** across 27 modules.
 
 ### 1. Clone & Setup
 ```bash
@@ -213,7 +213,7 @@ python run.py --smoke
 ### 4. Run Full Test Suite
 ```bash
 pytest tools/tests
-# 185 passed, 1 failed (tauri sidecar mock) across 23 modules in tools/tests
+# 234 passed across 27 modules in tools/tests
 ```
 
 ### 5. Multi-Turn Live Demonstration
