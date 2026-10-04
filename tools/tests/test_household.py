@@ -14,6 +14,7 @@ from conftest import FakeLedger, FakeVault
 def test_small_talk_is_not_a_chore():
     assert not is_chore_text("hello")
     assert not is_chore_text("thanks")
+    assert not is_chore_text("Stop making ELORA open applications over and over again")
     assert is_chore_text("implement the household chore book and keep working")
     assert is_chore_text("fix daemon.py so chores resume")
 
@@ -140,9 +141,8 @@ def test_plugin_list_does_not_launch(tmp_path):
         assert isinstance(res, Result)
         payload = json.loads(res.stdout)
         assert payload["ok"] is True
-        assert "omniroute" in payload["servers"]
-        for name in ("github", "playwright", "fetch", "memory", "blender"):
-            assert name in payload["servers"]
+        assert payload["servers"] == ["git", "sandbox", "ledger", "core"]
+        assert payload["closed"] is True
     finally:
         metabolism.shutdown()
 
@@ -154,9 +154,7 @@ def test_plugin_call_unknown_server_is_honest(tmp_path):
     token = SkillToken(skill_id="core", tier=Tier.CORE, workspace=str(tmp_path), issued_at=0.0)
     try:
         res = broker.request(token, "plugin.call", {"server": "no-such-mcp", "tool": "x"})
-        assert isinstance(res, Result)
-        payload = json.loads(res.stdout)
-        assert payload["ok"] is False
-        assert "error" in payload
+        assert isinstance(res, Rejected)
+        assert "marketplace is closed" in res.reason
     finally:
         metabolism.shutdown()

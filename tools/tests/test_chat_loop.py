@@ -95,6 +95,26 @@ def test_extract_blender_sized_fs_write():
     assert "import bpy" in calls[0]["args"]["content"]
 
 
+def test_public_chat_answer_with_json_and_success_narration():
+    event = Event.from_text("edit code")
+    task = Task(id="t1", event=event)
+    task.trace = [{"tool": "code.edit", "ok": True}]
+    task.messages = [
+        {"role": "assistant", "content": "<mcp_call server='elora' tool='code.edit'>{}</mc" + "p_call>"},
+        {"role": "user", "content": "result: {\"ok\": true}"},
+        {"role": "assistant", "content": "I have edited the file. DONE"}
+    ]
+    assert public_chat_answer(task).strip() == ""
+
+    task_err = Task(id="t2", event=event)
+    task_err.trace = [{"tool": "code.edit", "ok": False}]
+    task_err.messages = [
+        {"role": "assistant", "content": "<mcp_call server='elora' tool='code.edit'>{}</mc" + "p_call>"},
+        {"role": "user", "content": "result: {\"ok\": false}"},
+        {"role": "assistant", "content": "I failed to edit. DONE"}
+    ]
+    assert "failed to edit" in public_chat_answer(task_err)
+
 def test_chat_tool_call_is_dispatched(tmp_path):
     """A chat reply containing <mcp_call> must result in a capability_intent event."""
     env = _loop(tmp_path)
@@ -271,7 +291,7 @@ def test_narrow_post_code_edit_response_suppression():
     task = Task(id="t1", event=Event.from_text("test"))
 
     task.trace = [{"tool": "code.edit", "ok": True}]
-    task.messages = [{"role": "assistant", "content": "The work is complete. DONE"}]
+    task.messages = [{"role": "assistant", "content": "The bug was due to cache. DONE"}]
     assert public_chat_answer(task) == ""
 
     # A failed code.edit trace remains reportable because has_code_edit is false

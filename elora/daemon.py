@@ -204,7 +204,8 @@ class Daemon:
         if isinstance(result, Rejected):
             task.trace.append({"tool": name, "rejected": True, "reason": result.reason})
             self._append_chat("organ", f"{name}: rejected — {result.reason}", task.id,
-                              organ=name, status="failed")
+                              organ=name, status="failed", rc=1,
+                              evidence=result.reason)
             extra = ""
             if owner:
                 extra = (
@@ -216,7 +217,7 @@ class Daemon:
         elif isinstance(result, Deferred):
             task.trace.append({"tool": name, "deferred": True, "reason": result.reason})
             self._append_chat("organ", f"{name}: deferred — {result.reason}", task.id,
-                              organ=name, status="deferred")
+                              organ=name, status="deferred", evidence=result.reason)
             extra = ""
             if owner:
                 extra = (
@@ -229,20 +230,33 @@ class Daemon:
             })
         else:
             stdout = ""
+            rc = 0
             if isinstance(result, Result) and result.execution:
                 stdout = result.execution.stdout
+                rc = result.execution.returncode
                 if name != "vault.save" and self.vault is not None:
                     self.vault.save_episode(self._episode_for(task, {"tool": name, "args": args}, result.execution))
             elif isinstance(result, Result):
                 stdout = result.stdout
-            task.trace.append({"tool": name, "args": args, "ok": True})
-            task.messages.append({"role": "user", "content": f"result: {stdout[:4000]}"})
-            short_result = " ".join(str(stdout or "completed").split())[:360]
+                rc = result.returncode
+            ok = rc == 0
+            try:
+                envelope = json.loads(str(stdout).strip())
+                if isinstance(envelope, dict) and (
+                    envelope.get("ok") is False or envelope.get("is_error") is True
+                ):
+                    ok = False
+            except (json.JSONDecodeError, TypeError):
+                pass
+            task.trace.append({"tool": name, "args": args, "ok": ok, "rc": rc})
+            task.messages.append({"role": "user", "content": f"result: (rc={rc}) {stdout[:4000]}"})
+            short_result = " ".join(str(stdout or "completed").split())[:240]
             self._append_chat("organ", f"{name}: {short_result or 'completed'}", task.id,
-                              organ=name, status="ok")
+                              organ=name, status="ok" if ok else "failed", rc=rc,
+                              evidence=short_result or "completed")
             if owner and token is not None and name == "fs.write":
                 self._maybe_launch_blender(task, token, args)
-            if owner and token is not None and name == "code.edit":
+            if owner and ok and token is not None and name == "code.edit":
                 edited = str(args.get("path") or args.get("file") or "")
                 if edited:
                     diag = self.broker.request(token, "sandbox.diagnose", {"path": edited})
@@ -351,7 +365,8 @@ class Daemon:
             )
 
     def _append_chat(self, sender: str, text: str, task_id: str | None = None,
-                     organ: str | None = None, status: str | None = None):
+                     organ: str | None = None, status: str | None = None,
+                     rc: int | None = None, evidence: str | None = None):
         try:
             chat_path = os.path.join(os.path.dirname(self.inbox_dir) or ".elora", "chat.json")
             messages = []
@@ -374,6 +389,10 @@ class Daemon:
                 entry["organ"] = organ
             if status:
                 entry["status"] = status
+            if rc is not None:
+                entry["rc"] = int(rc)
+            if evidence:
+                entry["evidence"] = str(evidence)[:360]
             messages.append(entry)
             messages = messages[-100:]
             with open(chat_path + ".tmp", "w", encoding="utf-8") as f:
@@ -394,6 +413,8 @@ class Daemon:
             f"{law}\n"
             "You are ELORA, a sovereign agentic operating system.\n"
             "You interact with the external world and your persistent memory using tools.\n"
+            "VOICE AND EVIDENCE:\n"
+            "Speak in a composed diagnostic voice: calm, analytical, and economical. State only what tool results or ledger evidence support; mark inference as inference. Keep the final voice brief because the event stream carries the organ evidence. Do not narrate successful code edits. Never claim an action, check, or completion without its recorded result.\n\n"
             "To perform an action or retrieve information, emit an MCP tool call:\n"
             '<mcp_call server="elora" tool="TOOL_NAME">{"arg": "value"}</mcp_call>\n\n'
             "CRITICAL TOOL ROUTING LAWS:\n"
@@ -756,6 +777,9 @@ class Daemon:
         tasks.sort(key=lambda t: t.event.urgency, reverse=True)
         for task in tasks:
             user_text = task.event.payload.get("text", "") if task.event and task.event.payload else ""
+            if user_text:
+                queued_id = os.path.basename(task.claimed_path) if task.claimed_path else task.id
+                self._append_chat("user", user_text, task_id=queued_id)
             self._write_state(current_task=task.id, status="PROCESSING", last_action=f"task_started: {task.id}")
             self.ledger.append(
                 organ="daemon", kind="task_started",
@@ -791,9 +815,6 @@ class Daemon:
                         elif status == "DONE_NO_WORK":
                             final_answer = "DONE (no tool action taken)"
 
-                if user_text:
-                    queued_id = os.path.basename(task.claimed_path) if task.claimed_path else task.id
-                    self._append_chat("user", user_text, task_id=queued_id)
                 if final_answer:
                     self._append_chat("elora", final_answer, task_id=task.id)
                 elif task.state == TaskState.FAILED:

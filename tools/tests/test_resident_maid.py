@@ -16,6 +16,7 @@ import os
 import pytest
 
 from elora.core.briefing import generate_daily_briefing
+from elora.organs.akashic import AkashicLedger
 from elora.dashboard.server import (
     payload_organism_state,
     payload_perception,
@@ -48,19 +49,21 @@ def test_resident_will_dispatches_to_inbox(tmp_path, monkeypatch):
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     app_js = open(os.path.join(root, "overlay", "app.js"), encoding="utf-8").read()
     assert "h('textarea'" in app_js
-    assert "e.key === 'Enter' && !e.shiftKey" in app_js
+    assert "event.key === 'Enter' && !event.shiftKey" in app_js
     assert "api('/api/inbox/task'" in app_js
     assert "quick-btn" not in app_js
     assert "clear(chatLog)" not in app_js
-    assert "Nothing spoken yet." in app_js
-    assert "msg.sender === 'organ' && state.organism) state.organism.ripple()" in app_js
-    assert "Will → organs → voice" in app_js
+    assert "nothing spoken yet" in app_js
+    assert "organMessage && state.organism) state.organism.ripple()" in app_js
+    assert "SYSTEM QUEST" in app_js
+    assert "[ORGAN: " in app_js
 
     # Test server inbox task dispatching
     state_dir = tmp_path / ".elora"
     state_dir.mkdir()
     monkeypatch.setattr("elora.dashboard.server.STATE_DIR", str(state_dir))
     monkeypatch.setattr("elora.dashboard.server.LEDGER_PATH", str(state_dir / "akashic.db"))
+    AkashicLedger(str(state_dir / "akashic.db"))
 
     res = payload_inbox_task("read https://example.com and tell me what it was about")
     assert res["ok"] is True

@@ -22,13 +22,10 @@ from elora.slime.hands import SKIP_DIRS, _is_secret, _rel, _resolve
 MAX_GLOB = 200
 
 MARKETPLACE: dict[str, str] = {
-    "omniroute": "Local OmniRoute MCP gateway (node mcp-server.mjs).",
-    "github": "GitHub MCP. PAT from .elora/secrets/github_token.",
-    "playwright": "Playwright MCP. No CAPTCHA solving.",
-    "fetch": "Fetch MCP for allowlisted HTTP.",
-    "memory": "Memory MCP.",
-    "filesystem": "Filesystem MCP jailed to this workspace.",
-    "blender": "First-party ELORA Blender MCP (127.0.0.1:9876).",
+    "git": "First-party version-control hands inside the workspace jail.",
+    "sandbox": "First-party checkpoint, diagnose, restore, and jailed test organs.",
+    "ledger": "First-party Akashic evidence and integrity organs.",
+    "core": "First-party Resident inbox, daemon, and broker organs.",
 }
 
 
@@ -42,7 +39,8 @@ def glob_files(pattern: str, path: str = ".", root: str | None = None) -> dict[s
         return {"ok": False, "error": f"not a directory: {_rel(base)}"}
     hits: list[str] = []
     for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames
+                       if d not in SKIP_DIRS and not os.path.islink(os.path.join(dirpath, d))]
         for name in filenames:
             full = os.path.join(dirpath, name)
             if _is_secret(full):
@@ -117,19 +115,15 @@ def run_check(root: str | None = None) -> dict[str, Any]:
 
 
 def marketplace() -> dict[str, Any]:
-    from elora.core.mcp_client import DEFAULT_SERVERS
-    installed = set(DEFAULT_SERVERS)
-    items = []
-    for name, blurb in MARKETPLACE.items():
-        items.append({
-            "name": name,
-            "blurb": blurb,
-            "installed": name in installed,
-        })
-    extras = sorted(installed - set(MARKETPLACE))
-    for name in extras:
-        items.append({"name": name, "blurb": "registered, undocumented in catalogue", "installed": True})
-    return {"ok": True, "servers": items, "note": "unknown MCP packages cannot be installed. Jail stays."}
+    return {
+        "ok": True,
+        "closed": True,
+        "servers": [
+            {"name": name, "blurb": blurb, "installed": True}
+            for name, blurb in MARKETPLACE.items()
+        ],
+        "note": "Only first-party git, sandbox, ledger, and core organs are available.",
+    }
 
 
 def status(root: str | None = None) -> dict[str, Any]:

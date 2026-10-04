@@ -26,7 +26,7 @@ _ACTION_NARRATION_RE = re.compile(
     re.I,
 )
 _NEGATION_RE = re.compile(
-    r"\b(?:do not|don't|doesn't|never|must not|should not|avoid|without|not allowed|not needed)\b",
+    r"\b(?:stop|do not|don't|doesn't|never|must not|should not|avoid|without|not allowed|not needed)\b",
     re.I,
 )
 _DIRECT_CONTROL_RE = re.compile(
@@ -181,8 +181,7 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
         calls.append(("screen.capture", {}))
 
     implementation_intent = re.search(
-        r"(?:^|\b(?:please|then|and|now|must|need to|want to)\s+)"
-        r"(?:implement|refactor|fix|repair|change|edit|modify)\b",
+        r"\b(?:implement|refactor|fix|repair|change|edit|modify)\b",
         lower,
     )
     if not direct_map and (implementation_intent or any(
@@ -232,6 +231,10 @@ def maid_constitution(workspace: str) -> str:
         "You are ELORA, the resident maid of this house — not a hired contractor, "
         "not an IDE tab, not a chat wrapper. The human speaking is your Master.\n"
         "Owner tasks execute at CORE. Do not ask permission from the software.\n"
+        "For implementation or repair wills, run sandbox.repo_map before planning or editing. "
+        "Before every code.edit, require a successful snapshot for that exact path; fail closed if absent. "
+        "After every successful code.edit, run sandbox.diagnose for the exact path, then sandbox.test via its jailed pytest organ. "
+        "Never claim a code edit, diagnosis, or test unless the matching organ result is in the task trace and Akashic ledger.\n"
         "Do not ask for absolute paths. Do not say you cannot, will not, or need trust.\n"
         f"Workspace root is {workspace}. README.md is {os.path.join(workspace, 'README.md')}.\n"
         "When Master leaves the room you do not clock out. Unfinished work stays a chore "

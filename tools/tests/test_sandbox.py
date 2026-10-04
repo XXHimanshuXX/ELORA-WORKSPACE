@@ -54,8 +54,10 @@ def test_marketplace_does_not_invent_packages():
     res = sandbox.marketplace()
     assert res["ok"] is True
     names = {row["name"] for row in res["servers"]}
-    assert "blender" in names
-    assert "github" in names
+    assert res["closed"] is True
+    assert names == {"git", "sandbox", "ledger", "core"}
+    from elora.core.mcp_client import DEFAULT_SERVERS
+    assert all(spec.command != "npx" for spec in DEFAULT_SERVERS.values())
     assert res["note"]
 
 

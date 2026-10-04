@@ -56,18 +56,23 @@ def snapshot_file(path: str, root: str | None = None) -> dict[str, Any]:
         return {"ok": False, "error": str(e)}
     if _is_secret(resolved):
         return {"ok": False, "error": "refused: secrets are not checkpointed"}
-    if not os.path.isfile(resolved):
-        return {"ok": True, "created": True, "path": _rel(resolved)}
-    data = open(resolved, "rb").read()
-    digest = hashlib.sha256(data).hexdigest()
     store = _ckpt_dir(root or WORKSPACE_ROOT)
     os.makedirs(store, exist_ok=True)
+    log_path = os.path.join(os.path.dirname(store), "log.jsonl")
+    if not os.path.isfile(resolved):
+        rec = {"ts": time.time(), "path": _rel(resolved), "exists": False,
+               "sha256": None, "bytes": 0}
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(rec) + "\n")
+        return {"ok": True, "created": True, "path": rec["path"], "bytes": 0}
+    data = open(resolved, "rb").read()
+    digest = hashlib.sha256(data).hexdigest()
     blob = os.path.join(store, digest)
     if not os.path.isfile(blob):
         with open(blob, "wb") as handle:
             handle.write(data)
-    log_path = os.path.join(os.path.dirname(store), "log.jsonl")
-    rec = {"ts": time.time(), "path": _rel(resolved), "sha256": digest, "bytes": len(data)}
+    rec = {"ts": time.time(), "path": _rel(resolved), "exists": True,
+           "sha256": digest, "bytes": len(data)}
     with open(log_path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(rec) + "\n")
     return {"ok": True, "path": rec["path"], "sha256": digest, "bytes": len(data)}
@@ -88,7 +93,7 @@ def restore_file(path: str, root: str | None = None, sha256: str | None = None) 
     if not os.path.isfile(log_path):
         return {"ok": False, "error": "no checkpoints yet"}
     target = _rel(resolved)
-    sha = None
+    selected = None
     with open(log_path, encoding="utf-8") as handle:
         for line in handle:
             line = line.strip()
@@ -102,9 +107,12 @@ def restore_file(path: str, root: str | None = None, sha256: str | None = None) 
                 candidate = str(rec.get("sha256", "")).lower()
                 if requested_sha and candidate != requested_sha:
                     continue
-                sha = candidate
-    if not sha:
+                selected = rec
+    if selected is None:
         return {"ok": False, "error": f"no checkpoint for {target}"}
+    if not selected.get("exists", True):
+        return {"ok": False, "error": "checkpoint records an absent file; restore will not delete current data"}
+    sha = str(selected.get("sha256") or "").lower()
     blob = os.path.join(_ckpt_dir(root or WORKSPACE_ROOT), sha)
     if not os.path.isfile(blob):
         return {"ok": False, "error": "checkpoint blob missing"}
@@ -155,7 +163,7 @@ def diagnose(path: str, root: str | None = None) -> dict[str, Any]:
             return {"ok": True, "path": rel, "lang": "opaque", "note": "node unavailable"}
         except subprocess.TimeoutExpired:
             return {"ok": False, "path": rel, "error": "timeout running node"}
-    return {"ok": True, "path": rel, "lang": "opaque", "note": "no syntax engine for this suffix"}
+    return {"ok": False, "path": rel, "lang": "opaque", "note": "no syntax engine for this suffix"}
 
 
 def repo_map(query: str = "", path: str = ".", root: str | None = None) -> dict[str, Any]:
@@ -173,6 +181,8 @@ def repo_map(query: str = "", path: str = ".", root: str | None = None) -> dict[
             if not name.endswith((".py", ".js", ".ts", ".mjs")):
                 continue
             full = os.path.join(dirpath, name)
+            if os.path.islink(full):
+                continue
             if _is_secret(full):
                 continue
             n_files += 1

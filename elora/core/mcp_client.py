@@ -169,16 +169,6 @@ def _read_secret(name: str) -> str:
         return ""
 
 
-def _github_env() -> dict[str, str]:
-    """PAT from .elora/secrets. Missing token is allowed; the server will fail calls honestly."""
-    env: dict[str, str] = {}
-    token = _read_secret("github_token") or _read_secret("github_personal_access_token")
-    if token:
-        env["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
-        env["GITHUB_TOKEN"] = token
-    return env
-
-
 def _omniroute_env() -> dict[str, str]:
     """
     The environment OmniRoute's MCP server needs in order to authenticate.
@@ -205,38 +195,12 @@ def _omniroute_env() -> dict[str, str]:
 
 
 DEFAULT_SERVERS: dict[str, McpServerSpec] = {
-    # Real, live local gateway — 110 tools at last probe.
+    # Local inference/router adapter and first-party Blender bridge only.
     "omniroute": McpServerSpec(
         name="omniroute",
         command="node",
         args=["C:/Users/HARSH/AppData/Roaming/npm/node_modules/omniroute/bin/mcp-server.mjs"],
         env=_omniroute_env(),
-    ),
-    "filesystem": McpServerSpec(
-        name="filesystem",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-filesystem", "D:/Coding/ELORA Workspace"],
-    ),
-    "github": McpServerSpec(
-        name="github",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-github"],
-        env=_github_env(),
-    ),
-    "playwright": McpServerSpec(
-        name="playwright",
-        command="npx",
-        args=["-y", "@playwright/mcp"],
-    ),
-    "fetch": McpServerSpec(
-        name="fetch",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-fetch"],
-    ),
-    "memory": McpServerSpec(
-        name="memory",
-        command="npx",
-        args=["-y", "@modelcontextprotocol/server-memory"],
     ),
     "blender": McpServerSpec(
         name="blender",

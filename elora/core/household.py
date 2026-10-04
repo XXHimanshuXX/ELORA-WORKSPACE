@@ -46,6 +46,16 @@ def is_chore_text(text: str) -> bool:
     t = (text or "").strip()
     if not t or _SMALL_TALK.match(t):
         return False
+    # A stop instruction is a boundary, not fresh work. In particular, words
+    # such as "open" inside a request to stop opening applications must not
+    # create another retryable chore.
+    if re.search(
+        r"\b(?:stop|do not|don't|never)\b.{0,64}\b(?:open|launch|start)\b"
+        r".{0,48}\b(?:apps?|applications?|programs?|browser|blender)\b",
+        t,
+        re.I | re.S,
+    ):
+        return False
     if _CHORE_HINT.search(t):
         return True
     return len(t) >= 80

@@ -65,7 +65,7 @@ SERVER_NAME = "elora-dashboard/1.0"
 
 # The header that makes a cross-origin request impossible for a plain webpage.
 CLIENT_HEADER = "X-ELORA-Client"
-CLIENT_HEADER_VALUE = "dashboard"
+CLIENT_HEADER_VALUES = frozenset({"resident-overlay", "core-daemon"})
 
 # Origins permitted to talk to us. `null` covers a file:// page (the Tauri
 # webview loading the overlay from disk); it is safe to allow here because the
@@ -898,8 +898,26 @@ def payload_inbox_task(prompt: str) -> dict[str, Any]:
     ts = int(time.time() * 1000)
     filename = f"chat_{ts}.txt"
     target = os.path.join(inbox_dir, filename)
+    if not os.path.isfile(LEDGER_PATH):
+        raise ApiError(503, "ledger-unavailable", "Akashic ledger is unavailable; will was not queued")
     with open(target, "w", encoding="utf-8") as handle:
         handle.write(clean)
+
+    try:
+        from elora.organs.akashic import AkashicLedger
+        ledger = AkashicLedger(LEDGER_PATH)
+        ledger.append(
+            organ="inbox",
+            kind="task_queued",
+            message=f"task queued: {clean[:60]}",
+            payload={"filename": filename, "task": clean},
+        )
+    except Exception:
+        try:
+            os.remove(target)
+        except OSError:
+            pass
+        raise ApiError(503, "ledger-write-failed", "Akashic could not record the will; it was not queued")
 
     chat_path = os.path.join(STATE_DIR, "chat.json")
     messages = []
@@ -921,19 +939,6 @@ def payload_inbox_task(prompt: str) -> dict[str, Any]:
             json.dump(messages, handle, indent=2)
     except Exception:
         pass
-
-    if os.path.exists(LEDGER_PATH):
-        try:
-            from elora.organs.akashic import AkashicLedger
-            ledger = AkashicLedger(LEDGER_PATH)
-            ledger.append(
-                organ="inbox",
-                kind="task_queued",
-                message=f"task queued: {clean[:60]}",
-                payload={"filename": filename, "task": clean},
-            )
-        except Exception:
-            pass
 
     return {"ok": True, "task_id": filename}
 
@@ -1025,10 +1030,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             raise ApiError(403, "origin-refused",
                            f"Origin {self.headers.get('Origin')!r} is not allowed")
-        if self.headers.get(CLIENT_HEADER) != CLIENT_HEADER_VALUE:
+        client = self.headers.get(CLIENT_HEADER)
+        if client not in CLIENT_HEADER_VALUES:
             raise ApiError(
                 403, "client-header-required",
-                f"missing {CLIENT_HEADER}: {CLIENT_HEADER_VALUE}",
+                f"missing or invalid {CLIENT_HEADER}",
                 "This header is what prevents a random web page from driving ELORA.")
 
     def _read_json(self) -> dict[str, Any]:

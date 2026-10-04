@@ -32,20 +32,24 @@ MAX_LIST = 200
 
 
 def _resolve(path: str, root: str | None = None) -> str:
-    base = os.path.abspath(root or WORKSPACE_ROOT)
+    base = os.path.realpath(os.path.abspath(root or WORKSPACE_ROOT))
     raw = (path or "").strip()
     if not raw:
         raise ValueError("empty path")
     if not os.path.isabs(raw):
         raw = os.path.join(base, raw)
-    resolved = os.path.abspath(os.path.expanduser(raw))
-    if resolved != base and not resolved.startswith(base + os.sep):
+    resolved = os.path.realpath(os.path.abspath(os.path.expanduser(raw)))
+    try:
+        inside = os.path.normcase(os.path.commonpath((base, resolved))) == os.path.normcase(base)
+    except ValueError:
+        inside = False
+    if not inside:
         raise ValueError(f"path escapes workspace: {path}")
     return resolved
 
 
 def _is_secret(path: str) -> bool:
-    norm = path.replace("/", os.sep).replace("\\", os.sep).lower()
+    norm = os.path.normcase(os.path.realpath(path)).replace("/", os.sep).replace("\\", os.sep).lower()
     return any(frag.lower() in norm for frag in SECRET_FRAGMENTS)
 
 
@@ -75,6 +79,8 @@ def ws_list(path: str = ".", glob: str = "", root: str | None = None) -> dict[st
         if needle and needle not in name.lower():
             continue
         full = os.path.join(root, name)
+        if os.path.islink(full):
+            continue
         kind = "dir" if os.path.isdir(full) else "file"
         size = os.path.getsize(full) if kind == "file" else None
         entries.append({"name": name, "path": _rel(full), "kind": kind, "bytes": size})
@@ -90,6 +96,8 @@ def code_read(path: str, start: int = 1, limit: int = 400, root: str | None = No
         return {"ok": False, "error": str(e)}
     if not os.path.isfile(resolved):
         return {"ok": False, "error": f"not a file: {_rel(resolved)}"}
+    if _is_secret(resolved):
+        return {"ok": False, "error": "refused: secrets are not readable"}
     if os.path.getsize(resolved) > MAX_READ_BYTES:
         return {"ok": False, "error": f"file too large (>{MAX_READ_BYTES} bytes)"}
     try:
@@ -125,11 +133,14 @@ def code_search(query: str, glob: str = "", path: str = ".", root: str | None = 
     except re.error:
         rx = None
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames
+                       if d not in SKIP_DIRS and not os.path.islink(os.path.join(dirpath, d))]
         for name in filenames:
             if glob_l and glob_l not in name.lower() and not name.lower().endswith(glob_l):
                 continue
             full = os.path.join(dirpath, name)
+            if os.path.islink(full):
+                continue
             if _is_secret(full):
                 continue
             try:
@@ -157,6 +168,15 @@ def code_edit(path: str, old_string: str | None = None, new_string: str | None =
     if _is_secret(resolved):
         return {"ok": False, "error": "refused: secrets are not writable by hands"}
     if os.path.isfile(resolved):
+        try:
+            from elora.slime.control_plane import snapshot_file
+            checkpoint = snapshot_file(resolved, root=root)
+        except Exception as exc:
+            return {"ok": False, "error": f"checkpoint failed: {exc}", "path": _rel(resolved)}
+        if not checkpoint.get("ok"):
+            return {"ok": False, "error": f"checkpoint failed: {checkpoint.get('error', 'unknown error')}",
+                    "path": _rel(resolved)}
+    else:
         try:
             from elora.slime.control_plane import snapshot_file
             checkpoint = snapshot_file(resolved, root=root)

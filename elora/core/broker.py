@@ -129,6 +129,8 @@ class Broker:
 
         # 7. EXECUTE
         execution = self._execute(token, cap, args)
+        if isinstance(execution, (Rejected, Deferred)):
+            return execution
         try:
             self.metabolism.mark_used(capability)
         except Exception:
@@ -382,29 +384,22 @@ class Broker:
                                    token.workspace or ".")
         if cap.name == "plugin.list":
             import json
-            from elora.core.mcp_client import DEFAULT_SERVERS
             return _trivial_result(json.dumps({
                 "ok": True,
-                "servers": sorted(DEFAULT_SERVERS.keys()),
+                "servers": ["git", "sandbox", "ledger", "core"],
+                "closed": True,
             }), token.workspace or ".")
         if cap.name == "plugin.call":
-            import json
-            from elora.core.mcp_client import McpError, call_tool
             server = str(args.get("server", args.get("mcp", "omniroute")))
             tool = str(args.get("tool", args.get("name", "")))
             arguments = args.get("arguments", args.get("args", {})) or {}
-            try:
-                result = call_tool(server, tool, arguments)
-                payload = {
-                    "ok": not getattr(result, "is_error", False),
-                    "server": server,
-                    "tool": tool,
-                    "text": getattr(result, "text", str(result)),
-                    "is_error": bool(getattr(result, "is_error", False)),
-                }
-            except McpError as exc:
-                payload = {"ok": False, "server": server, "tool": tool, "error": str(exc)}
-            return _trivial_result(json.dumps(payload), token.workspace or ".")
+            allowed = {"git", "sandbox", "ledger", "core"}
+            if server not in allowed:
+                return Rejected(f"plugin marketplace is closed; allowed: {', '.join(sorted(allowed))}")
+            capability = tool if tool.startswith(server + ".") else f"{server}.{tool}"
+            if capability not in REGISTRY:
+                return Rejected(f"{capability!r} is not a registered first-party organ")
+            return self.request(token, capability, arguments)
         if cap.name in ("sandbox.glob", "sandbox.test", "sandbox.check",
                         "sandbox.status", "plugin.marketplace",
                         "sandbox.repo_map", "sandbox.checkpoint",
@@ -618,6 +613,4 @@ def _trivial_result(text: str, work_dir: str) -> ExecutionResult:
         stderr_sha256=hashlib.sha256(b"").hexdigest(),
         stdout=text, stderr="", work_dir=work_dir or ".",
     )
-
-
 
