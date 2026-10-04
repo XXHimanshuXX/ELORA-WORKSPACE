@@ -48,6 +48,16 @@ def _resolve(path: str, root: str | None = None) -> str:
     return resolved
 
 
+def _is_within(path: str, root: str | None = None) -> bool:
+    """Resolve symlinks before checking the workspace boundary."""
+    base = os.path.realpath(os.path.abspath(root or WORKSPACE_ROOT))
+    target = os.path.realpath(path)
+    try:
+        return os.path.commonpath((base, target)) == base
+    except ValueError:
+        return False
+
+
 def _is_secret(path: str) -> bool:
     norm = os.path.normcase(os.path.realpath(path)).replace("/", os.sep).replace("\\", os.sep).lower()
     return any(frag.lower() in norm for frag in SECRET_FRAGMENTS)
@@ -61,15 +71,16 @@ def _rel(path: str) -> str:
 
 
 def ws_list(path: str = ".", glob: str = "", root: str | None = None) -> dict[str, Any]:
+    workspace_root = os.path.realpath(os.path.abspath(root or WORKSPACE_ROOT))
     try:
-        root = _resolve(path or ".", root)
+        directory = _resolve(path or ".", workspace_root)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
-    if not os.path.isdir(root):
-        return {"ok": False, "error": f"not a directory: {_rel(root)}"}
+    if not os.path.isdir(directory):
+        return {"ok": False, "error": f"not a directory: {_rel(directory)}"}
     entries = []
     try:
-        names = sorted(os.listdir(root))
+        names = sorted(os.listdir(directory))
     except OSError as e:
         return {"ok": False, "error": str(e)}
     needle = (glob or "").lower()
@@ -78,15 +89,15 @@ def ws_list(path: str = ".", glob: str = "", root: str | None = None) -> dict[st
             continue
         if needle and needle not in name.lower():
             continue
-        full = os.path.join(root, name)
-        if os.path.islink(full):
+        full = os.path.join(directory, name)
+        if os.path.islink(full) or _is_secret(full) or not _is_within(full, workspace_root):
             continue
         kind = "dir" if os.path.isdir(full) else "file"
         size = os.path.getsize(full) if kind == "file" else None
         entries.append({"name": name, "path": _rel(full), "kind": kind, "bytes": size})
         if len(entries) >= MAX_LIST:
             break
-    return {"ok": True, "path": _rel(root), "entries": entries, "count": len(entries)}
+    return {"ok": True, "path": _rel(directory), "entries": entries, "count": len(entries)}
 
 
 def code_read(path: str, start: int = 1, limit: int = 400, root: str | None = None) -> dict[str, Any]:
@@ -94,6 +105,8 @@ def code_read(path: str, start: int = 1, limit: int = 400, root: str | None = No
         resolved = _resolve(path, root)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
+    if _is_secret(resolved):
+        return {"ok": False, "error": "refused: secrets are unreadable by hands"}
     if not os.path.isfile(resolved):
         return {"ok": False, "error": f"not a file: {_rel(resolved)}"}
     if _is_secret(resolved):
@@ -122,8 +135,9 @@ def code_read(path: str, start: int = 1, limit: int = 400, root: str | None = No
 def code_search(query: str, glob: str = "", path: str = ".", root: str | None = None) -> dict[str, Any]:
     if not (query or "").strip():
         return {"ok": False, "error": "empty query"}
+    workspace_root = os.path.realpath(os.path.abspath(root or WORKSPACE_ROOT))
     try:
-        root = _resolve(path or ".", root)
+        search_root = _resolve(path or ".", workspace_root)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     glob_l = (glob or "").lower()
@@ -132,16 +146,15 @@ def code_search(query: str, glob: str = "", path: str = ".", root: str | None = 
         rx = re.compile(query)
     except re.error:
         rx = None
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames
-                       if d not in SKIP_DIRS and not os.path.islink(os.path.join(dirpath, d))]
+    for dirpath, dirnames, filenames in os.walk(search_root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS
+                       and not os.path.islink(os.path.join(dirpath, d))
+                       and _is_within(os.path.join(dirpath, d), workspace_root)]
         for name in filenames:
             if glob_l and glob_l not in name.lower() and not name.lower().endswith(glob_l):
                 continue
             full = os.path.join(dirpath, name)
-            if os.path.islink(full):
-                continue
-            if _is_secret(full):
+            if os.path.islink(full) or _is_secret(full) or not _is_within(full, workspace_root):
                 continue
             try:
                 if os.path.getsize(full) > MAX_READ_BYTES:
@@ -167,24 +180,14 @@ def code_edit(path: str, old_string: str | None = None, new_string: str | None =
         return {"ok": False, "error": str(e)}
     if _is_secret(resolved):
         return {"ok": False, "error": "refused: secrets are not writable by hands"}
-    if os.path.isfile(resolved):
-        try:
-            from elora.slime.control_plane import snapshot_file
-            checkpoint = snapshot_file(resolved, root=root)
-        except Exception as exc:
-            return {"ok": False, "error": f"checkpoint failed: {exc}", "path": _rel(resolved)}
-        if not checkpoint.get("ok"):
-            return {"ok": False, "error": f"checkpoint failed: {checkpoint.get('error', 'unknown error')}",
-                    "path": _rel(resolved)}
-    else:
-        try:
-            from elora.slime.control_plane import snapshot_file
-            checkpoint = snapshot_file(resolved, root=root)
-        except Exception as exc:
-            return {"ok": False, "error": f"checkpoint failed: {exc}", "path": _rel(resolved)}
-        if not checkpoint.get("ok"):
-            return {"ok": False, "error": f"checkpoint failed: {checkpoint.get('error', 'unknown error')}",
-                    "path": _rel(resolved)}
+    try:
+        from elora.slime.control_plane import snapshot_file
+        checkpoint = snapshot_file(resolved, root=root)
+    except Exception as exc:
+        return {"ok": False, "error": f"checkpoint failed: {exc}", "path": _rel(resolved)}
+    if not checkpoint.get("ok"):
+        return {"ok": False, "error": f"checkpoint failed: {checkpoint.get('error', 'unknown error')}",
+                "path": _rel(resolved)}
     os.makedirs(os.path.dirname(resolved) or ".", exist_ok=True)
     if old_string:
         if not os.path.isfile(resolved):
@@ -215,6 +218,7 @@ def _git(argv: list[str]) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=45,
+            shell=False,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         return {"ok": False, "error": str(e)}

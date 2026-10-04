@@ -32,6 +32,7 @@ CONSENT_TTL_S = 300  # 5 minutes
 @dataclass
 class Rejected:
     reason: str
+    evidence_recorded: bool = False
 
 
 @dataclass
@@ -41,6 +42,7 @@ class Deferred:
     retry_after_s: int = 60
     needed_state: object = None
     needed_mb: int = 0
+    evidence_recorded: bool = False
 
 
 @dataclass
@@ -49,6 +51,7 @@ class Result:
     stdout: str = ""
     stderr: str = ""
     returncode: int = 0
+    evidence_recorded: bool = False
 
     @property
     def ok(self) -> bool:
@@ -69,6 +72,27 @@ class Broker:
         os.makedirs(consent_dir, exist_ok=True)
         os.makedirs(vault_root, exist_ok=True)
 
+    def _record_decision(self, token: SkillToken, capability: str, args: dict, result):
+        """Seal a rejected/deferred attempt so visible scars have ledger evidence."""
+        kind = "capability_deferred" if isinstance(result, Deferred) else "capability_rejected"
+        reason = result.reason
+        payload = {
+            "skill": token.name,
+            "args": args,
+            "tier": token.tier.name,
+            "reason": reason,
+        }
+        if isinstance(result, Deferred):
+            payload.update(detail=result.detail, retry_after_s=result.retry_after_s)
+        try:
+            self.ledger.append(
+                organ="broker", kind=kind, message=capability, payload=payload,
+            )
+            result.evidence_recorded = True
+        except Exception:
+            result.evidence_recorded = False
+        return result
+
     def request(self, token: SkillToken, capability: str, args: dict):
         """
         The liturgy. Returns Rejected, Deferred, or Result.
@@ -80,43 +104,50 @@ class Broker:
         cap = REGISTRY.get(capability)
         if cap is None:
             known = ", ".join(sorted(REGISTRY))
-            return Rejected(
-                f"unknown capability '{capability}'. "
-                f"real names: {known}"
+            return self._record_decision(
+                token, capability, args,
+                Rejected(f"unknown capability '{capability}'. real names: {known}"),
             )
 
         # 2. SCHEMA — path jail / net allowlist before any other privilege
         schema = self._validate(cap, args, token=token)
         if schema is not None:
-            return schema
+            return self._record_decision(token, capability, args, schema)
 
         # 4. CONSENT before TIER for consent_required so expired consent
         #    returns Deferred (tests require this for TRUSTED tokens).
         if cap.consent_required or cap.env_gate:
             consent = self._check_consent(token, cap)
             if consent is not None:
-                return consent
+                return self._record_decision(token, capability, args, consent)
 
         # 3. TIER — ceiling check (skipped past consent so dual-key is audible)
         ceiling = TIER_CEILING.get(token.tier)
         if ceiling is None or cap.risk > ceiling:
-            return Rejected(
-                f"tier {token.tier.name} cannot run {capability} "
-                f"(requires {cap.tier_required.name} for risk-{int(cap.risk)})"
+            return self._record_decision(
+                token, capability, args,
+                Rejected(
+                    f"tier {token.tier.name} cannot run {capability} "
+                    f"(requires {cap.tier_required.name} for risk-{int(cap.risk)})"
+                ),
             )
 
         # 5. AFFORD
         meta = self.metabolism.request(capability)
         if isinstance(meta, MetDeferred):
-            return Deferred(
-                reason=meta.reason,
-                detail=meta.detail,
-                retry_after_s=meta.retry_after_s,
-                needed_state=meta.needed_state,
-                needed_mb=meta.needed_mb,
+            return self._record_decision(
+                token, capability, args,
+                Deferred(
+                    reason=meta.reason,
+                    detail=meta.detail,
+                    retry_after_s=meta.retry_after_s,
+                    needed_state=meta.needed_state,
+                    needed_mb=meta.needed_mb,
+                ),
             )
 
-        # 6. LOG pre-mortem — intent BEFORE execution
+        # 6. LOG pre-mortem — intent BEFORE execution. A missing intent record
+        # means the organ does not run; unrecorded capability use is not success.
         try:
             self.ledger.append(
                 organ="broker", kind="capability_intent",
@@ -124,8 +155,11 @@ class Broker:
                 payload={"skill": token.name, "args": args,
                          "tier": token.tier.name},
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            return Rejected(
+                f"Akashic intent write failed; {capability} was not executed: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
         # 7. EXECUTE
         execution = self._execute(token, cap, args)
@@ -149,8 +183,18 @@ class Broker:
                     "skill": token.name,
                 },
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # Execution may already have happened, so say exactly that it is
+            # unsealed. Do not pulse or return a successful Result without evidence.
+            detail = (
+                f"Akashic capability_result write failed after execution "
+                f"(execution_rc={execution.returncode}); no ripple emitted: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            stderr = "\n".join(part for part in (execution.stderr, detail) if part)
+            return Result(stdout=execution.stdout, stderr=stderr, returncode=1,
+                          evidence_recorded=False)
+
         try:
             from elora.overlay_bridge import ripple, emit_ripple
             ripple(capability)
@@ -160,7 +204,8 @@ class Broker:
         return Result(execution=execution,
                       stdout=execution.stdout,
                       stderr=execution.stderr,
-                      returncode=execution.returncode)
+                      returncode=execution.returncode,
+                      evidence_recorded=True)
 
     # ------------------------------------------------------------------
     # Schema / consent / execute
@@ -342,14 +387,25 @@ class Broker:
         if cap.name == "vault.save" and self.vault is not None:
             self.vault.save_episode(args.get("content", ""))
             return _trivial_result("saved", token.workspace)
+        if cap.name == "ledger.read":
+            import json
+            n = max(1, min(int(args.get("n", args.get("limit", 25))), 200))
+            rows = self.ledger.recent_events(n=n) if hasattr(self.ledger, "recent_events") else []
+            return _trivial_result(json.dumps({"ok": True, "events": rows, "count": len(rows)}),
+                                   token.workspace)
         if cap.name == "ledger.verify":
             ok, bad = self.ledger.verify() if hasattr(self.ledger, "verify") else (True, None)
             text = "ok" if ok else f"tamper at {bad}"
-            return _trivial_result(text, token.workspace)
+            return _trivial_result(text, token.workspace, returncode=0 if ok else 1)
+        if cap.name == "browser.context":
+            import json
+            from elora.slime.browser import BrowserOrgan
+            context = BrowserOrgan(vault=self.vault, ledger=self.ledger).context()
+            return _trivial_result(json.dumps(context), token.workspace)
         if cap.name == "rag.recall":
             import json
             from elora.slime.rag import RagIndex
-            rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
+            rag_dir = os.path.join(self.vault_root or ".elora", "rag")
             rag = RagIndex(persist_dir=rag_dir)
             query = args.get("query", args.get("q", args.get("text", args.get("prompt", args.get("arg", "")))))
             n = int(args.get("n", 5))
@@ -359,19 +415,21 @@ class Broker:
             import json
             from elora.slime.browser import BrowserOrgan
             from elora.slime.rag import RagIndex
-            rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
+            rag_dir = os.path.join(self.vault_root or ".elora", "rag")
             rag = RagIndex(persist_dir=rag_dir)
             browser = BrowserOrgan(vault=self.vault, ledger=self.ledger, rag=rag, headless=True)
             url = args.get("url", args.get("link", args.get("uri", "")))
             res = browser.read(url)
-            return _trivial_result(json.dumps(res), token.workspace)
+            failed = bool(res.get("error") or res.get("refused")) if isinstance(res, dict) else False
+            return _trivial_result(json.dumps(res), token.workspace, returncode=1 if failed else 0)
         if cap.name == "net.search":
             import json
             from elora.slime.browser import BrowserOrgan
             browser = BrowserOrgan(vault=self.vault, ledger=self.ledger, headless=True)
             query = args.get("query", args.get("q", ""))
             res = browser.search(query)
-            return _trivial_result(json.dumps(res), token.workspace)
+            failed = isinstance(res, dict) and not res.get("ok", True)
+            return _trivial_result(json.dumps(res), token.workspace, returncode=1 if failed else 0)
         if cap.name in ("chore.keep", "chore.status"):
             import json
             from elora.core.household import Household
@@ -384,22 +442,83 @@ class Broker:
                                    token.workspace or ".")
         if cap.name == "plugin.list":
             import json
+            from elora.slime.sandbox import marketplace
+            catalogue = marketplace()
             return _trivial_result(json.dumps({
-                "ok": True,
-                "servers": ["git", "sandbox", "ledger", "core"],
+                "ok": catalogue.get("ok", False),
+                "servers": catalogue.get("allowed", []),
+                "marketplace": catalogue,
                 "closed": True,
-            }), token.workspace or ".")
+            }), token.workspace or ".",
+                                   returncode=0 if catalogue.get("ok") else 1)
         if cap.name == "plugin.call":
-            server = str(args.get("server", args.get("mcp", "omniroute")))
-            tool = str(args.get("tool", args.get("name", "")))
-            arguments = args.get("arguments", args.get("args", {})) or {}
-            allowed = {"git", "sandbox", "ledger", "core"}
+            import json
+            from elora.core.capabilities import CAPABILITY_ALIASES, REGISTRY
+            from elora.slime.sandbox import marketplace
+
+            server = str(args.get("server", args.get("mcp", ""))).strip().lower()
+            tool = str(args.get("tool", args.get("name", ""))).strip()
+            arguments = args.get("arguments", args.get("args", {}))
+            allowed = list(marketplace().get("allowed", []))
+            payload = {"ok": False, "server": server, "tool": tool}
             if server not in allowed:
-                return Rejected(f"plugin marketplace is closed; allowed: {', '.join(sorted(allowed))}")
-            capability = tool if tool.startswith(server + ".") else f"{server}.{tool}"
-            if capability not in REGISTRY:
-                return Rejected(f"{capability!r} is not a registered first-party organ")
-            return self.request(token, capability, arguments)
+                payload["error"] = (
+                    f"{server or '(empty)'} is outside the closed first-party marketplace; "
+                    f"allowed namespaces: {', '.join(allowed)}"
+                )
+                return _trivial_result(json.dumps(payload), token.workspace or ".", returncode=1)
+            if not isinstance(arguments, dict):
+                payload["error"] = "tool arguments must be a JSON object"
+                return _trivial_result(json.dumps(payload), token.workspace or ".", returncode=1)
+
+            namespace_tools = {
+                "git": {name: f"git.{name}" for name in ("status", "diff", "commit")},
+                "sandbox": {
+                    name: f"sandbox.{name}"
+                    for name in ("glob", "test", "check", "status", "repo_map",
+                                 "checkpoint", "restore", "diagnose")
+                } | {"marketplace": "plugin.marketplace"},
+                "ledger": {name: f"ledger.{name}" for name in ("read", "verify")},
+            }
+            if server == "core" and tool in ("list", "capabilities"):
+                payload.update(ok=True, capabilities=sorted(REGISTRY))
+                return _trivial_result(json.dumps(payload), token.workspace or ".")
+            if server == "core":
+                capability = CAPABILITY_ALIASES.get(tool, tool)
+                if capability not in REGISTRY or capability in {"plugin.call", "plugin.list"}:
+                    payload["error"] = f"{tool!r} is not a callable first-party capability"
+                    return _trivial_result(json.dumps(payload), token.workspace or ".", returncode=1)
+            else:
+                capability = namespace_tools[server].get(tool, "")
+                if not capability:
+                    payload["error"] = f"{tool!r} is not exposed by the {server} namespace"
+                    return _trivial_result(json.dumps(payload), token.workspace or ".", returncode=1)
+
+            # Namespace calls re-enter the same broker. No MCP process is launched,
+            # and the actual first-party organ gets its own intent/result ledger events.
+            result = self.request(token, capability, arguments)
+            if isinstance(result, Result):
+                payload.update(
+                    ok=result.ok,
+                    capability=capability,
+                    text=result.stdout,
+                    stderr=result.stderr,
+                    returncode=result.returncode,
+                )
+            elif isinstance(result, Rejected):
+                payload["error"] = f"rejected: {result.reason}"
+            elif isinstance(result, Deferred):
+                payload.update(
+                    error=f"deferred: {result.reason}",
+                    detail=result.detail,
+                    retry_after_s=result.retry_after_s,
+                )
+            else:
+                payload["error"] = f"unexpected broker result: {type(result).__name__}"
+            return _trivial_result(
+                json.dumps(payload), token.workspace or ".",
+                returncode=0 if payload.get("ok") else 1,
+            )
         if cap.name in ("sandbox.glob", "sandbox.test", "sandbox.check",
                         "sandbox.status", "plugin.marketplace",
                         "sandbox.repo_map", "sandbox.checkpoint",
@@ -408,24 +527,29 @@ class Broker:
             from elora.slime.sandbox import dispatch as sandbox_dispatch
             root = token.workspace if token.tier.value < Tier.TRUSTED.value else None
             res = sandbox_dispatch(cap.name, args, root=root)
-            return _trivial_result(json.dumps(res), token.workspace or ".")
+            failed = isinstance(res, dict) and res.get("ok") is False
+            return _trivial_result(json.dumps(res), token.workspace or ".",
+                                   returncode=1 if failed else 0)
         if cap.name in ("ws.list", "code.read", "code.search", "code.edit",
                         "git.status", "git.diff", "git.commit"):
             import json
             from elora.slime.hands import dispatch as hands_dispatch
             root = token.workspace if token.tier.value < Tier.TRUSTED.value else None
             res = hands_dispatch(cap.name, args, root=root)
-            return _trivial_result(json.dumps(res), token.workspace or ".")
+            failed = isinstance(res, dict) and res.get("ok") is False
+            return _trivial_result(json.dumps(res), token.workspace or ".",
+                                   returncode=1 if failed else 0)
         if cap.name == "doc.ingest":
             import json
             from elora.slime.ingest import IngestionPipeline
             from elora.slime.rag import RagIndex
-            rag_dir = os.path.join(self.vault_root, "rag") if os.path.exists(os.path.join(self.vault_root, "rag")) else ".elora/rag"
+            rag_dir = os.path.join(self.vault_root or ".elora", "rag")
             rag = RagIndex(persist_dir=rag_dir)
             pipeline = IngestionPipeline(vault=self.vault, ledger=self.ledger, rag=rag, metabolism=self.metabolism)
             path = args.get("path", args.get("file_path", args.get("file", args.get("filepath", ""))))
             res = pipeline.ingest(path)
-            return _trivial_result(json.dumps(res), token.workspace)
+            failed = isinstance(res, dict) and bool(res.get("error") or res.get("refused"))
+            return _trivial_result(json.dumps(res), token.workspace, returncode=1 if failed else 0)
 
         work_dir = token.workspace or os.getcwd()
         os.makedirs(work_dir, exist_ok=True)
@@ -604,11 +728,11 @@ class Broker:
 
 
 
-def _trivial_result(text: str, work_dir: str) -> ExecutionResult:
+def _trivial_result(text: str, work_dir: str, returncode: int = 0) -> ExecutionResult:
     import hashlib
     data = (text or "").encode("utf-8")
     return ExecutionResult(
-        returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
+        returncode=int(returncode), timed_out=False, killed_by=None, duration_s=0.0,
         stdout_sha256=hashlib.sha256(data).hexdigest(),
         stderr_sha256=hashlib.sha256(b"").hexdigest(),
         stdout=text, stderr="", work_dir=work_dir or ".",

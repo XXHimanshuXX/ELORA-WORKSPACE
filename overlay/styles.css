@@ -450,8 +450,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--el-accent); outl
 .turn { display: flex; flex-direction: column; gap: var(--el-space-2); max-width: 78ch; }
 .turn__role { font-size: 0.7rem; letter-spacing: var(--el-tracking-wide); text-transform: uppercase; color: var(--el-ink-faint); }
 .turn__body { padding: var(--el-space-3) var(--el-space-4); border-radius: var(--el-radius-card); border: var(--el-hairline) solid var(--el-border); background: var(--el-surface-raised); white-space: pre-wrap; overflow-wrap: anywhere; }
-.turn[data-role="user"] { align-self: flex-end; align-items: flex-end; }
-.turn[data-role="user"] .turn__body { background: var(--el-accent-soft); border-color: color-mix(in srgb, var(--el-accent) 30%, transparent); }
 .turn__meta { font-size: 0.72rem; color: var(--el-ink-faint); font-family: var(--el-font-mono); }
 .chat__compose { display: flex; gap: var(--el-space-3); align-items: flex-end; padding: var(--el-space-4) var(--el-space-5); border-top: var(--el-hairline) solid var(--el-border); }
 .chat__compose textarea { min-height: 44px; max-height: 168px; }
@@ -467,7 +465,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--el-accent); outl
 .seg button:hover { color: var(--el-ink); }
 .seg button[aria-pressed="true"] { background: var(--el-surface-raised); color: var(--el-ink-strong); font-weight: var(--el-weight-medium); }
 
-/* ── resident / organism / quick actions ───────────────────────────── */
+/* ── resident / organism ───────────────────────────────────────────── */
 
 .resident-layout {
   display: grid;
@@ -588,41 +586,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--el-accent); outl
   color: var(--el-ink);
   line-height: var(--el-line-body);
 }
-.quick-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--el-space-2);
-  padding: var(--el-space-3) var(--el-space-5);
-  border-top: var(--el-hairline) solid var(--el-border);
-  background: var(--el-surface);
-}
-.quick-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--el-space-2);
-  padding: var(--el-space-2) var(--el-space-3);
-  font-size: var(--el-t-1);
-  font-family: inherit;
-  border-radius: var(--el-radius-control);
-  border: var(--el-hairline) solid var(--el-border);
-  background: var(--el-surface-raised);
-  color: var(--el-ink);
-  cursor: pointer;
-  transition: border-color var(--el-dur-140) ease, background var(--el-dur-140) ease;
-}
-.quick-btn:hover {
-  background: var(--el-surface);
-  border-color: var(--el-accent);
-  color: var(--el-accent);
-}
-.quick-btn svg {
-  width: 14px;
-  height: 14px;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  fill: none;
-}
-
 /* ── error / empty states ───────────────────────────────────────────── */
 
 .banner {

@@ -22,17 +22,21 @@ from elora.slime.hands import SKIP_DIRS, _is_secret, _rel, _resolve
 MAX_GLOB = 200
 
 MARKETPLACE: dict[str, str] = {
-    "git": "First-party version-control hands inside the workspace jail.",
-    "sandbox": "First-party checkpoint, diagnose, restore, and jailed test organs.",
-    "ledger": "First-party Akashic evidence and integrity organs.",
-    "core": "First-party Resident inbox, daemon, and broker organs.",
+    "git": "First-party workspace git hands: status, diff, and guarded commit.",
+    "sandbox": "Jailed repo map, checkpoints, diagnosis, and pytest organs.",
+    "ledger": "Read-only Akashic evidence and hash-chain verification.",
+    "core": "CORE daemon, broker, and registered first-party organs.",
 }
+MARKETPLACE_ALLOWED = ("git", "sandbox", "ledger", "core")
+
+
 
 
 def glob_files(pattern: str, path: str = ".", root: str | None = None) -> dict[str, Any]:
     pat = (pattern or "").strip() or "*"
+    workspace_root = os.path.realpath(os.path.abspath(root or WORKSPACE_ROOT))
     try:
-        base = _resolve(path or ".", root)
+        base = _resolve(path or ".", workspace_root)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     if not os.path.isdir(base):
@@ -43,6 +47,10 @@ def glob_files(pattern: str, path: str = ".", root: str | None = None) -> dict[s
                        if d not in SKIP_DIRS and not os.path.islink(os.path.join(dirpath, d))]
         for name in filenames:
             full = os.path.join(dirpath, name)
+            try:
+                full = _resolve(full, workspace_root)
+            except ValueError:
+                continue
             if _is_secret(full):
                 continue
             rel = _rel(full).replace("\\", "/")
@@ -115,26 +123,34 @@ def run_check(root: str | None = None) -> dict[str, Any]:
 
 
 def marketplace() -> dict[str, Any]:
+    """Closed first-party catalogue. It cannot install or launch packages."""
+    items = [
+        {
+            "name": name,
+            "blurb": MARKETPLACE[name],
+            "installed": True,
+            "installable": False,
+        }
+        for name in MARKETPLACE_ALLOWED
+    ]
     return {
         "ok": True,
+        "allowed": list(MARKETPLACE_ALLOWED),
+        "servers": items,
+        "no_npx": True,
         "closed": True,
-        "servers": [
-            {"name": name, "blurb": blurb, "installed": True}
-            for name, blurb in MARKETPLACE.items()
-        ],
-        "note": "Only first-party git, sandbox, ledger, and core organs are available.",
+        "note": "closed first-party organ catalogue; unknown packages cannot be installed or launched",
     }
 
 
 def status(root: str | None = None) -> dict[str, Any]:
-    from elora.core.mcp_client import DEFAULT_SERVERS
     from elora.slime.hands import git_status
     base = os.path.abspath(root or WORKSPACE_ROOT)
     git = git_status()
     return {
         "ok": True,
         "workspace": base,
-        "plugins": sorted(DEFAULT_SERVERS),
+        "plugins": marketplace()["allowed"],
         "git": git,
     }
 

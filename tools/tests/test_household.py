@@ -143,6 +143,8 @@ def test_plugin_list_does_not_launch(tmp_path):
         assert payload["ok"] is True
         assert payload["servers"] == ["git", "sandbox", "ledger", "core"]
         assert payload["closed"] is True
+        assert payload["marketplace"]["no_npx"] is True
+        assert all(item["installable"] is False for item in payload["marketplace"]["servers"])
     finally:
         metabolism.shutdown()
 
@@ -153,8 +155,12 @@ def test_plugin_call_unknown_server_is_honest(tmp_path):
                     consent_dir=str(tmp_path / "consent"), vault_root=str(tmp_path / "vault"))
     token = SkillToken(skill_id="core", tier=Tier.CORE, workspace=str(tmp_path), issued_at=0.0)
     try:
-        res = broker.request(token, "plugin.call", {"server": "no-such-mcp", "tool": "x"})
-        assert isinstance(res, Rejected)
-        assert "marketplace is closed" in res.reason
+        for server in ("no-such-mcp", "omniroute", "blender", "github"):
+            res = broker.request(token, "plugin.call", {"server": server, "tool": "x"})
+            assert isinstance(res, Result)
+            payload = json.loads(res.stdout)
+            assert payload["ok"] is False
+            assert "error" in payload
+            assert "git, sandbox, ledger, core" in payload["error"]
     finally:
         metabolism.shutdown()

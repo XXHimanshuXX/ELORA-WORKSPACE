@@ -3,7 +3,7 @@ test_overlay.py — Inspection rung for WebGPU spatial organism overlay.
 
 Pass criteria:
   - WGSL shader syntax structure validated (Uniforms buffer, vertex & fragment entrypoints, SDF function).
-  - WebGPU bridge ripple counter verified on capability invocation.
+  - A visible ripple is emitted only after the broker records its result in the ledger.
   - Honest marker: rendering execution requires GPU runner in CI.
 """
 
@@ -35,16 +35,38 @@ class TestOverlayWgsl:
         assert "fn fs(" in src
         assert "fn sdf_blob(" in src
 
-    def test_overlay_bridge_ripple_counter(self):
-        initial = overlay_bridge.last()
-        count_before = initial.get("n", 0)
+    def test_ripple_follows_recorded_broker_result(self, broker, ledger, monkeypatch):
+        from elora.core.capabilities import Tier
+        from elora.core.owner_will import WORKSPACE_ROOT
+        from conftest import token
 
-        overlay_bridge.ripple("shell.run_command")
-        after = overlay_bridge.last()
+        observed = []
+        real_append = ledger.append
 
-        assert after["capability"] == "shell.run_command"
-        assert after["n"] == count_before + 1
-        assert after["ts"] > 0
+        def record(organ, kind, message, payload=None):
+            result = real_append(organ, kind, message, payload)
+            if kind in ("capability_intent", "capability_result"):
+                observed.append(("ledger", kind))
+            return result
+
+        def ripple(capability):
+            observed.append(("ripple", capability, ledger.events[-1]["kind"]))
+
+        def ring(organ, kind, ring_path=None):
+            observed.append(("ring", organ, kind, ledger.events[-1]["kind"]))
+
+        monkeypatch.setattr(ledger, "append", record)
+        monkeypatch.setattr(overlay_bridge, "ripple", ripple)
+        monkeypatch.setattr(overlay_bridge, "emit_ripple", ring)
+
+        result = broker.request(token(Tier.CORE, WORKSPACE_ROOT), "git.status", {})
+        assert result.ok is True
+        assert observed == [
+            ("ledger", "capability_intent"),
+            ("ledger", "capability_result"),
+            ("ripple", "git.status", "capability_result"),
+            ("ring", "broker", "git.status", "capability_result"),
+        ]
 
     def test_html_console_contract(self):
         """
@@ -73,18 +95,13 @@ class TestOverlayWgsl:
         # Glyphs are SVG symbols so they do not depend on a font the machine may
         # not have. Nothing above U+2500 in this file means no emoji crept in.
         assert not any(ord(ch) >= 0x2500 for ch in html)
-    def test_webgpu_harness_is_not_hosted_by_the_console(self):
-        """
-        Records a known gap instead of leaving it to be discovered.
-
-        organism.wgsl is structurally verified and its uniforms are still fed by
-        metabolic state, but no page mounts a canvas for it any more. This test
-        exists so that "the shader runs in the console" cannot be assumed without
-        someone changing a test that says otherwise.
-        """
+    def test_genome_driven_organism_is_mounted_by_resident_view(self):
+        """The resident mounts its existing organism canvas and honest offline fallback."""
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        with open(os.path.join(root, "overlay", "index.html"), "r", encoding="utf-8") as f:
-            html = f.read()
+        with open(os.path.join(root, "overlay", "app.js"), "r", encoding="utf-8") as f:
+            app = f.read()
 
-        assert "<canvas" not in html
-        assert "navigator.gpu" not in html
+        assert "id: 'organism-canvas'" in app
+        assert "new Organism(canvas)" in app
+        assert "state.organism.init()" in app
+        assert "WebGPU adapter required" in app

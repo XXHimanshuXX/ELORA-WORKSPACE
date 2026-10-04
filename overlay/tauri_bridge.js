@@ -1,7 +1,7 @@
 // overlay/tauri_bridge.js — Tauri Webview JS bridge for ELORA OS.
 
 export function initTauriBridge(callbacks = {}) {
-  const { onStateUpdate, onRipple } = callbacks;
+  const { onStateUpdate } = callbacks;
 
   if (typeof window === "undefined" || !window.__TAURI__) {
     // Running in standalone browser or headless mock
@@ -10,7 +10,6 @@ export function initTauriBridge(callbacks = {}) {
 
   const tauri = window.__TAURI__;
   const invoke = tauri.invoke || (tauri.tauri && tauri.tauri.invoke);
-  const listen = tauri.event && tauri.event.listen;
 
   // Poll metabolism state every 500ms
   const intervalId = setInterval(async () => {
@@ -26,28 +25,8 @@ export function initTauriBridge(callbacks = {}) {
     }
   }, 500);
 
-  // Listen for ripple events from daemon/sidecar
-  let unlistenRipple = null;
-  if (listen) {
-    listen("ripple", (event) => {
-      if (onRipple) {
-        onRipple(event.payload);
-      }
-    }).then((unlisten) => {
-      unlistenRipple = unlisten;
-    }).catch(() => {});
-  }
-
   return {
     isTauri: true,
-    sendInboxTask: async (prompt) => {
-      if (!invoke) return false;
-      try {
-        return await invoke("send_inbox_task", { prompt });
-      } catch (err) {
-        return false;
-      }
-    },
     getChatHistory: async () => {
       if (!invoke) return null;
       try {
@@ -59,7 +38,6 @@ export function initTauriBridge(callbacks = {}) {
     },
     cleanup: () => {
       clearInterval(intervalId);
-      if (unlistenRipple) unlistenRipple();
     }
   };
 }

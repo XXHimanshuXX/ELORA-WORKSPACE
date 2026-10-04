@@ -65,7 +65,10 @@ SERVER_NAME = "elora-dashboard/1.0"
 
 # The header that makes a cross-origin request impossible for a plain webpage.
 CLIENT_HEADER = "X-ELORA-Client"
-CLIENT_HEADER_VALUES = frozenset({"resident-overlay", "core-daemon"})
+CLIENT_HEADER_VALUE = "dashboard"
+RESIDENT_CLIENT = "resident-overlay"
+CORE_CLIENT = "core-daemon"
+BROWSER_EXTENSION_CLIENT = "browser-extension"
 
 # Origins permitted to talk to us. `null` covers a file:// page (the Tauri
 # webview loading the overlay from disk); it is safe to allow here because the
@@ -459,74 +462,15 @@ def _parse_json_text(text: str) -> Any:
         return None
 
 
-# Read-only OmniRoute tools the console may invoke by name. An allowlist, not a
-# passthrough: this endpoint is reachable from a web page's fetch, and handing it
-# the full 110-tool surface would hand over configuration-mutating tools too.
-#
-# `omniroute_explain_route` is deliberately ABSENT. It reads a routed request's
-# scoring factors and requires a `requestId`, not a model name — wiring it to a
-# model dropdown would look plausible and return validation errors.
-_ROUTER_TOOLS: dict[str, tuple[str, dict[str, Any]]] = {
-    "health": ("omniroute_get_health", {}),
-    "session": ("omniroute_get_session_snapshot", {}),
-    "combos": ("omniroute_list_combos", {"includeMetrics": True}),
-    "cost": ("omniroute_cost_report", {"period": "today"}),
-}
-
-
+# Router telemetry may be read from status/model endpoints, but executing an MCP
+# tool from the browser bypasses the Resident inbox → CORE daemon → broker path.
 def payload_router_tool(name: str) -> dict[str, Any]:
-    """Call one allowlisted OmniRoute MCP tool and return its real answer."""
-    if name not in _ROUTER_TOOLS:
-        raise ApiError(404, "unknown-router-tool",
-                       f"{name!r} is not an allowlisted router tool",
-                       f"allowed: {', '.join(sorted(_ROUTER_TOOLS))}")
-    tool, arguments = _ROUTER_TOOLS[name]
-
-    cached_key = f"router:tool:{name}"
-    fresh, cached = CACHE.get(cached_key, ttl=20.0)
-    if fresh:
-        return dict(cached, cached=True)
-
-    def produce() -> dict[str, Any]:
-        from elora.core.mcp_client import DEFAULT_SERVERS, McpStdioServer
-        started = time.monotonic()
-        try:
-            with McpStdioServer(DEFAULT_SERVERS["omniroute"], timeout_s=60) as client:
-                result = client.call_tool(tool, arguments)
-        except Exception as exc:                        # noqa: BLE001
-            raise ApiError(502, "router-tool-failed",
-                           f"{tool}: {type(exc).__name__}: {exc}") from exc
-        payload = _parse_json_text(result.text)
-        # Surface what the payload itself admits is broken, so the panel can list
-        # the failures instead of drawing an empty chart that looks like zero.
-        degraded_items = []
-        if isinstance(payload, dict) and isinstance(payload.get("degraded"), list):
-            degraded_items = payload["degraded"]
-
-        marker = detect_degradation(result.text)
-        return {
-            "name": name,
-            "tool": tool,
-            # protocol_ok and is_error are kept apart on purpose: MCP delivers
-            # tool failures inside a successful envelope, and collapsing them
-            # is how a console learns to show a green tick for a real error.
-            "protocol_ok": result.protocol_ok,
-            "is_error": result.is_error,
-            # `succeeded` is the honest one: it is False when the payload says
-            # the data could not be fetched, not merely when MCP said so.
-            "succeeded": bool(result.protocol_ok and not result.is_error and not marker),
-            "degraded": bool(marker),
-            "degraded_reason": marker,
-            "degraded_items": degraded_items,
-            "text": result.text,
-            "structured": result.structured_content,
-            "data": payload,
-            "latency_ms": int((time.monotonic() - started) * 1000),
-            "fetched_at": time.strftime("%H:%M:%S"),
-        }
-
-    return dict(CACHE.get_or_start(cached_key, produce), cached=False)
-
+    raise ApiError(
+        410,
+        "direct-tool-calls-disabled",
+        "Router tool calls are disabled in the console; submit a will through the Resident inbox.",
+        "Tool execution is owned by CORE and the capability broker.",
+    )
 
 def payload_chat(message: str, model: str = "", history: list | None = None) -> dict[str, Any]:
     """
@@ -610,121 +554,47 @@ def payload_discovery(refresh: bool = False) -> dict[str, Any]:
 
 
 def _probe_mcp_servers() -> dict[str, Any]:
-    """Live-probe every server we know about. Slow: spawns real processes."""
-    from elora.core.mcp_client import DEFAULT_SERVERS, describe
-
-    results = []
-    for name, spec in DEFAULT_SERVERS.items():
-        started = time.monotonic()
-        try:
-            info = describe(spec, timeout=60)
-            results.append({
-                "name": name,
-                "spec": {"command": spec.command, "args": list(spec.args)},
-                "reachable": info["reachable"],
-                "protocol_version": info["protocol_version"],
-                "server_info": info["server_info"],
-                "tool_count": info["tool_count"],
-                "error": info["error"],
-                "latency_ms": int((time.monotonic() - started) * 1000),
-            })
-        except Exception as exc:                       # noqa: BLE001 - reported, not hidden
-            results.append({
-                "name": name,
-                "spec": {"command": spec.command, "args": list(spec.args)},
-                "reachable": False,
-                "protocol_version": "",
-                "server_info": {},
-                "tool_count": 0,
-                "error": f"{type(exc).__name__}: {exc}",
-                "latency_ms": int((time.monotonic() - started) * 1000),
-            })
-    return {"servers": results, "probed_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+    """Return the closed organ catalogue; never spawn a server from the dashboard."""
+    return payload_mcp_servers()
 
 
 def payload_mcp_servers(refresh: bool = False) -> dict[str, Any]:
-    if refresh:
-        data = CACHE.get_or_start("mcp:servers", _probe_mcp_servers)
-        return dict(data, cached=False)
-    fresh, cached = CACHE.get("mcp:servers", ttl=600.0)
-    if fresh:
-        return dict(cached, cached=True)
-    # Serve a stale probe WITH its age rather than pretending we never probed.
-    have_stale, stale = CACHE.peek("mcp:servers")
-    if have_stale:
-        return dict(stale, cached=True, stale=True)
-    return {"servers": [], "probed_at": None, "cached": False, "probed": False,
-            "note": "not probed yet — GET /api/mcp/servers?refresh=1 to spawn the servers"}
+    """Expose only the closed first-party marketplace, without probing processes."""
+    from elora.slime.sandbox import marketplace
+
+    catalogue = marketplace()
+    return {
+        "servers": catalogue["servers"],
+        "allowed": catalogue["allowed"],
+        "no_npx": True,
+        "probed": False,
+        "cached": False,
+        "probed_at": None,
+        "note": catalogue["note"],
+    }
 
 
 def payload_mcp_tools(server: str, refresh: bool = False) -> dict[str, Any]:
-    from elora.core.mcp_client import DEFAULT_SERVERS, McpUnknownServer
+    from elora.slime.sandbox import marketplace
 
-    if server not in DEFAULT_SERVERS:
-        raise ApiError(404, "unknown-mcp-server",
-                       f"{server!r} is not a configured server",
-                       f"known: {', '.join(sorted(DEFAULT_SERVERS))}")
-    key = f"mcp:tools:{server}"
-    if not refresh:
-        fresh, cached = CACHE.get(key, ttl=600.0)
-        if fresh:
-            return dict(cached, cached=True)
-
-    spec = DEFAULT_SERVERS[server]
-    started = time.monotonic()
-    try:
-        from elora.core.mcp_client import McpStdioServer
-        with McpStdioServer(spec, timeout_s=60) as client:
-            tools = client.list_tools()
-            info = client.server_info
-            protocol = client.protocol_version
-    except Exception as exc:                            # noqa: BLE001
-        raise ApiError(502, "mcp-server-unavailable",
-                       f"{server}: {type(exc).__name__}: {exc}",
-                       "The server process failed to launch or died mid-handshake.") from exc
-
-    payload = {
-        "server": server,
-        "protocol_version": protocol,
-        "server_info": info,
-        "tool_count": len(tools),
-        "tools": tools,
-        "latency_ms": int((time.monotonic() - started) * 1000),
-    }
-    CACHE.put(key, payload)
-    return dict(payload, cached=False)
+    allowed = marketplace()["allowed"]
+    if server not in allowed:
+        raise ApiError(404, "unknown-mcp-server", f"{server!r} is not in the closed marketplace")
+    raise ApiError(
+        410,
+        "direct-mcp-tools-disabled",
+        f"{server} is a first-party organ namespace, not a browser-launched MCP process.",
+        "Use the Resident inbox so CORE can dispatch and record the tool through the broker.",
+    )
 
 
 def payload_mcp_call(server: str, tool: str, arguments: dict) -> dict[str, Any]:
-    from elora.core.mcp_client import DEFAULT_SERVERS, McpStdioServer
-
-    if server not in DEFAULT_SERVERS:
-        raise ApiError(404, "unknown-mcp-server",
-                       f"{server!r} is not a configured server")
-    if not tool:
-        raise ApiError(400, "missing-tool", "no tool name supplied")
-
-    try:
-        with McpStdioServer(DEFAULT_SERVERS[server], timeout_s=90) as client:
-            result = client.call_tool(tool, arguments)
-    except Exception as exc:                            # noqa: BLE001
-        raise ApiError(502, "mcp-call-failed",
-                       f"{server}.{tool}: {type(exc).__name__}: {exc}") from exc
-
-    marker = detect_degradation(result.text)
-    return {
-        "server": server,
-        "tool": tool,
-        "protocol_ok": result.protocol_ok,
-        "is_error": result.is_error,
-        "succeeded": bool(result.protocol_ok and not result.is_error and not marker),
-        "degraded": bool(marker),
-        "degraded_reason": marker,
-        "text": result.text,
-        "content": result.content,
-        "structured_content": result.structured_content,
-    }
-
+    raise ApiError(
+        410,
+        "direct-mcp-call-disabled",
+        "Direct MCP calls are disabled; tools must enter through the Resident inbox.",
+        "CORE routes the will through the broker and records the organ result in Akashic.",
+    )
 
 def payload_capabilities() -> dict[str, Any]:
     from elora.core.capabilities import REGISTRY, TIER_CEILING
@@ -795,20 +665,52 @@ _STATE_INDEX = {
 
 
 def payload_perception(state_file: Optional[str] = None) -> dict[str, Any]:
-    """Last house still. Absence is absence. Synthetic frames are not sight."""
+    """Last real house still. Missing, synthetic, or jailed-out frames are absent."""
     target_file = state_file or os.path.join(STATE_DIR, "state.json")
     if not target_file or not os.path.exists(target_file):
         return {"available": False, "reason": "state.json absent"}
+    resolved_state = os.path.realpath(target_file)
+    if state_file is None:
+        workspace = os.path.realpath(ROOT)
+        try:
+            if os.path.commonpath((workspace, resolved_state)) != workspace:
+                return {"available": False, "reason": "state.json outside workspace"}
+        except ValueError:
+            return {"available": False, "reason": "state.json outside workspace"}
     try:
-        with open(target_file, "r", encoding="utf-8") as handle:
+        with open(resolved_state, "r", encoding="utf-8") as handle:
             state = json.load(handle)
     except (OSError, ValueError) as e:
         return {"available": False, "reason": f"state.json unreadable: {e}"}
     perc = state.get("last_perception")
     if not isinstance(perc, dict):
         return {"available": False, "reason": "no still yet"}
-    return perc if "available" in perc else {**perc, "available": True}
-
+    if perc.get("synthetic"):
+        return {**perc, "available": False,
+                "reason": perc.get("reason") or "synthetic frame is not sight"}
+    if perc.get("available") is False:
+        return perc
+    path = perc.get("path")
+    if not path:
+        return {"available": False, "reason": "no still yet"}
+    state_dir = os.path.dirname(resolved_state)
+    jail = os.path.realpath(os.path.join(state_dir, "screenshots"))
+    candidate = path if os.path.isabs(str(path)) else os.path.join(state_dir, str(path))
+    resolved = os.path.realpath(candidate)
+    try:
+        if os.path.commonpath((jail, resolved)) != jail:
+            return {"available": False, "reason": "no still yet"}
+    except ValueError:
+        return {"available": False, "reason": "no still yet"}
+    if not os.path.isfile(resolved):
+        return {"available": False, "reason": "no still yet"}
+    try:
+        from PIL import Image
+        with Image.open(resolved) as image:
+            image.verify()
+    except Exception:
+        return {"available": False, "reason": "no still yet"}
+    return {**perc, "path": resolved, "available": True}
 
 def perception_still_path(state_file: Optional[str] = None) -> Optional[str]:
     perc = payload_perception(state_file)
@@ -817,9 +719,12 @@ def perception_still_path(state_file: Optional[str] = None) -> Optional[str]:
     path = perc.get("path")
     if not path:
         return None
-    jail = os.path.abspath(os.path.join(STATE_DIR, "screenshots"))
-    resolved = os.path.abspath(path)
-    if resolved != jail and not resolved.startswith(jail + os.sep):
+    jail = os.path.realpath(os.path.join(STATE_DIR, "screenshots"))
+    resolved = os.path.realpath(path)
+    try:
+        if os.path.commonpath((jail, resolved)) != jail:
+            return None
+    except ValueError:
         return None
     if not os.path.isfile(resolved):
         return None
@@ -888,8 +793,34 @@ def payload_chat_history() -> dict[str, Any]:
         return {"available": False, "reason": f"unreadable: {exc}", "messages": []}
 
 
-def payload_inbox_task(prompt: str) -> dict[str, Any]:
-    """Enqueues a task instruction into .elora/inbox and logs to Akashic ledger."""
+def payload_browser_session() -> dict[str, Any]:
+    """Current browser handoff, or the explicit uncontrolled state."""
+    from elora.slime.browser import read_session_context
+    return read_session_context()
+
+
+def payload_browser_handoff(payload: dict[str, Any]) -> dict[str, Any]:
+    """Accept only bounded, whitelisted context from the browser extension."""
+    from elora.slime.browser import handoff_session
+    result = handoff_session(payload)
+    if not result.get("ok"):
+        raise ApiError(400, "browser-handoff-refused", str(result.get("error", "invalid handoff")))
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            AkashicLedger(LEDGER_PATH).append(
+                organ="browser", kind="session_handoff",
+                message="browser extension session handed off",
+                payload={"captured_at": result.get("captured_at"),
+                         "fields": sorted(k for k in payload if k in ("current_page", "current_pages", "bookmarks", "quick_links"))},
+            )
+        except Exception:
+            pass
+    return result
+
+
+def payload_inbox_task(prompt: str, client: str = RESIDENT_CLIENT) -> dict[str, Any]:
+    """Enqueues a spoken will into .elora/inbox and records its client identity."""
     clean = (prompt or "").strip()
     if not clean:
         raise ApiError(400, "empty-task", "prompt cannot be empty")
@@ -910,7 +841,7 @@ def payload_inbox_task(prompt: str) -> dict[str, Any]:
             organ="inbox",
             kind="task_queued",
             message=f"task queued: {clean[:60]}",
-            payload={"filename": filename, "task": clean},
+            payload={"filename": filename, "task": clean, "client": client},
         )
     except Exception:
         try:
@@ -933,6 +864,7 @@ def payload_inbox_task(prompt: str) -> dict[str, Any]:
         "task_id": filename,
         "ts": time.time(),
         "status": "queued",
+        "client": client,
     })
     try:
         with open(chat_path, "w", encoding="utf-8") as handle:
@@ -1017,10 +949,12 @@ class Handler(BaseHTTPRequestHandler):
             return True                     # same-origin fetches often omit it
         if origin in _ALLOWED_ORIGINS:
             return True
+        if origin.startswith(("chrome-extension://", "moz-extension://")):
+            return self.headers.get(CLIENT_HEADER) == BROWSER_EXTENSION_CLIENT
         host = self.headers.get("Host", "")
         return origin in (f"http://{host}", f"https://{host}")
 
-    def _guard(self, mutating: bool) -> None:
+    def _guard(self, mutating: bool, path: str = "") -> None:
         """
         The whole localhost-CSRF defence, in one place.
 
@@ -1030,12 +964,19 @@ class Handler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             raise ApiError(403, "origin-refused",
                            f"Origin {self.headers.get('Origin')!r} is not allowed")
-        client = self.headers.get(CLIENT_HEADER)
-        if client not in CLIENT_HEADER_VALUES:
+        client = self.headers.get(CLIENT_HEADER, "")
+        if mutating and path == "/api/inbox/task":
+            allowed = {RESIDENT_CLIENT, CORE_CLIENT}
+        elif mutating and path == "/api/browser/session":
+            allowed = {BROWSER_EXTENSION_CLIENT}
+        else:
+            allowed = {CLIENT_HEADER_VALUE, RESIDENT_CLIENT, CORE_CLIENT}
+        if client not in allowed:
+            expected = ", ".join(sorted(allowed))
             raise ApiError(
                 403, "client-header-required",
-                f"missing or invalid {CLIENT_HEADER}",
-                "This header is what prevents a random web page from driving ELORA.")
+                f"{CLIENT_HEADER} must be one of: {expected}",
+                "The client identity is checked before an organ can receive the request.")
 
     def _read_json(self) -> dict[str, Any]:
         try:
@@ -1102,7 +1043,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._serve_static(path)
                 return
 
-            self._guard(mutating=False)
+            self._guard(mutating=False, path=path)
 
             if path == "/api/aesthetic":
                 self._send_json(payload_aesthetic())
@@ -1153,6 +1094,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(payload_resident_briefing())
             elif path == "/api/chat/history":
                 self._send_json(payload_chat_history())
+            elif path == "/api/browser/session":
+                self._send_json(payload_browser_session())
             else:
                 raise ApiError(404, "unknown-endpoint", f"no route for {path}")
         except ApiError as exc:
@@ -1176,7 +1119,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if not path.startswith("/api/"):
                 raise ApiError(404, "unknown-endpoint", f"no route for {path}")
-            self._guard(mutating=True)
+            self._guard(mutating=True, path=path)
 
             if path == "/api/chat":
                 body = self._read_json()
@@ -1187,7 +1130,11 @@ class Handler(BaseHTTPRequestHandler):
                 ))
             elif path == "/api/inbox/task":
                 body = self._read_json()
-                self._send_json(payload_inbox_task(str(body.get("prompt", body.get("task", "")))))
+                client = self.headers.get(CLIENT_HEADER, "")
+                self._send_json(payload_inbox_task(
+                    str(body.get("prompt", body.get("task", ""))), client=client))
+            elif path == "/api/browser/session":
+                self._send_json(payload_browser_handoff(self._read_json()))
             elif path == "/api/mcp/call":
                 body = self._read_json()
                 args = body.get("arguments")

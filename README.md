@@ -3,7 +3,7 @@
 > **A Sovereign, Local-First Agentic Operating System**  
 > *Absorbs Everything. Fakes Nothing. Free Forever. Wires Everything.*  
 >  
-> `234 passed, 0 fail (27 modules) | preflight 0 fail 4 warn | smoke GREEN (10-stage boot) | cargo check 0 warnings | MSI + NSIS bundled | v7.4 Household`
+> `Resident will loop: inbox → CORE → broker/hands → Akashic | Closed marketplace: git / sandbox / ledger / core | v7.4 Household`
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
@@ -52,7 +52,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 ### 7. Design Genome, Discovery & MCP (v7.2)
 - **Design genome (`elora/core/aesthetic.py`)**: ELORA derives its own visual identity instead of being handed one. A seeded genome builds colour in OKLCH and gamut-maps into sRGB by chroma reduction, alongside spacing, radius, typography, density, elevation and motion, carrying a WCAG contrast audit measured per token. Generations are persisted, versioned and re-adoptable, and the trend baseline is a dated offline snapshot by default — the console never needs the network to render, and refreshing from live signals is opt-in.
 - **Discovery scanner (`elora/core/discovery.py`)**: a real filesystem scan of the host, reporting 1,833 distinct skills, 1,530 duplicate files excluded and stated as a number, 263 agents, 39 plugin manifests and 17 MCP servers, behind two-layer credential redaction with a self-test that refuses to serve a leaking payload.
-- **MCP client (`elora/core/mcp_client.py`)**: a real MCP client speaking JSON-RPC 2.0 over stdio (protocol `2024-11-05`), which is how the gateway's 110 tools are enumerated and called.
+- **MCP transport (`elora/core/mcp_client.py`)**: JSON-RPC 2.0 transport remains available for controlled internal use and tests. The owner-facing marketplace is closed to `git`, `sandbox`, `ledger`, and `core`; the browser cannot probe or launch MCP servers.
 - **Console server (`elora/dashboard/server.py`)**: binds `127.0.0.1` only and refuses any other host, requires an `X-ELORA-Client` header, checks an Origin allowlist, and refuses every CORS preflight. The front-end treats absent state as absent: truncated scans, excluded duplicates and missing credentials are all displayed as themselves rather than smoothed into a healthy zero.
 
 ### 8. Household, Hands, Owner Will (v7.4)
@@ -62,30 +62,25 @@ ELORA is the **resident maid**, not a hired developer tab. When Master leaves, u
 - **Hands (`elora/slime/hands.py`)**: workspace-jailed list, read, search, surgical edit, git. Secrets under `.elora/secrets` and `.env` are not writable. Git never uses `--no-verify`.
 - **Owner will (`elora/core/owner_will.py`)**: the Master's spoken instruction is executed by organs first (paths, URLs, README). Drive/skill experiments stay on the QUARANTINE leash. Inbox and virtio-shm remain CORE.
 
-Boot the house with the console attached:
+Operator restart with the local BitNet brain:
 
 ```bash
-python run.py --resident
+python run.py --resident --brain bitnet
 ```
+
+The Tauri sidecar intentionally uses `python run.py --brain bitnet` without `--resident`: Tauri already starts the console server, so `--resident` there would risk a duplicate server.
 
 ---
 
 ## Recent Improvements
 
-### Dashboard Chat Handler Tool Call Execution Fix
-- **Issue**: The dashboard's `/api/chat` endpoint was displaying `<mcp_call>` blocks but not actually executing them through the broker.
-- **Fix**: Updated `elora/dashboard/server.py` to mirror the logic in `elora/daemon.py`:
-  - Implemented tool call extraction using `elora.brain.extract_tool_calls`
-  - Added iterative processing loop (max 8 iterations) for sequential tool calls
-  - Integrated `Broker` for safe capability execution under QUARANTINE tier
-  - Added proper handling for tool call results (Rejected/Deferred/Result)
-  - Implemented conversation history feeding for iterative processing
-  - Fixed Windows inbox processing in `daemon.py` (changed `os.rename` to `os.replace`)
-
-### Verification
-- Smoke test now passes: `python run.py --smoke` shows GREEN status
-- Tool calls are now actually executed rather than just displayed in responses
-- Dashboard can now perform real end-to-end actions like opening applications, running shell commands, etc.
+### Resident Owner-Will Loop (Current)
+- Owner speech is compiled by `infer_owner_organs` before model use; deterministic wills enter `.elora/inbox` and are executed by the CORE daemon through the broker and workspace hands.
+- The Resident posts `/api/inbox/task` with `X-ELORA-Client: resident-overlay`. The same timeline retains the will, organ results, failures, and any factual voice; no success narration is emitted without a successful trace.
+- `/api/chat` is talk-only. It returns conversational text and never extracts or executes `<mcp_call>` blocks.
+- Browser session data is accepted only through the extension handoff. Without it, the browser organ says `tab is uncontrolled - no real session` rather than inventing bookmarks or current pages.
+- The owner-facing marketplace is first-party and closed to `git`, `sandbox`, `ledger`, and `core`. The browser does not probe, launch, or invoke MCP servers; tool execution enters through the Resident inbox and CORE broker.
+- A manual live smoke is available after starting the console: `ELORA_CONSOLE_URL=<running-console-url> python tools/_test_live_resident.py`. It queues one harmless will and prints its Akashic sequence/hash only after verification.
 
 ---
 
@@ -102,9 +97,9 @@ python run.py --resident
 | **#7** | Native BitNet 1.58 Rust PyO3 Extension (`elora_bitnet.pyd`) & `--once` | `05cf53a` | 120 | 6.12× speedup | **ACCELERATED** |
 | **#8** | Tauri 1.6 Sovereign Desktop Packaging & VirtIO SHM Ripple Bridge | `c0ec83f` | 124 | +4 | **SOVEREIGN RELEASE** |
 | **#9** | v7.2 Design Genome, Discovery Scanner, MCP Client & Resident Console | `b5f0794` | 151 | +27 | **SELF-STYLED** |
-| **#10** | v7.3 Resident Front Door, 3D Organism Pet, Daily Briefing & Capability Buttons | `9eae5f7` | 158 | +7 | **RESIDENT MAID** |
-| **#11** | v7.4 Household chore book, coding hands, owner-will organs | HEAD | 234 pass / 0 fail | +household | **HOUSEHOLD** |
-| **#12** | Dashboard Chat Handler Tool Call Execution Fix | [current] | 234 pass / 0 fail | +tool-execution | **EXECUTION READY** |
+| **#10** | v7.3 Resident Front Door, 3D Organism Pet, Daily Briefing & historical capability buttons removed | `9eae5f7` | 158 | +7 | **RESIDENT MAID** |
+| **#11** | v7.4 Household chore book, coding hands, owner-will organs (previous baseline) | prior HEAD | 234 pass / 0 fail (historical) | +household | **HOUSEHOLD** |
+| **#12** | Resident inbox / owner-will loop; `/api/chat` talk-only | [current] | control-loop acceptance suite | +control-loop | **EVIDENCE FIRST** |
 
 ---
 
@@ -128,7 +123,7 @@ python run.py --resident
 
 ## Installation & Sovereign Verification
 
-Local-first. No API keys. Free forever. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) enforce environment readiness; the full test suite (`pytest tools/tests`) currently reports **234 passed, 0 failed** across 27 modules.
+Local-first. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) report environment readiness without masking platform or hardware limits. Test counts are taken from the actual run; the owner-will acceptance suite is `pytest tools/tests/test_control_loop.py`.
 
 ### 1. Clone & Setup
 ```bash
@@ -213,7 +208,7 @@ python run.py --smoke
 ### 4. Run Full Test Suite
 ```bash
 pytest tools/tests
-# 234 passed across 27 modules in tools/tests
+# Record the output from this environment; hardware/platform gates may differ.
 ```
 
 ### 5. Multi-Turn Live Demonstration
@@ -239,6 +234,8 @@ python run.py --brain local
 # Sovereign Offline / Fallback (BitNet b1.58):
 # 380MB AWAKE addition-only kernel; returns DONE when unweighted (zero-hallucination)
 python run.py --brain bitnet
+# Tauri sidecar uses this form because Tauri already starts the console server.
+# For an operator-started Resident console use: python run.py --resident --brain bitnet.
 
 # Offline / sleeping brain (for test harness):
 python run.py --brain none

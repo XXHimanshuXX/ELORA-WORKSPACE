@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import sys
+import time
 import urllib.parse
 import urllib.request
 import urllib.robotparser
@@ -20,6 +21,81 @@ from typing import Optional
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SESSION_PATH = os.path.join(ROOT, ".elora", "browser-session.json")
+SESSION_FIELDS = ("current_page", "current_pages", "bookmarks", "quick_links")
+ITEM_FIELDS = ("url", "title", "name", "folder", "id")
+
+
+def _clean_session_item(item):
+    if not isinstance(item, dict):
+        return None
+    return {key: str(item[key])[:2000] for key in ITEM_FIELDS
+            if key in item and isinstance(item[key], (str, int, float))}
+
+
+def handoff_session(payload: dict, path: str | None = None) -> dict:
+    """Persist only browser context fields explicitly handed off by the extension."""
+    if not isinstance(payload, dict):
+        return {"ok": False, "error": "browser handoff must be an object"}
+    context = {"source": "browser-extension", "captured_at": time.time()}
+    for key in SESSION_FIELDS:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if value is None:
+            context[key] = None
+        elif key == "current_page":
+            if not isinstance(value, dict):
+                return {"ok": False, "error": "current_page must be an object or null"}
+            context[key] = _clean_session_item(value)
+        else:
+            if not isinstance(value, list):
+                return {"ok": False, "error": f"{key} must be a list or null"}
+            context[key] = [clean for item in value[:500]
+                            if (clean := _clean_session_item(item)) is not None]
+    encoded = json.dumps(context, ensure_ascii=False)
+    if len(encoded.encode("utf-8")) > 500_000:
+        return {"ok": False, "error": "browser handoff exceeds 500KB"}
+    target = path or SESSION_PATH
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
+        temp = f"{target}.{os.getpid()}.tmp"
+        with open(temp, "w", encoding="utf-8") as handle:
+            handle.write(encoded)
+        os.replace(temp, target)
+    except OSError as exc:
+        return {"ok": False, "error": f"browser handoff could not be stored: {exc}"}
+    return {"ok": True, "available": True, "captured_at": context["captured_at"]}
+
+
+def read_session_context(path: str | None = None) -> dict:
+    """Read real extension handoff data; never synthesize bookmark or tab lists."""
+    target = path or SESSION_PATH
+    unavailable = {
+        "ok": True,
+        "available": False,
+        "status": "tab is uncontrolled - no real session",
+        "reason": "tab is uncontrolled - no real session",
+        "current_page": None,
+        "current_pages": None,
+        "bookmarks": None,
+        "quick_links": None,
+    }
+    if not os.path.isfile(target):
+        return unavailable
+    try:
+        with open(target, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return {**unavailable, "reason": "browser handoff is unreadable"}
+    if not isinstance(payload, dict) or payload.get("source") != "browser-extension":
+        return {**unavailable, "reason": "browser handoff is not from the extension"}
+    result = {"ok": True, "available": True,
+              "status": "browser extension session handed off",
+              "captured_at": payload.get("captured_at")}
+    for key in SESSION_FIELDS:
+        result[key] = payload.get(key) if key in payload else None
+    return result
 
 
 class BrowserOrgan:
@@ -33,6 +109,10 @@ class BrowserOrgan:
         self.headless = headless
         self.alive = True
         self._robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
+
+    def context(self) -> dict:
+        """Return only the browser data a trusted extension actually handed off."""
+        return read_session_context()
 
     def _is_allowed_by_robots(self, url: str) -> bool:
         if os.path.isfile(url) or os.path.isfile(os.path.join(ROOT, url)) or url.startswith("file://") or "readme" in url.lower():
@@ -135,10 +215,7 @@ class BrowserOrgan:
                 if "delay" in url or timeout_s < 10:
                     self.alive = True
                     return {"error": "timeout", "url": url, "refused": False}
-                if "example.com" in url:
-                    raw_html = "<html><body><h1>Example Domain</h1><p>Example domain content for ELORA test.</p></body></html>"
-                else:
-                    raise net_err
+                raise net_err
 
             try:
                 from bs4 import BeautifulSoup
@@ -175,42 +252,50 @@ class BrowserOrgan:
                 "refused": False,
             }
         except Exception as e:
-            # Must never kill reactor: stay alive and return error
+            # Must never kill reactor: stay alive, record the failure, and return it.
             self.alive = True
+            if self.ledger is not None:
+                try:
+                    self.ledger.append(organ="browser", kind="read_failed",
+                                       message=url, payload={"url": url, "error": str(e)})
+                except Exception:
+                    pass
             return {"error": str(e), "url": url, "refused": False}
 
-    def search(self, query: str) -> list[dict]:
-        """Performs web search via bot-friendly HTML endpoint."""
+    def search(self, query: str) -> dict:
+        """Search only the real session handed off by the extension; never crawl the open web."""
         self.alive = True
-        encoded_query = urllib.parse.quote_plus(query)
-        search_url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
-        results = []
-        try:
-            req = urllib.request.Request(
-                search_url,
-                headers={"User-Agent": "ELORA-Agent/1.0 (Research Bot)"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                html = resp.read().decode("utf-8", errors="replace")
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(html, "html.parser")
-            for a in soup.find_all("a", class_="result__url"):
-                href = a.get("href", "").strip()
-                title = a.get_text().strip()
-                if href and title:
-                    results.append({"title": title, "url": href})
-                if len(results) >= 5:
-                    break
-        except Exception:
-            pass
-
-        if not results:
-            # Fallback mock search for offline or test environments
-            results = [
-                {"title": f"Result for {query}", "url": f"https://example.com/search?q={encoded_query}"},
-                {"title": f"Documentation: {query}", "url": f"https://example.com/docs/{encoded_query}"},
-            ]
-        return results
+        context = self.context()
+        if not context.get("available"):
+            result = {"ok": False, "error": context.get("reason", "tab is uncontrolled - no real session"),
+                      "results": None, "source": "no browser session"}
+        else:
+            needle = (query or "").strip().lower()
+            candidates = []
+            current = context.get("current_page")
+            if isinstance(current, dict):
+                candidates.append(current)
+            for key in ("current_pages", "bookmarks", "quick_links"):
+                values = context.get(key)
+                if isinstance(values, list):
+                    candidates.extend(values)
+            matched = []
+            for item in candidates:
+                text = " ".join(str(item.get(field, "")) for field in ITEM_FIELDS).lower()
+                if not needle or needle in text:
+                    matched.append(item)
+            result = {"ok": True, "results": matched[:100],
+                      "searched": [key for key in SESSION_FIELDS if context.get(key) is not None],
+                      "source": "handed-off browser session"}
+        if self.ledger is not None:
+            try:
+                self.ledger.append(organ="browser", kind="session_search",
+                                   message=(query or "")[:160],
+                                   payload={"available": bool(context.get("available")),
+                                            "count": len(result.get("results") or [])})
+            except Exception:
+                pass
+        return result
 
 
 def main():

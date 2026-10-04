@@ -49,37 +49,56 @@ def _ckpt_dir(root: str) -> str:
 
 
 def snapshot_file(path: str, root: str | None = None) -> dict[str, Any]:
-    """Save one jailed file's bytes before mutation. Secrets refused."""
+    """Checkpoint a jailed file before mutation, including a tombstone for new files."""
     try:
         resolved = _resolve(path, root)
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     if _is_secret(resolved):
         return {"ok": False, "error": "refused: secrets are not checkpointed"}
+    if os.path.isdir(resolved):
+        return {"ok": False, "error": "refused: checkpoint target is a directory"}
+
+    target = _rel(resolved).replace("\\", "/")
     store = _ckpt_dir(root or WORKSPACE_ROOT)
     os.makedirs(store, exist_ok=True)
     log_path = os.path.join(os.path.dirname(store), "log.jsonl")
-    if not os.path.isfile(resolved):
-        rec = {"ts": time.time(), "path": _rel(resolved), "exists": False,
-               "sha256": None, "bytes": 0}
+
+    if not os.path.lexists(resolved):
+        rec = {"ts": time.time(), "path": target, "created": True, "bytes": 0}
         with open(log_path, "a", encoding="utf-8") as handle:
             handle.write(json.dumps(rec) + "\n")
-        return {"ok": True, "created": True, "path": rec["path"], "bytes": 0}
-    data = open(resolved, "rb").read()
+        return {"ok": True, "created": True, "path": target, "checkpoint": True}
+
+    if not os.path.isfile(resolved):
+        return {"ok": False, "error": "refused: checkpoint target is not a regular file"}
+    try:
+        with open(resolved, "rb") as handle:
+            data = handle.read()
+    except OSError as e:
+        return {"ok": False, "error": f"checkpoint read failed: {e}"}
     digest = hashlib.sha256(data).hexdigest()
     blob = os.path.join(store, digest)
-    if not os.path.isfile(blob):
-        with open(blob, "wb") as handle:
-            handle.write(data)
-    rec = {"ts": time.time(), "path": _rel(resolved), "exists": True,
-           "sha256": digest, "bytes": len(data)}
-    with open(log_path, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(rec) + "\n")
-    return {"ok": True, "path": rec["path"], "sha256": digest, "bytes": len(data)}
-
+    try:
+        if not os.path.isfile(blob):
+            with open(blob, "xb") as handle:
+                handle.write(data)
+    except FileExistsError:
+        pass
+    except OSError as e:
+        return {"ok": False, "error": f"checkpoint store failed: {e}"}
+    rec = {"ts": time.time(), "path": target, "sha256": digest,
+           "bytes": len(data), "created": False}
+    try:
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(rec) + "\n")
+    except OSError as e:
+        return {"ok": False, "error": f"checkpoint log failed: {e}"}
+    return {"ok": True, "path": target, "sha256": digest,
+            "bytes": len(data), "created": False, "checkpoint": True}
 
 def restore_file(path: str, root: str | None = None, sha256: str | None = None) -> dict[str, Any]:
-    """Restore the latest checkpoint, or an explicitly named checkpoint, for one path."""
+    """Restore the latest pre-edit checkpoint, or remove a file created afterward."""
     try:
         resolved = _resolve(path, root)
     except ValueError as e:
@@ -89,39 +108,62 @@ def restore_file(path: str, root: str | None = None, sha256: str | None = None) 
     requested_sha = str(sha256 or "").strip().lower()
     if requested_sha and not re.fullmatch(r"[a-f0-9]{64}", requested_sha):
         return {"ok": False, "error": "invalid checkpoint sha256"}
-    log_path = os.path.join(os.path.abspath(root or WORKSPACE_ROOT), CHECKPOINT_ROOT, "log.jsonl")
+    root_abs = os.path.abspath(root or WORKSPACE_ROOT)
+    log_path = os.path.join(root_abs, CHECKPOINT_ROOT, "log.jsonl")
     if not os.path.isfile(log_path):
         return {"ok": False, "error": "no checkpoints yet"}
-    target = _rel(resolved)
-    selected = None
-    with open(log_path, encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if rec.get("path") == target or rec.get("path") == target.replace("\\", "/"):
+    target = _rel(resolved).replace("\\", "/")
+    checkpoint: dict[str, Any] | None = None
+    try:
+        with open(log_path, encoding="utf-8") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                recorded_path = str(rec.get("path", "")).replace("\\", "/")
+                if recorded_path != target:
+                    continue
                 candidate = str(rec.get("sha256", "")).lower()
                 if requested_sha and candidate != requested_sha:
                     continue
-                selected = rec
-    if selected is None:
+                if rec.get("created") is True:
+                    checkpoint = {"created": True}
+                elif re.fullmatch(r"[a-f0-9]{64}", candidate):
+                    checkpoint = {"created": False, "sha256": candidate}
+    except OSError as e:
+        return {"ok": False, "error": f"checkpoint log unreadable: {e}"}
+    if checkpoint is None:
         return {"ok": False, "error": f"no checkpoint for {target}"}
-    if not selected.get("exists", True):
-        return {"ok": False, "error": "checkpoint records an absent file; restore will not delete current data"}
-    sha = str(selected.get("sha256") or "").lower()
-    blob = os.path.join(_ckpt_dir(root or WORKSPACE_ROOT), sha)
+
+    if checkpoint["created"]:
+        if os.path.isdir(resolved) and not os.path.islink(resolved):
+            return {"ok": False, "error": "refused: created checkpoint cannot remove a directory"}
+        if os.path.lexists(resolved):
+            try:
+                os.remove(resolved)
+            except OSError as e:
+                return {"ok": False, "error": f"created file could not be removed: {e}"}
+        return {"ok": True, "path": target, "created": True,
+                "deleted": True, "bytes": 0}
+
+    digest = checkpoint["sha256"]
+    blob = os.path.join(_ckpt_dir(root or WORKSPACE_ROOT), digest)
     if not os.path.isfile(blob):
         return {"ok": False, "error": "checkpoint blob missing"}
-    os.makedirs(os.path.dirname(resolved) or ".", exist_ok=True)
-    data = open(blob, "rb").read()
-    with open(resolved, "wb") as handle:
-        handle.write(data)
-    return {"ok": True, "path": target, "sha256": sha, "bytes": len(data)}
-
+    try:
+        os.makedirs(os.path.dirname(resolved) or ".", exist_ok=True)
+        with open(blob, "rb") as handle:
+            data = handle.read()
+        with open(resolved, "wb") as handle:
+            handle.write(data)
+    except OSError as e:
+        return {"ok": False, "error": f"checkpoint restore failed: {e}"}
+    return {"ok": True, "path": target, "sha256": digest, "bytes": len(data),
+            "created": False}
 
 def diagnose(path: str, root: str | None = None) -> dict[str, Any]:
     """Syntax check one file. Python uses py_compile. Other languages: readable."""
@@ -181,6 +223,10 @@ def repo_map(query: str = "", path: str = ".", root: str | None = None) -> dict[
             if not name.endswith((".py", ".js", ".ts", ".mjs")):
                 continue
             full = os.path.join(dirpath, name)
+            try:
+                full = _resolve(full, root)
+            except ValueError:
+                continue
             if os.path.islink(full):
                 continue
             if _is_secret(full):

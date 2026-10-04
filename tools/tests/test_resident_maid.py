@@ -54,9 +54,12 @@ def test_resident_will_dispatches_to_inbox(tmp_path, monkeypatch):
     assert "quick-btn" not in app_js
     assert "clear(chatLog)" not in app_js
     assert "nothing spoken yet" in app_js
-    assert "organMessage && state.organism) state.organism.ripple()" in app_js
     assert "SYSTEM QUEST" in app_js
     assert "[ORGAN: " in app_js
+    assert "text: 'nothing spoken yet'" in app_js
+    assert "msg.sender === 'organ' && msg.recorded === true && state.organism) state.organism.ripple()" in app_js
+    assert "recorded: false" in app_js
+    assert "Will → organs → voice" in app_js
 
     # Test server inbox task dispatching
     state_dir = tmp_path / ".elora"
@@ -209,7 +212,7 @@ def test_infer_owner_organs_readme_and_urls():
     calls = infer_owner_organs("open blender, connect to it, and build the London Bridge")
     assert ("app.open", {"app": "blender"}) in calls
     assert ("blender.run", {"script": "elora/slime/blender_connect.py"}) in calls
-    assert ("plugin.call", {"server": "blender", "tool": "ping"}) in calls
+    assert not any(name == "plugin.call" for name, _ in calls)
     assert ("blender.run", {"script": "build_bridge.py"}) in calls
 
     bounded = (

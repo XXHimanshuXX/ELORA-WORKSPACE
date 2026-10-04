@@ -21,6 +21,9 @@ _FILE_RE = re.compile(
     r"((?:[A-Za-z]:)?[^\s'\"<>]+\.(?:md|txt|pdf|json|csv|html|png|jpg|jpeg|webp|bmp))"
 )
 _GITHUB_RAW = "raw.githubusercontent.com"
+_SOURCE_FILE_RE = re.compile(
+    r"(?ix)([A-Za-z0-9_./\\-]+\.(?:py|js|jsx|ts|tsx|css|scss|yml|yaml|toml|sh|sql|rs|go|java|c|h|cpp|wgsl))"
+)
 _ACTION_NARRATION_RE = re.compile(
     r"\bI (?:checked|searched|opened|launched|wrote|ran|built|created|confirmed|looked)\b",
     re.I,
@@ -69,11 +72,7 @@ def is_owner_source(source: str | None) -> bool:
 
 
 def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
-    """Deterministic organ dispatch from a Master's instruction.
-
-    Returns (capability, args) pairs. Empty means the brain must plan.
-    Never asks the Master for a path — workspace root is known.
-    """
+    """Compile a spoken owner will to registered organs before model inference."""
     if not text or not text.strip():
         return []
     intent = _positive_intent_text(text)
@@ -81,20 +80,23 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
         return []
     calls: list[tuple[str, dict]] = []
     lower = intent.lower()
+    direct_control = is_direct_control_will(text)
 
     for url in _URL_RE.findall(intent):
         if _GITHUB_RAW in url:
             continue
         calls.append(("net.read", {"url": url.rstrip(".,;:")}))
 
-    direct_map = re.search(r"\bsandbox\.repo_map\b", lower)
+    direct_map = bool(re.search(r"\bsandbox\.repo_map\b", lower))
     if direct_map:
-        query = re.search(
+        query_match = re.search(
             r"\bsandbox\.repo_map\b.*?\bquery\s*[:=]?\s*['\"]([^'\"]+)['\"]",
             intent,
             re.I,
         )
-        calls.append(("sandbox.repo_map", {"query": query.group(1) if query else intent.strip()[:160]}))
+        calls.append(("sandbox.repo_map", {
+            "query": query_match.group(1) if query_match else intent.strip()[:160],
+        }))
 
     path_match = re.search(
         r"\b(?:sandbox\.(?:restore|checkpoint|diagnose))\b"
@@ -115,115 +117,167 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
                     args["sha256"] = digest.group(1).lower()
             calls.append((control_name, args))
 
-    if "sandbox.check" in lower:
+    if re.search(r"\b(?:run|execute)\s+(?:the\s+)?(?:preflight|check)\b|\bsandbox\.check\b", lower):
         calls.append(("sandbox.check", {}))
-    test_request = any(w in lower for w in ("pytest", "run the tests", "run tests", "test suite", "run unit tests", "sandbox.test"))
+
+    test_request = bool(re.search(
+        r"\b(?:pytest|sandbox\.test|run(?:\s+the)?\s+tests?|test suite|run unit tests)\b",
+        lower,
+    ))
     if test_request:
-        target = re.search(
-            r"\b(?:sandbox\.test|pytest|run the tests|run tests|test suite|run unit tests)\b"
+        target_match = re.search(
+            r"\b(?:sandbox\.test|pytest|run(?:\s+the)?\s+tests?|test suite|run unit tests)\b"
             r"(?:\s+only)?(?:\s+for)?\s+([\w./\\-]+)",
             intent,
             re.I,
         )
-        target_value = target.group(1).rstrip(".,;:") if target else ""
-        test_args = {"target": target_value} if target_value and ("/" in target_value or "\\" in target_value or ".py" in target_value) else {}
+        target_value = target_match.group(1).rstrip(".,;:") if target_match else ""
+        test_args = {"target": target_value} if target_value and (
+            "/" in target_value or "\\" in target_value or ".py" in target_value
+        ) else {}
         calls.append(("sandbox.test", test_args))
-    if "ledger.verify" in lower:
-        calls.append(("ledger.verify", {}))
 
-    if "ledger" in lower and any(w in lower for w in ("verify", "check", "integrity", "audit")):
-        calls.append(("ledger.verify", {}))
+    if re.search(r"\bgit\s+status(?:\s*/\s*diff)?\b|\bgit\.status\b", lower):
+        calls.append(("git.status", {}))
+    if re.search(r"\bgit\s+(?:status\s*/\s*diff|diff)\b|\bgit\.diff\b", lower):
+        calls.append(("git.diff", {}))
 
-    if any(p in lower for p in (
-        "what was the page",
-        "recall from memory",
-        "you read earlier",
-        "page you read",
+    if "ledger.verify" in lower or (
+        "ledger" in lower and re.search(r"\b(?:verify|integrity|audit)\b", lower)
+    ):
+        calls.append(("ledger.verify", {}))
+    elif re.search(
+        r"\b(?:show|read|open|view|inspect|list|tail|check)\b.{0,60}\b(?:akashic\s+)?ledger\b"
+        r"|\b(?:ledger|akashic\s+ledger)\b.{0,40}\b(?:events?|entries|line|tail|evidence)\b",
+        lower,
+    ):
+        calls.append(("ledger.read", {}))
+
+    browser_context_will = bool(re.search(
+        r"\b(?:current\s+(?:browser\s+)?(?:page|tab)|bookmarks?|quick\s+links?|"
+        r"browser\s+session|what\s+(?:is|\'s)\s+(?:on\s+)?(?:the\s+)?(?:current\s+)?tab)\b",
+        lower,
+    ))
+    if browser_context_will:
+        calls.append(("browser.context", {}))
+
+    if any(phrase in lower for phrase in (
+        "what was the page", "recall from memory", "you read earlier", "page you read",
     )):
         calls.append(("rag.recall", {"query": text.strip()}))
 
+    if re.search(r"\b(?:read|open|inspect|show|view)\b", lower):
+        for raw in _SOURCE_FILE_RE.findall(intent):
+            calls.append(("code.read", {"path": raw.strip(".,;:)'\"")}))
+
     for raw in _FILE_RE.findall(intent):
-        path = raw.strip(".,;:)'\"")
-        ext = os.path.splitext(path.lower())[1]
+        path_value = raw.strip(".,;:)'\"")
+        ext = os.path.splitext(path_value.lower())[1]
         if "ingest" in lower or ext in {".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".mp4"}:
-            calls.append(("doc.ingest", {"path": path}))
+            calls.append(("doc.ingest", {"path": path_value}))
         else:
-            calls.append(("net.read", {"url": path}))
+            calls.append(("net.read", {"url": path_value}))
 
     if "readme" in lower and not any(
-        "readme" in str(args.get("url", args.get("path", ""))).lower() for _, args in calls
+        "readme" in str(args.get("url", args.get("path", ""))).lower()
+        for _, args in calls
     ):
         calls.append(("net.read", {"url": "README.md"}))
 
     _APP_WORDS = (
-        ("chrome", "chrome"),
-        ("google chrome", "chrome"),
-        ("edge", "edge"),
-        ("firefox", "firefox"),
-        ("notepad", "notepad"),
-        ("explorer", "explorer"),
-        ("file explorer", "explorer"),
-        ("calculator", "calc"),
-        ("calc", "calc"),
-        ("vs code", "code"),
-        ("vscode", "code"),
-        ("visual studio code", "code"),
-        ("browser", "browser"),
+        ("google chrome", "chrome"), ("chrome", "chrome"),
+        ("visual studio code", "code"), ("vs code", "code"), ("vscode", "code"),
+        ("file explorer", "explorer"), ("explorer", "explorer"),
+        ("firefox", "firefox"), ("edge", "edge"), ("notepad", "notepad"),
+        ("calculator", "calc"), ("calc", "calc"), ("browser", "browser"),
         ("blender", "blender"),
     )
-    if any(w in lower for w in ("open ", "launch ", "start ")):
-        for needle, app in sorted(_APP_WORDS, key=lambda x: -len(x[0])):
-            if needle in lower:
-                calls.append(("app.open", {"app": app}))
-                break
+    for needle, app in sorted(_APP_WORDS, key=lambda item: -len(item[0])):
+        app_action = re.search(
+            r"\b(?:open|launch|start)\s+(?:(?:the|a)\s+)?"
+            + re.escape(needle) + r"\b",
+            lower,
+        )
+        if app_action:
+            calls.append(("app.open", {"app": app}))
+            break
 
-    if "screenshot" in lower or "capture the screen" in lower or "look at the screen" in lower:
+    if re.search(r"\b(?:take|capture|show|look\s+at)\b.{0,30}\b(?:screenshot|screen)\b|\bscreen\.capture\b", lower):
         calls.append(("screen.capture", {}))
 
-    implementation_intent = re.search(
-        r"\b(?:implement|refactor|fix|repair|change|edit|modify)\b",
+    implementation_intent = bool(re.search(
+        r"\b(?:implement|refactor|fix|repair|change|edit|modify|build|create|integrate|wire)\b",
         lower,
-    )
-    if not direct_map and (implementation_intent or any(
-        phrase in lower for phrase in ("where is ", "how does ")
-    )):
-        calls.append(("sandbox.repo_map", {"query": intent.strip()[:80]}))
+    ))
+    implementation_context = bool(re.search(
+        r"\b(?:code|repo|repository|workspace|overlay|daemon|control\s+plane|organ|feature|project|ELORA|app)\b",
+        text,
+        re.I,
+    ))
+    where_question = bool(re.search(r"\b(?:where\s+is|how\s+does)\b", lower))
+    if not direct_map and (where_question or (implementation_intent and implementation_context)):
+        calls.append(("sandbox.repo_map", {"query": intent.strip()[:160]}))
 
-    if not test_request and any(w in lower for w in ("pytest", "run the tests", "run tests", "test suite", "run unit tests")):
-        calls.append(("sandbox.test", {}))
-    if any(w in lower for w in ("run.py --check", "preflight", "run check", "sandbox.check")):
-        calls.append(("sandbox.check", {}))
-    if "git status" in lower:
-        calls.append(("git.status", {}))
-    if "git diff" in lower:
-        calls.append(("git.diff", {}))
-    if any(w in lower for w in ("plugin.list", "list plugins", "what plugins", "mcp servers")):
+    if re.search(r"\b(?:plugin\.list|list|show|which|what|check)\b.{0,30}\b(?:plugins?|mcp\s+servers?)\b", lower):
         calls.append(("plugin.list", {}))
-    if "marketplace" in lower:
+    if "plugin.marketplace" in lower or re.search(
+        r"\b(?:open|browse|show|list|check|catalogue|catalog)\b.{0,40}\b(?:plugin\s+)?marketplace\b",
+        lower,
+    ):
         calls.append(("plugin.marketplace", {}))
-    if any(w in lower for w in ("list files", "workspace tree", "list the repo", "list the workspace")):
-        calls.append(("ws.list", {"path": "."}))
-    m_search = re.search(r"\b(?:search|find|grep)\s+(?:for\s+)?['\"]?([A-Za-z0-9_./:-]{2,})", intent, re.I)
-    if m_search and "blender" not in lower:
+
+    if re.search(r"\b(?:list|show|find)\b.{0,25}\bfiles\b|\bworkspace\s+tree\b|\blist\s+(?:the\s+)?(?:repo|workspace)\b", lower):
+        list_path_match = re.search(
+            r"\b(?:in|under|within)\s+(?:the\s+)?([A-Za-z0-9_.\\/-]+)",
+            intent,
+            re.I,
+        )
+        list_path = list_path_match.group(1).rstrip(".,;:") if list_path_match else "."
+        calls.append(("ws.list", {"path": list_path}))
+
+    search_in_browser = browser_context_will and bool(re.search(r"\b(?:search|find|grep)\b", lower))
+    m_search = re.search(
+        r"\b(?:search|find|grep)\s+(?:for\s+)?['\"]?([A-Za-z0-9_./:-]{2,})",
+        intent,
+        re.I,
+    )
+    if m_search and not search_in_browser:
         calls.append(("code.search", {"query": m_search.group(1)}))
 
-    if "blender" in lower and "connect" in lower:
+    if "blender" in lower and re.search(r"\bconnect\b", lower):
         calls.append(("blender.run", {"script": "elora/slime/blender_connect.py"}))
-        calls.append(("plugin.call", {"server": "blender", "tool": "ping"}))
-
-    if "blender" in lower and any(w in lower for w in ("build", "london", "bridge", "bpy", ".blend")):
+    if "blender" in lower and any(word in lower for word in ("build", "london", "bridge", "bpy", ".blend")):
         calls.append(("blender.run", {"script": "build_bridge.py"}))
 
-    seen: set[tuple] = set()
+    # repo_map is a preflight organ: run it before any other work on an implementation will.
+    if implementation_intent and implementation_context and not direct_control:
+        maps = [item for item in calls if item[0] == "sandbox.repo_map"]
+        calls = maps + [item for item in calls if item[0] != "sandbox.repo_map"]
+        # Tests requested in the same implementation will are run by the daemon after code.edit.
+        if maps and test_request:
+            calls = [item for item in calls if item[0] != "sandbox.test"]
+
+    if not direct_control:
+        if "sandbox.check" in lower and not any(name == "sandbox.check" for name, _ in calls):
+            calls.append(("sandbox.check", {}))
+
+    # The inferred surface is fail-closed: every dispatch must name a registered organ.
+    from elora.core.capabilities import CAPABILITY_ALIASES, REGISTRY
+    seen: set[str] = set()
     out: list[tuple[str, dict]] = []
     for name, args in calls:
-        key = (name, tuple(sorted(args.items())))
+        canonical = CAPABILITY_ALIASES.get(name, name)
+        if canonical not in REGISTRY:
+            continue
+        try:
+            key = (canonical, tuple(sorted(args.items())))
+        except TypeError:
+            key = (canonical, repr(sorted(args.items())))
         if key in seen:
             continue
         seen.add(key)
-        out.append((name, args))
+        out.append((canonical, args))
     return out
-
 
 def maid_constitution(workspace: str) -> str:
     return (
@@ -240,8 +294,9 @@ def maid_constitution(workspace: str) -> str:
         "When Master leaves the room you do not clock out. Unfinished work stays a chore "
         "(chore.keep / chore.status). The daemon continues it.\n"
         "Send attendants for parallel work: agent.spawn {\"goal\": \"...\"}. Depth 2. You remain the maid.\n"
-        "Plugins: plugin.list, plugin.call {\"server\": \"github|playwright|fetch|memory|omniroute|blender\", \"tool\": \"NAME\", \"arguments\": {}}. "
-        "OmniRoute is a sense organ, not a replacement for your hands.\n"
+        "Plugins: plugin.list / plugin.marketplace expose only git, sandbox, ledger, and core. "
+        "plugin.call accepts only those namespaces and re-enters this broker; it never launches an external MCP package.\n"
+        "Owner wills enter through the inbox and CORE daemon. /api/chat is talk-only; do not dispatch tools from chat.\n"
         "HANDS of the house (do not send Master to Cursor/VS Code/Claude/Codex — you ARE the IDE):\n"
         "  ws.list, code.read, code.search, code.edit, sandbox.glob, sandbox.test, sandbox.check, sandbox.status,\n"
         "  Hidden controls (use them, do not describe them): sandbox.repo_map, sandbox.diagnose, sandbox.checkpoint, sandbox.restore.\n"
@@ -249,7 +304,7 @@ def maid_constitution(workspace: str) -> str:
         "  Never skip tests. Never --no-verify. Never ask Master to open another IDE.\n"
         "Local docs: net.read {\"url\": \"README.md\"}. Web: net.read / net.search. Memory: rag.recall.\n"
         "Eyes: screen.capture. Glass: app.open {\"app\": \"chrome|edge|firefox|notepad|explorer|code|calc|blender\"} then screen.control.\n"
-        "Blender: blender.run {\"script\": \"elora/slime/blender_connect.py\"} then plugin.call {\"server\": \"blender\", \"tool\": \"ping\"}. "
+        "Blender: blender.run {\"script\": \"elora/slime/blender_connect.py\"} through CORE; report its actual result. "
         "Build: blender.run {\"script\": \"build_bridge.py\"}. Script must live in the workspace. Never shell blender.\n"
         "If a tool is rejected, immediately retry a legal organ. Never stop to interview the Master.\n"
         "Hardware is a delay, not a refusal: if a capability is deferred for RAM, "

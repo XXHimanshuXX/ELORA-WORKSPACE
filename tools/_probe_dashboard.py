@@ -155,8 +155,11 @@ check("/api/plugins states the loader is absent", plugins.get("loader_available"
 
 status, body = request("/api/mcp/servers", headers=HDR)
 servers = json.loads(body)
-check("/api/mcp/servers (unprobed path)", status == 200 and servers.get("probed") is False,
-      servers.get("note", "")[:70])
+check("/api/mcp/servers is a closed catalogue, not a process probe",
+      status == 200 and servers.get("probed") is False
+      and servers.get("allowed") == ["git", "sandbox", "ledger", "core"]
+      and servers.get("no_npx") is True,
+      servers.get("note", "")[:100])
 
 status, body = request("/api/router/status", headers=HDR)
 router = json.loads(body)
@@ -174,11 +177,11 @@ if router.get("reachable"):
           f"{models.get('count')} models, resolved {models.get('resolved_model')} "
           f"by {models.get('resolved_by')} (alias={models.get('resolved_is_alias')})")
 
-    status, body = request("/api/router/tools?name=health", headers=HDR)
-    tool = json.loads(body)
-    check("/api/router/tools health", status == 200 and tool.get("protocol_ok"),
-          f"protocol_ok={tool.get('protocol_ok')} is_error={tool.get('is_error')} "
-          f"degraded={tool.get('degraded')} {tool.get('latency_ms')}ms")
+status, body = request("/api/router/tools?name=health", headers=HDR)
+tool = json.loads(body)
+check("browser-side router tool execution is disabled",
+      status == 410 and tool.get("error") == "direct-tool-calls-disabled",
+      f"got {status}: {tool.get('error')}")
 
 # --- report -----------------------------------------------------------
 print()

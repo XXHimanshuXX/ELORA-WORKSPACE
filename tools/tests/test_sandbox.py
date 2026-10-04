@@ -50,14 +50,20 @@ def test_run_tests_dry(monkeypatch):
     assert res["argv"][1:3] == ["-m", "pytest"]
 
 
-def test_marketplace_does_not_invent_packages():
+def test_marketplace_is_closed_first_party_catalogue_without_package_launchers():
     res = sandbox.marketplace()
     assert res["ok"] is True
+    assert res["allowed"] == ["git", "sandbox", "ledger", "core"]
     names = {row["name"] for row in res["servers"]}
     assert res["closed"] is True
     assert names == {"git", "sandbox", "ledger", "core"}
     from elora.core.mcp_client import DEFAULT_SERVERS
     assert all(spec.command != "npx" for spec in DEFAULT_SERVERS.values())
+    assert names == {"git", "sandbox", "ledger", "core"}
+    assert res["no_npx"] is True
+    assert all(row["installable"] is False for row in res["servers"])
+    catalogue_text = " ".join(row["name"] + " " + row["blurb"] for row in res["servers"])
+    assert "npx" not in catalogue_text.lower()
     assert res["note"]
 
 

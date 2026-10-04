@@ -122,6 +122,7 @@ CAPABILITY_ALIASES: dict[str, str] = {
     "git_status": "git.status",
     "git_diff": "git.diff",
     "git_commit": "git.commit",
+    "ledger.tail": "ledger.read",
     "todo": "chore.keep",
     "todo_write": "chore.keep",
     "spawn": "agent.spawn",
@@ -172,6 +173,14 @@ _register(Capability(
     budget=Budget.MICRO(),
     description="Persist an episodic memory into the vault",
     command_builder=lambda a: _py("elora.vault", "--save", a.get("content", "")),
+))
+
+_register(Capability(
+    name="ledger.read",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Read recent Akashic ledger evidence. Read-only and workspace-local.",
+    command_builder=lambda a: [],  # Executed in-process by Broker; never a shell command.
 ))
 
 _register(Capability(
@@ -246,6 +255,14 @@ _register(Capability(
         sys.executable, "-m", "elora.slime.browser",
         "--action", "read", "--url", a.get("url", a.get("link", a.get("uri", ""))),
     ],
+))
+
+_register(Capability(
+    name="browser.context",
+    risk=Risk.TRIVIAL,
+    budget=Budget.MICRO(),
+    description="Read only the browser session explicitly handed to ELORA; reports uncontrolled absence honestly.",
+    command_builder=lambda a: [],  # Executed in-process by Broker.
 ))
 
 _register(Capability(
@@ -354,15 +371,15 @@ _register(Capability(
     name="plugin.list",
     risk=Risk.TRIVIAL,
     budget=Budget.MICRO(),
-    description="List known MCP plugin servers (does not launch them).",
-    command_builder=lambda a: _py("elora.core.mcp_client", "--op", "list"),
+    description="List the closed git/sandbox/ledger/core first-party marketplace without launching processes.",
+    command_builder=lambda a: _py("elora.slime.sandbox", "--op", "plugin.marketplace"),
 ))
 
 _register(Capability(
     name="plugin.call",
     risk=Risk.LOW,
     budget=Budget.SKILL(),
-    description="Call one MCP plugin tool by server name. Honest failure if the server is down.",
+    description="Dispatch one approved first-party tool through the CORE broker; external MCP servers are refused.",
     command_builder=lambda a: _py("elora.core.mcp_client", "--op", "call"),
 ))
 
@@ -370,7 +387,7 @@ _register(Capability(
     name="plugin.marketplace",
     risk=Risk.TRIVIAL,
     budget=Budget.MICRO(),
-    description="Catalogue of MCP servers ELORA may run. Unknown packages cannot be installed.",
+    description="Closed first-party marketplace limited to git, sandbox, ledger, and core; no package installation or launch.",
     command_builder=lambda a: _py("elora.slime.sandbox", "--op", "plugin.marketplace"),
 ))
 

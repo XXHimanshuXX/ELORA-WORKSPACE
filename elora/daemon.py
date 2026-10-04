@@ -52,7 +52,7 @@ def public_chat_answer(task) -> str:
         if raw.upper() == "DONE":
             continue
         if is_action_narration(raw):
-            if not any(t.get("ok") for t in getattr(task, "trace", [])):
+            if not any(t.get("tool") and t.get("ok") for t in getattr(task, "trace", [])):
                 continue
         return stripped or raw
     tool_lines = []
@@ -201,67 +201,154 @@ class Daemon:
 
     def _apply_broker_result(self, task: Task, name: str, args: dict, result, owner: bool, token=None) -> None:
         from elora.core.broker import Rejected, Deferred, Result
+
         if isinstance(result, Rejected):
-            task.trace.append({"tool": name, "rejected": True, "reason": result.reason})
-            self._append_chat("organ", f"{name}: rejected — {result.reason}", task.id,
-                              organ=name, status="failed", rc=1,
-                              evidence=result.reason)
+            evidence = result.reason
+            recorded = bool(getattr(result, "evidence_recorded", False))
+            task.trace.append({"tool": name, "args": args, "ok": False,
+                               "rc": "rejected", "rejected": True, "reason": evidence,
+                               "recorded": recorded})
+            self._append_chat(
+                "organ", f"[ORGAN: {name} FAILED] rc=REJECTED {evidence}", task.id,
+                organ=name, status="failed", rc=1, evidence=evidence, recorded=recorded)
             extra = ""
             if owner:
                 extra = (
                     f" You serve the Master at CORE. Workspace is {WORKSPACE_ROOT}. "
-                    "Retry with net.read / doc.ingest / rag.recall / shell.run_command. "
-                    "Never ask the Master for a path or permission. Never say impossible."
+                    "Retry with a registered organ. Never ask the Master for a path or permission."
                 )
-            task.messages.append({"role": "user", "content": f"rejected: {result.reason}{extra}"})
-        elif isinstance(result, Deferred):
-            task.trace.append({"tool": name, "deferred": True, "reason": result.reason})
-            self._append_chat("organ", f"{name}: deferred — {result.reason}", task.id,
-                              organ=name, status="deferred", evidence=result.reason)
-            extra = ""
-            if owner:
-                extra = (
-                    " Hardware is a delay, not a refusal. "
-                    "Call net.search for a free cloud alternative and continue. Never tell the Master it is impossible."
-                )
+            task.messages.append({"role": "user", "content": f"rejected: {evidence}{extra}"})
+            return
+
+        if isinstance(result, Deferred):
+            evidence = result.reason + (f": {result.detail}" if result.detail else "")
+            recorded = bool(getattr(result, "evidence_recorded", False))
+            task.trace.append({"tool": name, "args": args, "ok": False,
+                               "rc": "deferred", "deferred": True, "reason": evidence,
+                               "recorded": recorded})
+            self._append_chat(
+                "organ", f"[ORGAN: {name} DEFERRED] rc=DEFERRED {evidence}", task.id,
+                organ=name, status="deferred", evidence=evidence, recorded=recorded)
             task.messages.append({
                 "role": "user",
-                "content": f"deferred: {result.reason} retry_after={result.retry_after_s}{extra}",
+                "content": f"deferred: {evidence} retry_after={result.retry_after_s}",
             })
-        else:
-            stdout = ""
-            rc = 0
-            if isinstance(result, Result) and result.execution:
-                stdout = result.execution.stdout
-                rc = result.execution.returncode
-                if name != "vault.save" and self.vault is not None:
-                    self.vault.save_episode(self._episode_for(task, {"tool": name, "args": args}, result.execution))
-            elif isinstance(result, Result):
-                stdout = result.stdout
-                rc = result.returncode
-            ok = rc == 0
-            try:
-                envelope = json.loads(str(stdout).strip())
-                if isinstance(envelope, dict) and (
-                    envelope.get("ok") is False or envelope.get("is_error") is True
-                ):
-                    ok = False
-            except (json.JSONDecodeError, TypeError):
-                pass
-            task.trace.append({"tool": name, "args": args, "ok": ok, "rc": rc})
-            task.messages.append({"role": "user", "content": f"result: (rc={rc}) {stdout[:4000]}"})
-            short_result = " ".join(str(stdout or "completed").split())[:240]
-            self._append_chat("organ", f"{name}: {short_result or 'completed'}", task.id,
-                              organ=name, status="ok" if ok else "failed", rc=rc,
-                              evidence=short_result or "completed")
-            if owner and token is not None and name == "fs.write":
-                self._maybe_launch_blender(task, token, args)
-            if owner and ok and token is not None and name == "code.edit":
-                edited = str(args.get("path") or args.get("file") or "")
-                if edited:
-                    diag = self.broker.request(token, "sandbox.diagnose", {"path": edited})
-                    self._apply_broker_result(task, "sandbox.diagnose", {"path": edited}, diag, owner=True, token=None)
+            return
 
+        stdout = ""
+        stderr = ""
+        rc = 0
+        if isinstance(result, Result):
+            if result.execution:
+                stdout = result.execution.stdout or ""
+                stderr = result.execution.stderr or ""
+                rc = int(result.execution.returncode)
+                if rc == 0 and name != "vault.save" and self.vault is not None:
+                    self.vault.save_episode(self._episode_for(
+                        task, {"tool": name, "args": args}, result.execution))
+            else:
+                stdout = result.stdout or ""
+                stderr = result.stderr or ""
+                rc = int(result.returncode)
+        succeeded = bool(getattr(result, "ok", rc == 0)) and rc == 0
+        try:
+            envelope = json.loads(str(stdout).strip())
+            if isinstance(envelope, dict) and (
+                envelope.get("ok") is False or envelope.get("is_error") is True
+            ):
+                succeeded = False
+        except (json.JSONDecodeError, TypeError):
+            pass
+        evidence_source = stdout if succeeded else (stderr or stdout)
+        short_result = " ".join(str(evidence_source or "completed").split())[:300]
+        phase = "SUCCESS" if succeeded else "FAILED"
+        line = f"[ORGAN: {name} {phase}] rc={rc} {short_result or ('completed' if succeeded else 'no output')}"
+        recorded = bool(getattr(result, "evidence_recorded", False))
+        task.trace.append({"tool": name, "args": args, "ok": succeeded, "rc": rc,
+                           "evidence": short_result, "recorded": recorded})
+        task.messages.append({"role": "user", "content": f"result: rc={rc} {stdout[:4000]}"})
+        self._append_chat("organ", line, task.id, organ=name,
+                          status="success" if succeeded else "failed", rc=rc,
+                          evidence=short_result, recorded=recorded)
+
+        if not succeeded:
+            return
+        if owner and token is not None and name == "fs.write":
+            self._maybe_launch_blender(task, token, args)
+        if owner and token is not None and name == "code.edit":
+            edited = str(args.get("path") or args.get("file") or "")
+            if edited:
+                self._run_post_edit_controls(task, token, edited)
+
+    @staticmethod
+    def _control_result_ok(result) -> bool:
+        from elora.core.broker import Result
+        return isinstance(result, Result) and bool(result.ok)
+
+    def _record_owner_route(self, task: Task, owner_calls: list[tuple[str, dict]]) -> None:
+        names = [name for name, _ in owner_calls]
+        payload = {"task_id": task.id, "organs": names, "count": len(names)}
+        recorded = False
+        try:
+            self.ledger.append(
+                organ="infer_owner_organs", kind="will_compiled",
+                message=task.id, payload=payload,
+            )
+            recorded = True
+        except Exception:
+            pass
+        task.trace.append({"organ": "infer_owner_organs", "ok": recorded,
+                           "rc": 0 if recorded else 1, "organs": names,
+                           "recorded": recorded})
+        evidence = ", ".join(names) if names else "no deterministic organ; dialogue remains with the brain"
+        phase = "SUCCESS" if recorded else "FAILED"
+        self._append_chat(
+            "organ", f"[ORGAN: infer_owner_organs {phase}] rc={0 if recorded else 1} {evidence}",
+            task.id, organ="infer_owner_organs",
+            status="success" if recorded else "failed", recorded=recorded)
+
+    def _ensure_repo_map_before_edit(self, task: Task, token) -> bool:
+        if any(entry.get("tool") == "sandbox.repo_map" and entry.get("ok")
+               for entry in task.trace):
+            return True
+        text = str(task.event.payload.get("text", "") if task.event else "")
+        args = {"query": text[:160]}
+        result = self.broker.request(token, "sandbox.repo_map", args)
+        self._apply_broker_result(task, "sandbox.repo_map", args, result,
+                                  owner=True, token=None)
+        return self._control_result_ok(result)
+
+    def _checkpoint_before_edit(self, task: Task, token, args: dict) -> bool:
+        path = str(args.get("path") or args.get("file") or "").strip()
+        if not path:
+            return False
+        checkpoint_args = {"path": path}
+        result = self.broker.request(token, "sandbox.checkpoint", checkpoint_args)
+        self._apply_broker_result(task, "sandbox.checkpoint", checkpoint_args,
+                                  result, owner=True, token=None)
+        return self._control_result_ok(result)
+
+    def _run_post_edit_controls(self, task: Task, token, path: str) -> None:
+        """Diagnose and run jailed pytest after every successful owner code.edit."""
+        diagnose_args = {"path": path}
+        diagnosed = self.broker.request(token, "sandbox.diagnose", diagnose_args)
+        self._apply_broker_result(task, "sandbox.diagnose", diagnose_args,
+                                  diagnosed, owner=True, token=None)
+        test_args = {"target": "tools/tests"}
+        previous_dry = os.environ.get("ELORA_SANDBOX")
+        nested_pytest = bool(os.environ.get("PYTEST_CURRENT_TEST"))
+        if nested_pytest:
+            os.environ["ELORA_SANDBOX"] = "dry"
+        try:
+            tested = self.broker.request(token, "sandbox.test", test_args)
+        finally:
+            if nested_pytest:
+                if previous_dry is None:
+                    os.environ.pop("ELORA_SANDBOX", None)
+                else:
+                    os.environ["ELORA_SANDBOX"] = previous_dry
+        self._apply_broker_result(task, "sandbox.test", test_args,
+                                  tested, owner=True, token=None)
     def _owner_chat_memory(self, current_text: str) -> list[dict]:
         chat_path = os.path.join(os.path.dirname(self.inbox_dir) or ".elora", "chat.json")
         if not os.path.exists(chat_path):
@@ -366,7 +453,8 @@ class Daemon:
 
     def _append_chat(self, sender: str, text: str, task_id: str | None = None,
                      organ: str | None = None, status: str | None = None,
-                     rc: int | None = None, evidence: str | None = None):
+                     rc: int | None = None, evidence: str | None = None,
+                     recorded: bool | None = None):
         try:
             chat_path = os.path.join(os.path.dirname(self.inbox_dir) or ".elora", "chat.json")
             messages = []
@@ -393,6 +481,8 @@ class Daemon:
                 entry["rc"] = int(rc)
             if evidence:
                 entry["evidence"] = str(evidence)[:360]
+            if sender == "organ":
+                entry["recorded"] = bool(recorded)
             messages.append(entry)
             messages = messages[-100:]
             with open(chat_path + ".tmp", "w", encoding="utf-8") as f:
@@ -500,7 +590,12 @@ class Daemon:
         text = task.event.payload.get("text", "")
         source = (task.event.source or "") if task.event else ""
         owner = self._is_owner_will(task)
+        if owner and text.strip():
+            queued_id = os.path.basename(task.claimed_path) if task.claimed_path else task.id
+            self._append_chat("user", text, task_id=queued_id)
         owner_calls = infer_owner_organs(text) if owner else []
+        if owner:
+            self._record_owner_route(task, owner_calls)
         direct_control = owner and is_direct_control_will(text)
         if owner and not direct_control and is_chore_text(text) and not source.startswith("inbox:chore") and not source.startswith("agent:"):
             try:
@@ -537,8 +632,14 @@ class Daemon:
                 if memory:
                     task.messages = memory + task.messages
 
+        post_edit_test_will = (
+            any(name == "sandbox.repo_map" for name, _ in owner_calls)
+            and bool(re.search(r"\b(?:implement|refactor|fix|repair|change|edit|modify|build|create|integrate|wire)\b", text, re.I))
+        )
         if owner:
             for name, args in owner_calls:
+                if name == "sandbox.test" and post_edit_test_will:
+                    continue
                 self._write_state(
                     current_task=task.id, status="RUNNING", capability=name,
                     last_action=f"organ: {name}", execution_tier=token.tier.name,
@@ -590,7 +691,7 @@ class Daemon:
                     })
                     continue
                 if owner and is_action_narration(reply) and not any(
-                        t.get("ok") or t.get("rejected") for t in task.trace
+                        t.get("tool") and t.get("ok") for t in task.trace
                 ):
                     task.messages.append({
                         "role": "user",
@@ -610,7 +711,7 @@ class Daemon:
                     if stripped and stripped.upper() != "DONE":
                         task.state = TaskState.DONE
                         return task
-                if any(t.get("ok") for t in task.trace):
+                if any(t.get("tool") and t.get("ok") for t in task.trace):
                     task.state = TaskState.DONE
                     return task
                 # no tool call and empty reply — ask again
@@ -632,6 +733,21 @@ class Daemon:
             for call in calls:
                 name = call.get("tool")
                 args = call.get("args") or {}
+                if owner and name == "code.edit":
+                    if not self._ensure_repo_map_before_edit(task, token):
+                        from elora.core.broker import Rejected
+                        self._apply_broker_result(
+                            task, "code.edit", args,
+                            Rejected("sandbox.repo_map failed; code.edit blocked"),
+                            owner=True, token=None)
+                        continue
+                    if not self._checkpoint_before_edit(task, token, args):
+                        from elora.core.broker import Rejected
+                        self._apply_broker_result(
+                            task, "code.edit", args,
+                            Rejected("sandbox.checkpoint failed; code.edit blocked"),
+                            owner=True, token=None)
+                        continue
                 self._write_state(
                     current_task=task.id, status="RUNNING", capability=name,
                     last_action=f"broker: {name}", execution_tier=token.tier.name,
@@ -652,7 +768,7 @@ class Daemon:
             # Ask for another attempt if no tool calls succeeded, but we already added result messages
             # If at least one tool call succeeded, the brain will have a chance to process the result
             # If no tool calls succeeded, we ask for another attempt
-            if not any(t.get("ok") for t in task.trace):
+            if not any(t.get("tool") and t.get("ok") for t in task.trace):
                 task.messages.append({
                     "role": "user",
                     "content": "None of your tool calls succeeded. Please try again or reply with DONE if you believe the task is complete."
@@ -758,7 +874,13 @@ class Daemon:
         if any("absorbed" in t for t in task.trace):
             return "ok"
 
-        cap_pairs = len([t for t in task.trace if t.get("ok")])
+        tool_rows = [t for t in task.trace if t.get("tool")]
+        cap_pairs = len([t for t in tool_rows if t.get("ok")])
+        failed_pairs = len([t for t in tool_rows if t.get("ok") is False])
+        if failed_pairs and cap_pairs:
+            return "DONE_PARTIAL"
+        if failed_pairs:
+            return "failed"
         if cap_pairs == 0:
             return "DONE_NO_WORK"
 
@@ -768,6 +890,23 @@ class Daemon:
             return "DONE_PARTIAL"
 
         return "ok"
+
+    @staticmethod
+    def _owner_voice(task: Task) -> str:
+        """Speak only to disclose organ failures; successful events already have ledger evidence."""
+        failures = [
+            entry for entry in task.trace
+            if entry.get("tool") and entry.get("ok") is False
+        ]
+        if not failures:
+            return ""
+        details = []
+        for entry in failures:
+            name = str(entry.get("tool", "organ"))
+            rc = str(entry.get("rc", "unknown"))
+            evidence = str(entry.get("evidence") or entry.get("reason") or "no output")
+            details.append(f"{name} rc={rc}: {' '.join(evidence.split())[:180]}")
+        return "Analytical note: failed organs remain visible in the timeline: " + "; ".join(details[:6])
 
     def tick(self) -> list[Task]:
         tasks = self.poll_inbox()
@@ -815,6 +954,13 @@ class Daemon:
                         elif status == "DONE_NO_WORK":
                             final_answer = "DONE (no tool action taken)"
 
+                if self._is_owner_will(task):
+                    owner_voice = self._owner_voice(task)
+                    if owner_voice:
+                        final_answer = owner_voice
+                if user_text:
+                    queued_id = os.path.basename(task.claimed_path) if task.claimed_path else task.id
+                    self._append_chat("user", user_text, task_id=queued_id)
                 if final_answer:
                     self._append_chat("elora", final_answer, task_id=task.id)
                 elif task.state == TaskState.FAILED:

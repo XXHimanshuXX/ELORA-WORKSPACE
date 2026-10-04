@@ -195,7 +195,7 @@ def _omniroute_env() -> dict[str, str]:
 
 
 DEFAULT_SERVERS: dict[str, McpServerSpec] = {
-    # Local inference/router adapter and first-party Blender bridge only.
+    # Locally configured router telemetry and ELORA's first-party Blender organ.
     "omniroute": McpServerSpec(
         name="omniroute",
         command="node",
@@ -208,6 +208,8 @@ DEFAULT_SERVERS: dict[str, McpServerSpec] = {
         args=["-u", "-m", "elora.core.blender_mcp"],
     ),
 }
+
+
 
 
 def resolve_spec(spec: McpServerSpec | str) -> McpServerSpec:
@@ -231,10 +233,9 @@ def _launch_argv(spec: McpServerSpec) -> list[str]:
     """
     argv as Popen receives it, with one Windows reality handled.
 
-    CreateProcess cannot execute a .cmd/.bat shim, and `npx`/`npm` exist only
-    as shims (verified: C:\\Program Files\\nodejs\\npx.cmd). Shelling out is not
-    an option, so the shim is invoked through cmd.exe with the same explicit
-    argv — an argv list, never an interpolated shell string.
+    CreateProcess cannot execute a .cmd/.bat shim. When a trusted local server
+    is configured through one, invoke it with explicit argv via cmd.exe; never
+    interpolate a command string or enable shell parsing.
     """
     if os.name == "nt":
         resolved = shutil.which(spec.command)

@@ -1,0 +1,44 @@
+ELORA — HANDOFF TO TRAE AGENT
+================================
+
+1. MISSION (one paragraph)
+   Build ELORA into a visible resident that does REAL work end-to-end:
+   user types in chat → ELORA chooses a capability → broker executes it
+   → real result appears in the same chat panel. The middle step —
+   dispatching tool calls, not printing them — is the #1 bug.
+
+2. YOUR ROLE
+   You are the builder. You EDIT code in this repo and RUN commands.
+   The architect is a separate assistant (LibertAI) that audits and
+   spec's. You implement; you do not ratify your own work.
+
+3. THE ONE BUG TO FIX FIRST
+   The chat handler displays <mcp_call> blocks but never dispatches them.
+   Fix: in the chat endpoint, run the SAME loop handle_task() uses for
+   inbox tasks — extract tool calls → dispatch through Broker → feed
+   result back into context → loop until no tool calls or DONE.
+   See elora/dashboard/server.py and elora/daemon.py.
+
+4. THE NON-NEGOTIABLE RULES (copy these verbatim)
+   - Every action = real execution through the Broker. No described actions.
+   - Every capability call must produce capability_intent/result in the
+     Akashic ledger. If it doesn't, it didn't happen.
+   - Add test test_hallucinated_action_is_impossible: every "I checked/
+     opened/ran X" claim in a reply must map to a ledger capability_intent.
+   - Keys live in .elora/secrets/, never code, never git. .gitignore
+     MUST exclude .elora/.
+   - No CAPTCHA circumvention. No anti-bot evasion.
+   - RISK-5 needs dual-key human consent. Autonomy stays tiered.
+   - Run from C:\Python314\python.exe (not sandbox Python).
+
+5. VERIFICATION COMMANDS (from C:\Python314\python.exe)
+   python run.py --check
+   python run.py --smoke
+   python -m pytest tools/tests -q
+   python run.py --resident   (manual test)
+
+6. ACCEPTANCE TEST (the graduation)
+   Start --resident. Type: "open blender, connect to it, and build the
+   London Bridge." PASS means: a real shell.run_command executes,
+   Blender opens on screen, and the ledger shows capability_intent for
+   shell.run_command. FAIL means the reply narrates it without acting.

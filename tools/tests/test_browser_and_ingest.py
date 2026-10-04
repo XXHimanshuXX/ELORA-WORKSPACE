@@ -67,24 +67,49 @@ class TestBrowserOrgan:
         assert result.get("refused") is True
         assert any(e["kind"] == "read_refused" for e in ledger.events)
 
-    def test_read_stores_vault_and_ledger(self, browser, vault, ledger):
-        """A friendly page (example.com) is read, hashed, stored."""
-        result = browser.read("https://example.com")
+    def test_read_stores_vault_and_ledger(self, browser, vault, ledger, tmp_path):
+        """A user-provided local page is read, hashed, and stored without fabricated web data."""
+        page = tmp_path / "page.html"
+        page.write_text("<html><body><h1>Actual local page</h1></body></html>", encoding="utf-8")
+        result = browser.read(str(page))
         assert "content" in result
         assert any(e["kind"] == "page_read" for e in ledger.events)
         assert len(vault.episodes) > 0
 
-    def test_search_returns_results(self, browser):
-        results = browser.search("python playwright tutorial")
-        assert len(results) > 0
+    def test_search_returns_only_handed_off_session_results(self, browser, tmp_path, monkeypatch):
+        from elora.slime import browser as browser_module
+        session_path = tmp_path / "browser-session.json"
+        monkeypatch.setattr(browser_module, "SESSION_PATH", str(session_path))
+        handed = browser_module.handoff_session({
+            "current_page": {"url": "https://docs.example/python", "title": "Python docs"},
+            "bookmarks": [{"url": "https://docs.example/guide", "title": "Python guide"}],
+            "quick_links": [{"url": "https://example.test", "title": "Home"}],
+        }, path=str(session_path))
+        assert handed["ok"] is True
+        results = browser.search("python")
+        assert results["ok"] is True
+        assert len(results["results"]) == 2
+        assert all("python" in item.get("title", "").lower() for item in results["results"])
 
-    def test_timeout_never_kills_reactor(self, browser):
-        """A page that hangs must die by its own timeout, never
-        block the reactor tick."""
-        result = browser.read("https://httpbin.org/delay/60",
-                              timeout_s=5)
+    def test_uncontrolled_session_is_reported_without_fake_bookmarks(self, browser, tmp_path, monkeypatch):
+        from elora.slime import browser as browser_module
+        monkeypatch.setattr(browser_module, "SESSION_PATH", str(tmp_path / "missing-session.json"))
+        context = browser.context()
+        assert context["available"] is False
+        assert context["reason"] == "tab is uncontrolled - no real session"
+        assert context["bookmarks"] is None
+
+    def test_timeout_never_kills_reactor(self, browser, monkeypatch):
+        """A timed-out request must not block the reactor or use the open web."""
+        from elora.slime import browser as browser_module
+        browser._robots_cache["delay.test"] = None
+        monkeypatch.setattr(
+            browser_module.urllib.request,
+            "urlopen",
+            lambda *args, **kwargs: (_ for _ in ()).throw(TimeoutError("local timeout fixture")),
+        )
+        result = browser.read("https://delay.test/timeout", timeout_s=1)
         assert "error" in result or result.get("refused")
-        # The reactor is still alive:
         assert browser.alive is True
 
     def test_no_captcha_circumvention_anywhere(self):
@@ -97,11 +122,14 @@ class TestBrowserOrgan:
             assert banned not in source.lower(), \
                 f"SECURITY LAW VIOLATION: {banned} in browser.py"
 
-    def test_every_read_is_ledgered(self, browser, ledger):
-        """No silent page fetches. The chain sees everything."""
+    def test_every_read_is_ledgered(self, browser, ledger, tmp_path):
+        """No silent page reads. The chain sees local evidence without web fetches."""
+        page = tmp_path / "ledgered.html"
+        page.write_text("<html><body>Ledger this local page.</body></html>", encoding="utf-8")
         before = len(ledger.events)
-        browser.read("https://example.com")
+        result = browser.read(str(page))
         after = len(ledger.events)
+        assert result.get("content")
         assert after - before >= 1
 
 

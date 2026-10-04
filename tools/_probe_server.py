@@ -158,33 +158,29 @@ if status == 200:
           len(body.get("aliases", [])) > 0 and len(body.get("aliases", [])) < len(body.get("models", [])),
           f"{len(body.get('aliases', []))} aliases of {len(body.get('models', []))} entries")
 
-print("\n=== MCP (live subprocess) ===")
-status, body = call("/api/mcp/tools?server=omniroute", headers=OK)
-if status == 200:
-    check("omniroute MCP server lists tools over real JSON-RPC",
-          body.get("tool_count", 0) > 0,
-          f"{body.get('tool_count')} tools, protocol {body.get('protocol_version')}")
-else:
-    check("omniroute MCP server reachable", False, f"{status} {body}")
-
+print("\n=== CLOSED FIRST-PARTY MARKETPLACE ===")
 status, body = call("/api/mcp/servers?refresh=1", headers=OK)
-if status == 200:
-    servers = body.get("servers", [])
-    check("server probe returned real per-server results", len(servers) >= 1,
-          "; ".join(f"{s['name']}={'up' if s['reachable'] else 'down'}({s['tool_count']})"
-                    for s in servers))
+check("server listing never probes or launches MCP processes",
+      status == 200 and body.get("probed") is False
+      and body.get("allowed") == ["git", "sandbox", "ledger", "core"]
+      and body.get("no_npx") is True,
+      str(body.get("allowed")))
+status, body = call("/api/mcp/tools?server=omniroute", headers=OK)
+check("external MCP tool listing is outside the marketplace", status == 404,
+      f"got {status}: {body.get('error')}")
+status, body = call("/api/mcp/tools?server=git", headers=OK)
+check("first-party tools are not exposed for browser execution", status == 410,
+      f"got {status}: {body.get('error')}")
+status, body = call("/api/mcp/call", method="POST", headers=OK,
+                    body={"server": "omniroute", "tool": "health", "arguments": {}})
+check("direct MCP call endpoint is disabled", status == 410,
+      f"got {status}: {body.get('error')}")
 
-print("\n=== ROUTER MCP TOOLS (live) ===")
-for tool_name in ("health", "session", "combos"):
-    status, body = call(f"/api/router/tools?name={tool_name}", headers=OK)
-    if status == 200:
-        check(f"router tool {tool_name!r} answered over real MCP",
-              body.get("protocol_ok") and not body.get("is_error"),
-              f"{body.get('latency_ms')}ms, {len(body.get('text') or '')} chars")
-    else:
-        check(f"router tool {tool_name!r} answered", False, f"{status} {body}")
-status, body = call("/api/router/tools?name=explain_route", headers=OK)
-check("a non-allowlisted router tool is a 404", status == 404, f"got {status}")
+print("\n=== ROUTER TOOL DISPATCH BOUNDARY ===")
+status, body = call("/api/router/tools?name=health", headers=OK)
+check("router tool execution must go through the Resident inbox and CORE broker",
+      status == 410 and body.get("error") == "direct-tool-calls-disabled",
+      f"got {status}: {body.get('error')}")
 
 # The guard itself, exercised against the EXACT payload this machine produced
 # before the API key was forwarded: a successful envelope carrying auth errors
@@ -239,7 +235,7 @@ print("\n=== FAILURE HONESTY ===")
 status, body = call("/api/chat", method="POST", headers=OK, body={"message": "   "})
 check("empty message is a 400, not a fake reply", status == 400, f"got {status}")
 status, body = call("/api/mcp/tools?server=nope", headers=OK)
-check("unknown MCP server is a 404 naming the known ones", status == 404,
+check("unknown MCP server is outside the closed catalogue", status == 404,
       str(body.get("detail", ""))[:70])
 status, body = call("/api/chat", method="POST", headers=OK,
                     body={"message": "hi", "model": "definitely-not-a-real-model-xyz"})

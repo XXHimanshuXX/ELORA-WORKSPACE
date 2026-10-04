@@ -9,8 +9,44 @@ about X" queries. The two-layer memory: autobiographical + semantic.
 from __future__ import annotations
 
 import hashlib
+import math
 import os
+import re
 from typing import Optional
+
+
+class LocalHashEmbeddingFunction:
+    """Deterministic local embeddings; collection use never triggers a model download."""
+
+    def __init__(self, dimensions: int = 384):
+        self.dimensions = max(32, int(dimensions))
+
+    def __call__(self, input):
+        return [self._embed(text) for text in input]
+
+    def embed_query(self, input):
+        return self(input)
+
+    def _embed(self, text: str) -> list[float]:
+        tokens = re.findall(r"[\w]+", str(text).casefold())
+        features = tokens + [f"{left}_{right}" for left, right in zip(tokens, tokens[1:])]
+        vector = [0.0] * self.dimensions
+        for feature in features:
+            digest = hashlib.sha256(feature.encode("utf-8")).digest()
+            index = int.from_bytes(digest[:4], "big") % self.dimensions
+            vector[index] += 1.0 if digest[4] & 1 else -1.0
+        norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+        return [value / norm for value in vector]
+
+    def name(self) -> str:
+        return "elora-local-hash-v1"
+
+    def get_config(self) -> dict:
+        return {"dimensions": self.dimensions}
+
+    @staticmethod
+    def build_from_config(config: dict):
+        return LocalHashEmbeddingFunction(dimensions=config.get("dimensions", 384))
 
 
 class RagIndex:
@@ -22,17 +58,21 @@ class RagIndex:
         self.client = chromadb.PersistentClient(path=persist_dir)
         self.collection = self.client.get_or_create_collection(
             "elora_memory",
-            metadata={"hnsw:space": "cosine"}
+            metadata={"hnsw:space": "cosine"},
         )
+        self.embedder = LocalHashEmbeddingFunction()
 
     def index(self, text: str, metadata: Optional[dict] = None) -> str:
         """Indexes a text document/chunk into persistent memory."""
         doc_id = hashlib.sha256(text[:200].encode("utf-8")).hexdigest()[:16]
-        self.collection.upsert(
-            documents=[text],
-            ids=[doc_id],
-            metadatas=[metadata or {}]
-        )
+        upsert_args = {
+            "documents": [text],
+            "ids": [doc_id],
+            "embeddings": [self.embedder._embed(text)],
+        }
+        if metadata:
+            upsert_args["metadatas"] = [metadata]
+        self.collection.upsert(**upsert_args)
         return doc_id
 
     def recall(self, query: str, n: int = 5) -> list[dict]:
@@ -40,7 +80,10 @@ class RagIndex:
         if self.collection.count() == 0:
             return []
         effective_n = min(n, self.collection.count())
-        results = self.collection.query(query_texts=[query], n_results=effective_n)
+        results = self.collection.query(
+            query_embeddings=[self.embedder._embed(query)],
+            n_results=effective_n,
+        )
         if not results or not results.get("documents") or not results["documents"][0]:
             return []
         docs = results.get("documents", [[]])[0]

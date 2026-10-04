@@ -30,12 +30,10 @@ import { Organism } from './organism.js';
 
 /* ── the API ───────────────────────────────────────────────────────────── */
 
-/* Served over http(s) means same-origin. Anywhere else — a file:// page in the
-   Tauri webview, or an opened-from-disk copy — falls back to the local port the
-   server announces. One frontend, one data path, both delivery modes. */
-const BASE = (location.protocol === 'http:' || location.protocol === 'https:')
-  ? ''
-  : 'http://127.0.0.1:8765';
+/* One same-origin API path in the preview browser and the Tauri webview.
+   The desktop shell loads this page from the console server; no browser-side
+   localhost fallback or second service address is used. */
+const BASE = '';
 
 /* The header the server requires. A cross-origin page cannot set a custom
    header without a CORS preflight, and the server refuses every preflight — so
@@ -53,7 +51,9 @@ class ApiError extends Error {
 }
 
 async function api(path, options = {}) {
-  const init = { method: options.method || 'GET', headers: { ...CLIENT_HEADERS } };
+  const headers = { ...CLIENT_HEADERS };
+  if (options.client) headers['X-ELORA-Client'] = options.client;
+  const init = { method: options.method || 'GET', headers };
   if (options.body !== undefined) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(options.body);
@@ -196,7 +196,6 @@ const state = {
   discovery: null,
   mcpServers: null,
   selectedServer: null,
-  routerTool: 'health',
   chat: [],
   chatHistory: [],
   chatHistoryEncoded: '',
@@ -210,7 +209,6 @@ const state = {
   bridge: null,          // the Tauri bridge handle, or null in a browser
   metabolism: null,      // the last native daemon-state payload
   metabolismEncoded: '', // so an unchanged payload does not force a repaint
-  ripples: [],           // raw daemon stdout lines received on the ripple channel
   pollersStarted: false,
 };
 
@@ -575,71 +573,15 @@ function renderRouter(root) {
       statusHost.append(errorCard(err, 'Model list'));
     }
 
-    /* real MCP telemetry */
     const toolHost = h('div', { class: 'card__body' });
-    const buttons = {};
-    const seg = h('div', { class: 'seg' }, ['health', 'combos', 'session', 'cost'].map((name) => {
-      const button = h('button', { type: 'button', text: name, 'aria-pressed': String(name === state.routerTool) });
-      button.addEventListener('click', () => {
-        state.routerTool = name;
-        for (const [key, other] of Object.entries(buttons)) {
-          other.setAttribute('aria-pressed', String(key === name));
-        }
-        loadTool();
-      });
-      buttons[name] = button;
-      return button;
-    }));
-
-    const loadTool = async () => {
-      clear(toolHost);
-      toolHost.append(skeleton(4));
-      let payload;
-      try {
-        payload = await api(`/api/router/tools?name=${encodeURIComponent(state.routerTool)}`);
-      } catch (err) {
-        clear(toolHost);
-        toolHost.append(errorCard(err, `Router tool ${state.routerTool}`));
-        return;
-      }
-      clear(toolHost);
-
-      /* A tool can succeed at the protocol level and still report that the data
-         could not be fetched. That must not render as a healthy panel. */
-      if (payload.degraded && !payload.is_error) {
-        toolHost.append(warnBanner(
-          'This payload reports partial failure',
-          payload.degraded_reason,
-          'The tool answered, but its own body says some sources failed. Values below may be incomplete.'));
-      }
-      if (payload.is_error) {
-        toolHost.append(warnBanner('The tool reported an error', payload.text, ''));
-      }
-
-      toolHost.append(h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-4)' } },
-        chip(payload.protocol_ok ? 'protocol ok' : 'protocol failed', payload.protocol_ok ? 'ok' : 'danger'),
-        payload.is_error ? chip('tool error', 'danger') : chip('tool ok', 'ok'),
-        chip(fmtMs(payload.latency_ms)),
-        payload.fetched_at ? chip(`at ${payload.fetched_at}`) : null,
-        payload.cached ? chip('cached', 'info') : null));
-
-      const items = Array.isArray(payload.degraded_items) ? payload.degraded_items : [];
-      if (items.length) {
-        toolHost.append(h('ul', { class: 'ticks', style: { marginBottom: 'var(--el-space-4)' } },
-          items.map((item) => h('li', {}, icon('warn'),
-            h('span', {}, h('strong', { text: (item && item.source) || 'unknown source' }),
-              h('span', { class: 'mono', text: `  ${(item && item.error) || ''}` }))))));
-      }
-
-      toolHost.append(h('pre', { class: 'code', text: prettyMaybeJson(payload.text) }));
-    };
-
+    toolHost.append(warnBanner(
+      'Direct tool execution is disabled here',
+      'Tool wills enter through the Resident inbox; CORE routes each organ through the broker and records its result in Akashic.',
+      '/api/chat remains conversational. This panel does not launch MCP processes or dispatch tools.'));
     statusHost.append(h('section', { class: 'card' },
       h('div', { class: 'card__head' },
-        h('h3', { class: 'card__title' }, icon('terminal'), 'Router telemetry'),
-        h('div', {}, seg)),
+        h('h3', { class: 'card__title' }, icon('terminal'), 'Tool dispatch boundary')),
       toolHost));
-    loadTool();
 
     /* chat */
     renderChat(statusHost);
@@ -809,100 +751,31 @@ function renderCapabilities(root) {
 
 function renderMcp(root) {
   const body = h('div', { class: 'card__body' });
-  const toolsHost = h('div', { class: 'card__body' });
-  const refresh = h('button', { class: 'btn btn--quiet', type: 'button' }, icon('refresh'), 'Probe now');
-
-  const loadServers = async (isRefresh) => {
-    busy(refresh, true);
-    clear(body);
-    body.append(skeleton(3));
-    try {
-      const data = await api(`/api/mcp/servers${isRefresh ? '?refresh=1' : ''}`);
-      clear(body);
-
-      if (data.probed === false) {
-        body.append(warnBanner('Not probed yet', data.note, ''));
-        return;
-      }
-      if (data.stale) {
-        body.append(warnBanner('Showing a stale probe', 'The last probe is older than the cache window.', ''));
-      }
-
-      const rows = (data.servers || []).map((server) => {
-        const button = h('button', { class: 'btn btn--quiet', type: 'button' }, icon('eye'), 'tools');
-        button.addEventListener('click', () => { state.selectedServer = server.name; loadTools(server.name); });
-        return h('tr', {},
-          h('td', {}, h('span', { class: 'mono strong', text: server.name })),
-          h('td', {}, server.reachable ? chip('reachable', 'ok') : chip('down', 'danger')),
-          h('td', { class: 'mono', text: fmtInt(server.tool_count) }),
-          h('td', { class: 'mono dim', text: server.protocol_version || '—' }),
-          h('td', { class: 'mono dim', text: fmtMs(server.latency_ms) }),
-          h('td', { class: 'mono dim wrap', text: server.error || JSON.stringify(server.server_info || {}) }),
-          h('td', {}, button));
-      });
-
-      body.append(
-        h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-4)' } },
-          chip(`${(data.servers || []).filter((s) => s.reachable).length} of ${(data.servers || []).length} reachable`,
-            (data.servers || []).every((s) => s.reachable) ? 'ok' : 'warn'),
-          data.probed_at ? chip(`probed ${data.probed_at}`) : null),
-        h('table', { class: 'table' },
-          h('thead', {}, h('tr', {},
-            h('th', { text: 'server' }), h('th', { text: 'state' }), h('th', { text: 'tools' }),
-            h('th', { text: 'protocol' }), h('th', { text: 'latency' }), h('th', { text: 'detail' }), h('th', { text: '' }))),
-          h('tbody', {}, rows)));
-    } catch (err) {
-      clear(body);
-      body.append(errorCard(err, 'MCP servers'));
-    } finally {
-      busy(refresh, false);
-    }
-  };
-
-  const loadTools = async (serverName) => {
-    clear(toolsHost);
-    toolsHost.append(skeleton(4));
-    try {
-      const data = await api(`/api/mcp/tools?server=${encodeURIComponent(serverName)}`);
-      clear(toolsHost);
-      const rows = (data.tools || []).map((tool) => {
-        const required = (tool.inputSchema && tool.inputSchema.required) || [];
-        const props = (tool.inputSchema && tool.inputSchema.properties) || {};
-        return h('tr', { class: 'row-tight' },
-          h('td', { class: 'mono strong', text: tool.name }),
-          h('td', { class: 'dim', text: (tool.description || '').slice(0, 160) }),
-          h('td', { class: 'mono dim wrap', text: Object.keys(props).join(', ') || '—' }),
-          h('td', {}, required.length ? chip(`${required.length} required`, 'warn') : chip('no args', 'ok')));
-      });
-      toolsHost.append(
-        h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-4)' } },
-          chip(`${serverName} · ${fmtInt(data.tool_count)} tools`, 'accent'),
-          chip(data.protocol_version || ''),
-          data.cached ? chip('cached', 'info') : null),
-        h('div', { class: 'scroller' }, h('table', { class: 'table' },
-          h('thead', {}, h('tr', {},
-            h('th', { text: 'tool' }), h('th', { text: 'description' }),
-            h('th', { text: 'params' }), h('th', { text: 'args' }))),
-          h('tbody', {}, rows))));
-    } catch (err) {
-      clear(toolsHost);
-      toolsHost.append(errorCard(err, `Tools for ${serverName}`));
-    }
-  };
-
-  refresh.addEventListener('click', () => loadServers(true));
-
   root.append(h('section', { class: 'card' },
     h('div', { class: 'card__head' },
-      h('h3', { class: 'card__title' }, icon('chip'), 'MCP servers — real processes, real JSON-RPC 2.0'),
-      refresh),
+      h('h3', { class: 'card__title' }, icon('chip'), 'Closed first-party marketplace')),
     body));
-  root.append(h('section', { class: 'card' },
-    h('div', { class: 'card__head' },
-      h('h3', { class: 'card__title' }, icon('terminal'), 'Tools')),
-    toolsHost));
 
-  loadServers(false);
+  api('/api/mcp/servers').then((data) => {
+    clear(body);
+    body.append(warnBanner(
+      'Tool calls stay in the Resident control loop',
+      data.note || 'Only the first-party organ namespaces are listed.',
+      'The browser does not probe, launch, or invoke MCP servers. Queue a will; CORE dispatches through the broker.'));
+    const rows = (data.servers || []).map((server) => h('tr', {},
+      h('td', {}, h('span', { class: 'mono strong', text: server.name })),
+      h('td', { class: 'dim', text: server.blurb || '' }),
+      h('td', {}, chip('first-party', 'info')),
+      h('td', {}, chip(server.installable ? 'installable' : 'not installable'))));
+    body.append(h('div', { class: 'scroller' }, h('table', { class: 'table' },
+      h('thead', {}, h('tr', {},
+        h('th', { text: 'namespace' }), h('th', { text: 'organ boundary' }),
+        h('th', { text: 'source' }), h('th', { text: 'package policy' }))),
+      h('tbody', {}, rows))));
+  }).catch((err) => {
+    clear(body);
+    body.append(errorCard(err, 'Closed first-party marketplace'));
+  });
 }
 
 function renderDiscoveryBrowser(root) {
@@ -1035,10 +908,10 @@ function renderUnwired(root) {
       needs: 'Deliberately left unexposed. A control surface that drives the mouse and keyboard from a page fetch deserves its own consent flow, not a button. The env gate is the existing guard; a console endpoint would sit in front of it.',
     },
     {
-      icon: 'registry', title: 'Plugin system',
+      icon: 'registry', title: 'First-party tool marketplace',
       state: 'wired',
-      because: 'plugin.list / plugin.call launch the closed MCP set over stdio: omniroute, github, playwright, fetch, memory, filesystem, blender. Foreign plugin.json files on disk are still inventory only.',
-      needs: 'Blender MCP is live only while blender_connect.py is listening on 127.0.0.1:9876. ping reports darkness; it does not invent a scene.',
+      because: 'The closed catalogue exposes only git, sandbox, ledger, and core. Tool wills enter through the Resident inbox and are dispatched by CORE through the broker; external MCP packages are not launched.',
+      needs: 'No package installation or browser-side tool runner is exposed. Tool results must be present in the Akashic timeline before the organism pulses.',
     },
     {
       icon: 'clock', title: 'Live trend baseline',
@@ -1179,6 +1052,7 @@ async function syncChat() {
     if (state.bridge && typeof state.bridge.getChatHistory === 'function') {
       const res = await state.bridge.getChatHistory();
       if (Array.isArray(res)) messages = res;
+      else if (res && res.available && Array.isArray(res.data)) messages = res.data;
     }
     if (!messages) {
       const res = await api('/api/chat/history');
@@ -1205,28 +1079,25 @@ async function syncChat() {
 async function dispatchTask(prompt) {
   const clean = (prompt || '').trim();
   if (!clean) return;
-  let dispatched = false;
-  if (state.bridge && typeof state.bridge.sendInboxTask === 'function') {
-    const result = await state.bridge.sendInboxTask(clean);
-    if (result) dispatched = true;
-  }
-  if (!dispatched) {
-    try {
-      await api('/api/inbox/task', { method: 'POST', body: { prompt: clean } });
-      dispatched = true;
-    } catch (err) {
-      toast('Task dispatch failed', 'danger', err.message);
-    }
-  }
-  if (dispatched) {
-    toast('Will sent to inbox', 'ok', clean.slice(0, 48));
-  } else {
-    const failure = { sender: 'elora', text: 'Will could not reach the inbox.',
-      ts: Date.now() / 1000, status: 'failed' };
+  try {
+    await api('/api/inbox/task', {
+      method: 'POST',
+      client: 'resident-overlay',
+      body: { prompt: clean },
+    });
+    await syncChat();
+  } catch (err) {
+    const failure = {
+      sender: 'organ',
+      organ: 'inbox',
+      text: `[ORGAN: inbox FAILED] rc=${err.status || 'unavailable'} ${err.detail || err.message}`,
+      ts: Date.now() / 1000,
+      status: 'failed',
+      recorded: false,
+    };
     state.chatHistory.push(failure);
     if (state.view === 'resident') appendResidentMessage(failure);
   }
-  await syncChat();
 }
 
 function residentMessageKey(msg) {
@@ -1276,12 +1147,11 @@ function appendResidentMessage(msg) {
   } else if (organMessage) {
     const failed = msg.status === 'failed' || (hasRc && rc !== 0);
     const deferred = msg.status === 'deferred';
-    const succeeded = msg.status === 'ok' || (hasRc && rc === 0);
+    const succeeded = msg.status === 'ok' || msg.status === 'success' || (hasRc && rc === 0);
     const result = failed ? 'FAILED' : deferred ? 'DEFERRED' : succeeded ? 'SUCCESS' : 'RECORDED';
     label = '[ORGAN: ' + (msg.organ || 'unnamed') + ' ' + result +
       (hasRc ? ' · rc=' + rc : '') + ']';
   }
-
   let bodyText = String(msg.text || '');
   if (organMessage && msg.organ) {
     const prefix = msg.organ + ': ';
@@ -1290,6 +1160,7 @@ function appendResidentMessage(msg) {
   }
   const maxLength = isWill ? 2400 : organMessage ? 260 : 520;
   const displayText = shortResidentText(bodyText, maxLength);
+  const ledgerText = organMessage ? (msg.recorded === true ? 'Akashic recorded' : 'not recorded') : '';
   const row = h('div', {
     class: 'turn',
     dataset: { role: isWill ? 'will' : organMessage ? 'organ' : 'elora' },
@@ -1300,6 +1171,11 @@ function appendResidentMessage(msg) {
         class: 'turn__meta',
         style: { marginLeft: 'var(--el-space-3)' },
         text: new Date(msg.ts * 1000).toLocaleTimeString(),
+      }) : null,
+      ledgerText ? h('span', {
+        class: 'turn__meta',
+        style: { marginLeft: 'var(--el-space-3)' },
+        text: ledgerText,
       }) : null),
     h('div', {
       class: 'turn__body',
@@ -1309,7 +1185,7 @@ function appendResidentMessage(msg) {
 
   chatLog.append(row);
   state.chatRendered.add(key);
-  if (organMessage && state.organism) state.organism.ripple();
+  if (msg.sender === 'organ' && msg.recorded === true && state.organism) state.organism.ripple();
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
@@ -1404,14 +1280,15 @@ function renderResident(root) {
   });
 
   const compose = h('div', { class: 'chat__compose' }, input);
-  const stream = h('div', { class: 'chat' },
-    h('div', { class: 'briefing-title' }, icon('terminal'), 'SYSTEM QUEST'),
-    chatLog,
-    compose);
+  const chatCard = card('Will → organs → voice', 'terminal',
+    h('div', { class: 'chat' }, chatLog),
+    compose,
+    h('div', { class: 'card__note', style: { padding: '0 var(--el-space-5) var(--el-space-4)' },
+      text: 'Instructions enter through the Resident inbox. Organ activity appears here with its evidence status.' }));
+
   const aside = h('div', { class: 'resident-aside' }, organismFrame, houseStill);
-  const main = h('div', { class: 'resident-main' }, stream);
-  const layout = h('div', { class: 'resident-layout' }, aside, main);
-  root.append(layout);
+  const main = h('div', { class: 'resident-main' }, chatCard);
+  root.append(h('div', { class: 'resident-layout' }, aside, main));
   if (!state.residentLayoutResizeBound) {
     window.addEventListener('resize', sizeResidentRoom, { passive: true });
     state.residentLayoutResizeBound = true;
@@ -1454,11 +1331,6 @@ async function boot() {
         if (encoded === state.metabolismEncoded) return;   /* it polls twice a second */
         state.metabolismEncoded = encoded;
         state.metabolism = payload;
-        if (typeof residentRedraw === 'function') residentRedraw();
-      },
-      onRipple: (line) => {
-        state.ripples.push(typeof line === 'string' ? line : JSON.stringify(line));
-        if (state.ripples.length > 200) state.ripples.shift();
         if (typeof residentRedraw === 'function') residentRedraw();
       },
     });

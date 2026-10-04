@@ -1,0 +1,16 @@
+# Skill skl_d5a0c7799f
+
+**Born:** 2026-10-03 22:10 from 3 observed executions.
+
+**Trigger pattern:** `task task chat 1791045358191 txt 1791045358634`
+
+**Capability sequence:**
+1. `sandbox.checkpoint` — Hidden control: snapshot one jailed file before mutation. Secrets refused.
+
+**Example args (last observed):**
+```json
+{}
+```
+
+---
+Specs survive decay. Bindings do not. If this skill was archived, it can be rebuilt from this file.

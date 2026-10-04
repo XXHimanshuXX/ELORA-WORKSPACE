@@ -6,7 +6,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::api::process::{Command, CommandEvent};
-use tauri::Manager;
 
 /// The port the console server listens on.
 ///
@@ -126,73 +125,14 @@ fn get_chat_history() -> serde_json::Value {
     read_elora_json("chat.json")
 }
 
-#[tauri::command]
-fn send_inbox_task(prompt: String) -> Result<String, String> {
-    let inbox_dir = Path::new(".elora/inbox");
-    if !inbox_dir.exists() {
-        let _ = fs::create_dir_all(inbox_dir);
-    }
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let filename = format!("chat_{ts}.txt");
-    let target = inbox_dir.join(&filename);
-    fs::write(&target, prompt.trim()).map_err(|e| e.to_string())?;
-
-    let chat_path = Path::new(".elora/chat.json");
-    let mut messages: Vec<serde_json::Value> = if chat_path.exists() {
-        fs::read_to_string(chat_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-    messages.push(serde_json::json!({
-        "sender": "user",
-        "text": prompt.trim(),
-        "task_id": filename,
-        "ts": (ts as f64) / 1000.0,
-        "status": "queued"
-    }));
-    let _ = fs::write(
-        chat_path,
-        serde_json::to_string_pretty(&messages).unwrap_or_default(),
-    );
-
-    Ok(filename)
-}
-
-#[tauri::command]
-fn trigger_ripple(organ: String, kind: String) -> Result<String, String> {
-    let payload = serde_json::json!({
-        "organ": organ,
-        "kind": kind,
-        "ts": std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64()
-    });
-
-    let shm_dir = Path::new(".elora/shm");
-    if !shm_dir.exists() {
-        let _ = fs::create_dir_all(shm_dir);
-    }
-    let fallback = Path::new(".elora/shm/overlay.ring.json");
-    let _ = fs::write(fallback, payload.to_string());
-    Ok(format!("{}.{}", organ, kind))
-}
-
 fn main() {
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(|_app| {
             let root = elora_root().unwrap_or_else(|| PathBuf::from("."));
 
             // The console server. The window's URL points at it, so this has to
             // start first; the frontend tolerates the race by retrying health
             // before it declares the server down.
-            let console_handle = app.handle();
             let server_root = root.clone();
             tauri::async_runtime::spawn(async move {
                 let port = CONSOLE_PORT.to_string();
@@ -210,9 +150,6 @@ fn main() {
                         match event {
                             CommandEvent::Stdout(line) => {
                                 println!("[console:server] {line}");
-                                if let Some(window) = console_handle.get_window("main") {
-                                    let _ = window.emit("ripple", &line);
-                                }
                             }
                             CommandEvent::Stderr(line) => {
                                 eprintln!("[console:server:err] {line}");
@@ -223,22 +160,21 @@ fn main() {
                 }
             });
 
-            // The resident brain, kept as its own process so the daemon keeps
-            // running even if the console server is restarted. Its stdout is what
-            // the `ripple` event carries to the overlay.
-            let brain_handle = app.handle();
+            // The resident brain is its own process so it can outlive a console
+            // server restart. Its logs stay in the process output; the Resident
+            // timeline is populated by persisted chat/Akashic evidence instead.
             let brain_root = root.clone();
             tauri::async_runtime::spawn(async move {
-                let args = vec!["-u", "run.py", "--brain", "omniroute"];
+                // The Tauri host already owns the console server; start only
+                // the resident process here, using the same local brain as the
+                // documented restart path.
+                let args = vec!["-u", "run.py", "--brain", "bitnet"];
                 let cmd = Command::new("python").current_dir(brain_root).args(args);
                 if let Ok((mut rx, _child)) = cmd.spawn() {
                     while let Some(event) = rx.recv().await {
                         match event {
                             CommandEvent::Stdout(line) => {
                                 println!("[resident:sidecar] {line}");
-                                if let Some(window) = brain_handle.get_window("main") {
-                                    let _ = window.emit("ripple", &line);
-                                }
                             }
                             CommandEvent::Stderr(line) => {
                                 eprintln!("[resident:sidecar:err] {line}");
@@ -255,8 +191,6 @@ fn main() {
             get_now_state,
             get_ledger_tail,
             get_chat_history,
-            send_inbox_task,
-            trigger_ripple
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
