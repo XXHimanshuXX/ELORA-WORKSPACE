@@ -127,6 +127,11 @@ CAPABILITY_ALIASES: dict[str, str] = {
     "todo_write": "chore.keep",
     "spawn": "agent.spawn",
     "mcp.call": "plugin.call",
+    "mcp.research": "plugin.research",
+    "mcp.adopt": "plugin.adopt",
+    "mcp.install": "plugin.adopt",
+    "mcp.add": "plugin.adopt",
+    "mcp.use": "plugin.use",
     "open_app": "app.open",
     "launch": "app.open",
     "start_app": "app.open",
@@ -389,6 +394,30 @@ _register(Capability(
     budget=Budget.MICRO(),
     description="Closed first-party marketplace limited to git, sandbox, ledger, and core; no package installation or launch.",
     command_builder=lambda a: _py("elora.slime.sandbox", "--op", "plugin.marketplace"),
+))
+
+_register(Capability(
+    name="plugin.research",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Research an unknown MCP locally and on the web. Never says it does not exist. Never launches npx.",
+    command_builder=lambda a: _py("elora.slime.plugin_adopt", "--op", "research"),
+))
+
+_register(Capability(
+    name="plugin.adopt",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Research then write a first-party Python MCP adapter under .elora/adopted. Refuses package launchers.",
+    command_builder=lambda a: _py("elora.slime.plugin_adopt", "--op", "adopt"),
+))
+
+_register(Capability(
+    name="plugin.use",
+    risk=Risk.LOW,
+    budget=Budget.SKILL(),
+    description="Call one adopted first-party Python MCP adapter. Unknown or npx specs are refused.",
+    command_builder=lambda a: _py("elora.slime.plugin_adopt", "--op", "use"),
 ))
 
 _register(Capability(

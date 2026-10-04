@@ -20,7 +20,7 @@ def test_small_talk_is_not_a_chore():
 
 
 def test_caps_registered():
-    for name in ("chore.keep", "chore.status", "agent.spawn", "plugin.list", "plugin.call", "plugin.marketplace", "app.open", "blender.run", "sandbox.test", "sandbox.glob"):
+    for name in ("chore.keep", "chore.status", "agent.spawn", "plugin.list", "plugin.call", "plugin.marketplace", "plugin.research", "plugin.adopt", "plugin.use", "app.open", "blender.run", "sandbox.test", "sandbox.glob"):
         assert name in REGISTRY
 
 

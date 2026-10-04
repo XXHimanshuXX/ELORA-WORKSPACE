@@ -84,6 +84,7 @@ PROFILES: dict[State, StateProfile] = {
             "sandbox.glob", "sandbox.test", "sandbox.check", "sandbox.status",
             "sandbox.repo_map", "sandbox.checkpoint", "sandbox.restore", "sandbox.diagnose",
             "chore.keep", "chore.status", "agent.spawn", "plugin.list", "plugin.call", "plugin.marketplace",
+            "plugin.research", "plugin.adopt", "plugin.use",
         }),
     ),
     State.AWAKE: StateProfile(

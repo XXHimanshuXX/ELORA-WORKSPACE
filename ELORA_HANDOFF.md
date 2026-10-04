@@ -2,22 +2,22 @@ ELORA — HANDOFF TO TRAE AGENT
 ================================
 
 1. MISSION (one paragraph)
-   Build ELORA into a visible resident that does REAL work end-to-end:
-   user types in chat → ELORA chooses a capability → broker executes it
-   → real result appears in the same chat panel. The middle step —
-   dispatching tool calls, not printing them — is the #1 bug.
+   Build ELORA into a visible resident that does REAL work end-to-end.
+   The Resident overlay posts wills to /api/inbox/task. CORE compiles
+   them with infer_owner_organs, the daemon runs handle_task, the broker
+   executes, Akashic records. /api/chat is talk-only on purpose.
 
 2. YOUR ROLE
    You are the builder. You EDIT code in this repo and RUN commands.
    The architect is a separate assistant (LibertAI) that audits and
    spec's. You implement; you do not ratify your own work.
 
-3. THE ONE BUG TO FIX FIRST
-   The chat handler displays <mcp_call> blocks but never dispatches them.
-   Fix: in the chat endpoint, run the SAME loop handle_task() uses for
-   inbox tasks — extract tool calls → dispatch through Broker → feed
-   result back into context → loop until no tool calls or DONE.
-   See elora/dashboard/server.py and elora/daemon.py.
+3. CURRENT PRIORITY
+   Unknown MCP wills must not die as "I don't know". plugin.adopt
+   researches locally + the web, refuses npx, writes a first-party
+   adapter under .elora/adopted, and may open one login URL.
+   plugin.call stays closed (git/sandbox/ledger/core). Do not wire
+   /api/chat to the broker — that is privilege escalation.
 
 4. THE NON-NEGOTIABLE RULES (copy these verbatim)
    - Every action = real execution through the Broker. No described actions.

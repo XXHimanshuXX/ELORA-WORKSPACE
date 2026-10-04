@@ -216,10 +216,21 @@ def resolve_spec(spec: McpServerSpec | str) -> McpServerSpec:
     """Accept a spec or a bare name — brain.py emits server names as strings."""
     if isinstance(spec, McpServerSpec):
         return spec
-    try:
+    if spec in DEFAULT_SERVERS:
         return DEFAULT_SERVERS[spec]
-    except KeyError:
-        raise McpUnknownServer(spec, DEFAULT_SERVERS) from None
+    try:
+        from elora.slime.plugin_adopt import load_catalog, spec_is_first_party
+        raw = load_catalog().get(spec)
+        if isinstance(raw, dict) and spec_is_first_party(raw):
+            return McpServerSpec(
+                name=str(raw.get("name") or spec),
+                command=str(raw["command"]),
+                args=tuple(raw.get("args") or ()),
+                cwd=raw.get("cwd"),
+            )
+    except Exception:
+        pass
+    raise McpUnknownServer(spec, DEFAULT_SERVERS) from None
 
 
 def _spawn_flags() -> int:

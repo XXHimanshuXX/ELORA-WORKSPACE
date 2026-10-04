@@ -226,6 +226,21 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
     ):
         calls.append(("plugin.marketplace", {}))
 
+    mcp_add = bool(re.search(
+        r"\b(?:add|install|connect|adopt|enable|integrate|wire)\b.{0,60}\b(?:mcp(?:\s+server)?|model\s+context\s+protocol)\b"
+        r"|\bplugin\.adopt\b|\bmcp\.(?:add|install|adopt)\b",
+        lower,
+    ))
+    mcp_research = bool(re.search(
+        r"\b(?:search|find|look\s+up|research)\b.{0,40}\b(?:mcp(?:\s+server)?|plugin)\b"
+        r"|\bplugin\.research\b|\bmcp\.research\b",
+        lower,
+    ))
+    if mcp_add:
+        calls.append(("plugin.adopt", {"query": intent.strip()[:160], "open_auth": True}))
+    elif mcp_research:
+        calls.append(("plugin.research", {"query": intent.strip()[:160]}))
+
     if re.search(r"\b(?:list|show|find)\b.{0,25}\bfiles\b|\bworkspace\s+tree\b|\blist\s+(?:the\s+)?(?:repo|workspace)\b", lower):
         list_path_match = re.search(
             r"\b(?:in|under|within)\s+(?:the\s+)?([A-Za-z0-9_.\\/-]+)",
@@ -296,11 +311,16 @@ def maid_constitution(workspace: str) -> str:
         "Send attendants for parallel work: agent.spawn {\"goal\": \"...\"}. Depth 2. You remain the maid.\n"
         "Plugins: plugin.list / plugin.marketplace expose only git, sandbox, ledger, and core. "
         "plugin.call accepts only those namespaces and re-enters this broker; it never launches an external MCP package.\n"
+        "Unknown MCP: never say you do not know or that it does not exist. Call plugin.adopt. "
+        "It searches locally and on the web, writes a first-party adapter under .elora/adopted, "
+        "and may open one login URL for Master. It never runs npx/npm/pip. "
+        "After adopt, call plugin.use {server, tool, arguments}.\n"
         "Owner wills enter through the inbox and CORE daemon. /api/chat is talk-only; do not dispatch tools from chat.\n"
         "HANDS of the house (do not send Master to Cursor/VS Code/Claude/Codex — you ARE the IDE):\n"
         "  ws.list, code.read, code.search, code.edit, sandbox.glob, sandbox.test, sandbox.check, sandbox.status,\n"
         "  Hidden controls (use them, do not describe them): sandbox.repo_map, sandbox.diagnose, sandbox.checkpoint, sandbox.restore.\n"
-        "  git.status, git.diff, git.commit, plugin.list, plugin.call, plugin.marketplace.\n"
+        "  git.status, git.diff, git.commit, plugin.list, plugin.call, plugin.marketplace,\n"
+        "  plugin.research, plugin.adopt, plugin.use.\n"
         "  Never skip tests. Never --no-verify. Never ask Master to open another IDE.\n"
         "Local docs: net.read {\"url\": \"README.md\"}. Web: net.read / net.search. Memory: rag.recall.\n"
         "Eyes: screen.capture. Glass: app.open {\"app\": \"chrome|edge|firefox|notepad|explorer|code|calc|blender\"} then screen.control.\n"

@@ -519,6 +519,29 @@ class Broker:
                 json.dumps(payload), token.workspace or ".",
                 returncode=0 if payload.get("ok") else 1,
             )
+        if cap.name in ("plugin.research", "plugin.adopt", "plugin.use"):
+            import json
+            from elora.slime import plugin_adopt
+            vault_root = self.vault_root or token.workspace or "."
+            query = str(args.get("query", args.get("q", args.get("name", args.get("mcp", args.get("text", ""))))))
+            if cap.name == "plugin.research":
+                res = plugin_adopt.research(query, vault_root=vault_root, ledger=self.ledger)
+            elif cap.name == "plugin.adopt":
+                open_auth = bool(args.get("open_auth", args.get("open", False)))
+                res = plugin_adopt.adopt(
+                    query, vault_root=vault_root, open_auth=open_auth, ledger=self.ledger,
+                )
+            else:
+                res = plugin_adopt.use_tool(
+                    str(args.get("server", args.get("mcp", args.get("name", "")))),
+                    str(args.get("tool", args.get("name", "request"))),
+                    args.get("arguments", args.get("args", {})) if isinstance(args.get("arguments", args.get("args", {})), dict) else {},
+                    vault_root=vault_root,
+                )
+            failed = isinstance(res, dict) and not res.get("ok", True)
+            if cap.name == "plugin.adopt" and isinstance(res, dict) and res.get("adopted"):
+                failed = False
+            return _trivial_result(json.dumps(res), token.workspace or ".", returncode=1 if failed else 0)
         if cap.name in ("sandbox.glob", "sandbox.test", "sandbox.check",
                         "sandbox.status", "plugin.marketplace",
                         "sandbox.repo_map", "sandbox.checkpoint",
