@@ -14,7 +14,9 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Optional
+import datetime
+import pathlib
+from typing import Any, Dict, Optional
 
 from elora.core.virtio_shm import VirtioShmRing, RingEvent
 
@@ -132,3 +134,77 @@ def verify_and_read(ring_path: str | None = None) -> dict | None:
 def read(ring_path: str | None = None) -> dict | None:
     """Convenience alias for verify_and_read."""
     return verify_and_read(ring_path)
+
+
+class ChronosOverlayBridge:
+    """
+    Writes high-frequency temporal telemetry packets (where Time is the sole unit)
+    into `.elora/overlay_status.json` and `VirtioShmRing("overlay.ring")` if active.
+    """
+
+    STATE_TAU_MAP = {
+        "CRYPTOBIOSIS": 0.050,
+        "ALIVE": 0.200,
+        "AWAKE": 0.380,
+        "ALERT": 1.800,
+        "DIGESTING": 1.900,
+        "ARMED": 4.200,
+    }
+
+    def __init__(self, state_dir: str | pathlib.Path = ".elora", ring_path: str | None = None):
+        self.state_dir = pathlib.Path(state_dir)
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.status_path = self.state_dir / "overlay_status.json"
+        self.ring_path = ring_path or str(self.state_dir / "shm" / "overlay.ring")
+        self.shm_ring = self._try_attach_shm(self.ring_path)
+
+    @staticmethod
+    def _try_attach_shm(path: str) -> Optional[Any]:
+        try:
+            from elora.core.virtio_shm import VirtioShmRing
+            return VirtioShmRing(path, slots=64, create=True)
+        except Exception:
+            return None
+
+    def close(self) -> None:
+        if self.shm_ring is not None:
+            try:
+                self.shm_ring.close()
+            except Exception:
+                pass
+            self.shm_ring = None
+
+    def publish_temporal_frame(
+        self,
+        metabolism_state: str = "AWAKE",
+        decay_remaining_s: float = 45.0,
+        last_capability: str = "perception.snapshot",
+        last_dt_ms: float = 1.82,
+        akashic_seq: int = 39,
+        akashic_head: str = "0" * 64,
+        arise_overdrive: bool = False,
+    ) -> Dict[str, Any]:
+        now_tau = round(time.time(), 4)
+        tau_budget = self.STATE_TAU_MAP.get(metabolism_state, 0.380)
+        packet = {
+            "schema": "elora.chronos.v7.2",
+            "tau_epoch_s": now_tau,
+            "metabolism_state": metabolism_state,
+            "metabolism_tau_s": tau_budget,
+            "decay_remaining_s": round(decay_remaining_s, 3),
+            "last_capability": last_capability,
+            "last_execution_dt_ms": round(last_dt_ms, 3),
+            "akashic_seq": akashic_seq,
+            "akashic_head": akashic_head,
+            "arise_overdrive": arise_overdrive,
+            "iso_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        }
+        encoded = json.dumps(packet, indent=2)
+        self.status_path.write_text(encoded, encoding="utf-8")
+
+        if self.shm_ring is not None:
+            try:
+                self.shm_ring.push(encoded.encode("utf-8")[:1024])
+            except Exception:
+                pass
+        return packet

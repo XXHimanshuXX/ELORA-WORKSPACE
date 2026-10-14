@@ -6,7 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::api::process::{Command, CommandEvent};
 
 /// The port the console server listens on.
@@ -144,6 +144,61 @@ fn get_ledger_tail() -> serde_json::Value {
 fn get_chat_history() -> serde_json::Value {
     read_elora_json("chat.json")
 }
+
+#[tauri::command]
+fn submit_owner_will(will: String) -> Result<serde_json::Value, String> {
+    let root = elora_root().unwrap_or_else(|| PathBuf::from("."));
+    let inbox_dir = root.join(".elora").join("inbox");
+    fs::create_dir_all(&inbox_dir).map_err(|e| e.to_string())?;
+
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+
+    let task_id = format!("will_{}", now_ms);
+    let task_path = inbox_dir.join(format!("{}.json", task_id));
+
+    let payload = serde_json::json!({
+        "task_id": task_id,
+        "will": will,
+        "source": "owner:tauri_omega_ui",
+        "tau_epoch_ms": now_ms,
+    });
+
+    fs::write(&task_path, serde_json::to_string_pretty(&payload).unwrap())
+        .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "ok": true,
+        "task_id": task_id,
+        "queued_path": task_path.to_string_lossy(),
+    }))
+}
+
+#[tauri::command]
+fn read_overlay_status() -> Result<serde_json::Value, String> {
+    let root = elora_root().unwrap_or_else(|| PathBuf::from("."));
+    let status_file = root.join(".elora").join("overlay_status.json");
+    if !status_file.exists() {
+        return Ok(serde_json::json!({
+            "awakened": true,
+            "metabolism_state": "AWAKE",
+            "tau_budget_s": 0.380,
+        }));
+    }
+    let raw = fs::read_to_string(&status_file).map_err(|e| e.to_string())?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    Ok(parsed)
+}
+
+#[tauri::command]
+fn set_overlay_passthrough(window: tauri::Window, passthrough: bool) -> Result<(), String> {
+    window
+        .set_ignore_cursor_events(passthrough)
+        .map_err(|e| e.to_string())
+}
+
 
 /// Which child a report belongs to.
 #[derive(Clone, Copy)]
@@ -381,6 +436,9 @@ fn main() {
             get_now_state,
             get_ledger_tail,
             get_chat_history,
+            submit_owner_will,
+            read_overlay_status,
+            set_overlay_passthrough,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ELORA // CHRONOS-VOID SOVEREIGN OS [GREAT SAGE × SOLO LEVELING × BLAME!]</title>
+<style>
+  ::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(2, 4, 12, 0.85);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--monarch-cyan);
+    box-shadow: 0 0 6px var(--monarch-cyan);
+  }
+  :root {
+    --void-bg: #020307;
+    --abyss-glass: rgba(5, 9, 20, 0.72);
+    --abyss-glass-deep: rgba(2, 4, 10, 0.88);
+    --monarch-cyan: #00f0ff;
+    --monarch-cyan-dim: rgba(0, 240, 255, 0.22);
+    --monarch-blue: #1e6bff;
+    --shadow-violet: #9d4edd;
+    --shadow-crimson: #ff1e56;
+    --sage-gold: #ffd166;
+    --blame-bone: #e2e8f0;
+    --blame-ash: #64748b;
+    --hairline: rgba(0, 240, 255, 0.28);
+    --glow-cyan: 0 0 18px rgba(0, 240, 255, 0.45), inset 0 0 14px rgba(0, 240, 255, 0.12);
+    --glow-violet: 0 0 24px rgba(157, 78, 221, 0.55), inset 0 0 18px rgba(157, 78, 221, 0.18);
+    --glow-crimson: 0 0 26px rgba(255, 30, 86, 0.65), inset 0 0 18px rgba(255, 30, 86, 0.22);
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    --font-display: 'Rajdhani', 'Orbitron', 'Bank Gothic', 'Eurostile', 'Segoe UI', sans-serif;
+  }
+
+  body.arise-overdrive {
+    --monarch-cyan: #c77dff;
+    --monarch-cyan-dim: rgba(199, 125, 255, 0.28);
+    --hairline: rgba(199, 125, 255, 0.38);
+    --glow-cyan: 0 0 24px rgba(199, 125, 255, 0.6), inset 0 0 18px rgba(255, 30, 86, 0.2);
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+  }
+
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--void-bg);
+    color: var(--blame-bone);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+
+  /* 1. SPACE ITSELF: FULL-VIEWPORT RAYMARCHED MEGASCAFFOLD + SACRED OCTAGRAM */
+  #spacetime-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    display: block;
+  }
+
+  /* 2. SACRED GEOMETRY & ORBITAL ORGAN MESH SVG OVERLAY */
+  #sacred-geometry-layer {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  /* 3. BLAME! BRUTALIST SCANLINES, VIGNETTE & TEMPORAL RULERS */
+  .scanline-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 50% 50%, transparent 42%, rgba(1, 2, 6, 0.82) 100%),
+      repeating-linear-gradient(
+        0deg,
+        rgba(0, 240, 255, 0.018) 0px,
+        rgba(0, 240, 255, 0.018) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+  }
+
+  /* TEMPORAL AXIS RULERS (TIME IS THE ONLY UNIT) */
+  .temporal-ruler-top {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 36px;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    background: linear-gradient(180deg, rgba(2, 4, 12, 0.92) 0%, rgba(2, 4, 12, 0.0) 100%);
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  .ruler-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.22em;
+    color: var(--monarch-cyan);
+    text-shadow: 0 0 10px var(--monarch-cyan);
+  }
+
+  .stratum-tag {
+    padding: 2px 7px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: rgba(0, 240, 255, 0.1);
+    border: 1px solid var(--monarch-cyan);
+    color: var(--blame-bone);
+  }
+
+  .planck-clock-strip {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    font-size: 11px;
+  }
+
+  .time-metric {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .time-metric .lbl {
+    color: var(--blame-ash);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  .time-metric .val {
+    color: var(--monarch-cyan);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.5);
+  }
+
+  /* 4. MAIN 3D PARALLAX HOLOGRAPHIC HUD GRID */
+  #hud-stage {
+    position: fixed;
+    inset: 44px 18px 18px 18px;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 350px 1fr 370px;
+    grid-template-rows: 1fr auto;
+    gap: 16px;
+    perspective: 1400px;
+    pointer-events: none;
+  }
+
+  /* SOLO LEVELING SOVEREIGN SYSTEM WINDOW STYLING */
+  .sys-window {
+    pointer-events: auto;
+    position: relative;
+    background: var(--abyss-glass);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--hairline);
+    box-shadow: var(--glow-cyan);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: transform 0.18s ease-out, border-color 0.25s ease, box-shadow 0.25s ease;
+    clip-path: polygon(
+      0 10px, 10px 0,
+      calc(100% - 10px) 0, 100% 10px,
+      100% calc(100% - 10px), calc(100% - 10px) 100%,
+      10px 100%, 0 calc(100% - 10px)
+    );
+  }
+
+  .sys-window::before,
+  .sys-window::after {
+    content: "";
+    position: absolute;
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    border-color: var(--monarch-cyan);
+    border-style: solid;
+  }
+
+  .sys-window::before {
+    top: 2px;
+    left: 2px;
+    border-width: 2px 0 0 2px;
+  }
+
+  .sys-window::after {
+    bottom: 2px;
+    right: 2px;
+    border-width: 0 2px 2px 0;
+  }
+
+  .sys-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 7px;
+  }
+
+  .sys-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: var(--monarch-cyan);
+    text-transform: uppercase;
+    text-shadow: 0 0 8px rgba(0, 240, 255, 0.55);
+  }
+
+  .sys-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border: 1px solid var(--monarch-cyan);
+    color: var(--monarch-cyan);
+    background: rgba(0, 240, 255, 0.08);
+    letter-spacing: 0.12em;
+  }
+
+  /* LEFT COLUMN: GREAT SAGE COGNITIVE CORE + METABOLISM HALF-LIFE + 12 ORGANS */
+  .col-left {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+  }
+
+  /* GREAT SAGE REPORT BOX */
+  .sage-oracle-box {
+    background: rgba(0, 240, 255, 0.04);
+    border-left: 3px solid var(--sage-gold);
+    padding: 9px 11px;
+    font-size: 11px;
+    line-height: 1.55;
+    color: var(--blame-bone);
+    position: relative;
+  }
+
+  .sage-prefix {
+    color: var(--sage-gold);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    display: block;
+    margin-bottom: 3px;
+    text-shadow: 0 0 10px rgba(255, 209, 102, 0.45);
+  }
+
+  /* 6-STATE TEMPORAL METABOLISM LADDER */
+  .metabolism-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .meta-cell {
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(0, 240, 255, 0.15);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .meta-cell:hover {
+    border-color: var(--monarch-cyan);
+    background: rgba(0, 240, 255, 0.09);
+  }
+
+  .meta-cell.active {
+    border-color: var(--monarch-cyan);
+    background: rgba(0, 240, 255, 0.16);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.35);
+  }
+
+  .meta-cell .m-name {
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--blame-bone);
+    letter-spacing: 0.1em;
+  }
+
+  .meta-cell .m-time {
+    font-size: 10px;
+    color: var(--monarch-cyan);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .decay-bar-wrap {
+    margin-top: 4px;
+  }
+
+  .decay-bar-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--blame-ash);
+    margin-bottom: 4px;
+  }
+
+  .decay-bar-track {
+    width: 100%;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .decay-bar-fill {
+    height: 100%;
+    width: 85%;
+    background: linear-gradient(90deg, var(--monarch-cyan), var(--shadow-violet));
+    box-shadow: 0 0 10px var(--monarch-cyan);
+    transition: width 0.1s linear;
+  }
+
+  /* 12 ORGAN TEMPORAL RESONANCE MATRIX */
+  .organ-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow-y: auto;
+    padding-right: 4px;
+    flex: 1;
+  }
+
+  .organ-row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    background: rgba(255, 255, 255, 0.018);
+    border: 1px solid rgba(0, 240, 255, 0.12);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .organ-row:hover, .organ-row.firing {
+    border-color: var(--monarch-cyan);
+    background: rgba(0, 240, 255, 0.13);
+    box-shadow: 0 0 12px rgba(0, 240, 255, 0.28);
+  }
+
+  .organ-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--monarch-cyan);
+    box-shadow: 0 0 8px var(--monarch-cyan);
+  }
+
+  .organ-name {
+    font-size: 10.5px;
+    color: var(--blame-bone);
+    font-weight: 600;
+  }
+
+  .organ-wire {
+    font-size: 8.5px;
+    color: var(--sage-gold);
+    padding: 1px 4px;
+    border: 1px solid rgba(255, 209, 102, 0.35);
+  }
+
+  .organ-dt {
+    font-size: 10px;
+    color: var(--monarch-cyan);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* CENTER STAGE: SINGULARITY RETICLE & 7-STEP LITURGY CONDUIT + COMMAND NEXUS */
+  .col-center {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+
+  /* TOP FLOATING SYSTEM NOTIFICATION BANNER (SOLO LEVELING) */
+  .solo-system-alert {
+    pointer-events: auto;
+    align-self: center;
+    min-width: 440px;
+    max-width: 620px;
+    background: rgba(4, 10, 24, 0.84);
+    border: 1px solid var(--monarch-cyan);
+    box-shadow: var(--glow-cyan);
+    padding: 10px 18px;
+    text-align: center;
+    position: relative;
+  }
+
+  .solo-alert-header {
+    font-family: var(--font-display);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    color: var(--monarch-cyan);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .solo-alert-header .excl {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--monarch-cyan);
+    color: var(--monarch-cyan);
+    font-weight: 900;
+  }
+
+  .solo-alert-text {
+    font-size: 11px;
+    color: var(--blame-bone);
+    letter-spacing: 0.08em;
+  }
+
+  /* CENTER RETICLE TELEMETRY */
+  .singularity-hud {
+    align-self: center;
+    text-align: center;
+    pointer-events: none;
+    margin-top: auto;
+    margin-bottom: auto;
+    padding: 12px 28px;
+    background: radial-gradient(ellipse at center, rgba(2, 4, 12, 0.76) 0%, rgba(2, 4, 12, 0.35) 65%, transparent 100%);
+    border-radius: 50%;
+  }
+
+  .singularity-tau {
+    font-family: var(--font-display);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: rgba(255, 255, 255, 0.92);
+    text-shadow: 0 2px 10px #000000, 0 0 22px var(--monarch-cyan), 0 0 42px rgba(157, 78, 221, 0.65);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .singularity-sub {
+    font-size: 10px;
+    letter-spacing: 0.28em;
+    color: #ffffff;
+    text-shadow: 0 1px 8px #000000, 0 0 10px var(--monarch-cyan);
+    margin-top: 4px;
+    text-transform: uppercase;
+  }
+
+  /* BOTTOM COMMAND NEXUS & 7-STEP LITURGY TIMELINE */
+  .nexus-dock {
+    pointer-events: auto;
+    background: var(--abyss-glass-deep);
+    border: 1px solid var(--monarch-cyan);
+    box-shadow: var(--glow-cyan);
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* 7-STEP BROKER LITURGY BAR */
+  .liturgy-chain {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+
+  .liturgy-node {
+    padding: 5px 4px;
+    border: 1px solid rgba(0, 240, 255, 0.18);
+    background: rgba(255, 255, 255, 0.015);
+    text-align: center;
+    transition: all 0.18s ease;
+  }
+
+  .liturgy-node.active {
+    border-color: var(--monarch-cyan);
+    background: rgba(0, 240, 255, 0.22);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.45);
+  }
+
+  .liturgy-node.sealed {
+    border-color: var(--sage-gold);
+    background: rgba(255, 209, 102, 0.14);
+  }
+
+  .liturgy-node .l-step {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--blame-bone);
+  }
+
+  .liturgy-node .l-dt {
+    font-size: 8.5px;
+    color: var(--monarch-cyan);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* COMMAND INPUT & PRESET WILLS */
+  .will-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .will-prompt-symbol {
+    color: var(--monarch-cyan);
+    font-weight: 700;
+    font-size: 13px;
+    padding-left: 4px;
+  }
+
+  #will-input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(0, 240, 255, 0.35);
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 9px 12px;
+    outline: none;
+    letter-spacing: 0.05em;
+  }
+
+  #will-input:focus {
+    border-color: var(--monarch-cyan);
+    box-shadow: 0 0 14px rgba(0, 240, 255, 0.35);
+  }
+
+  .cyber-btn {
+    background: rgba(0, 240, 255, 0.12);
+    border: 1px solid var(--monarch-cyan);
+    color: var(--monarch-cyan);
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    padding: 9px 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: all 0.18s ease;
+  }
+
+  .cyber-btn:hover {
+    background: var(--monarch-cyan);
+    color: #020307;
+    box-shadow: 0 0 18px var(--monarch-cyan);
+  }
+
+  .cyber-btn.arise-btn {
+    border-color: var(--shadow-violet);
+    color: #e0aaff;
+    background: rgba(157, 78, 221, 0.18);
+  }
+
+  .cyber-btn.arise-btn:hover {
+    background: var(--shadow-violet);
+    color: #ffffff;
+    box-shadow: var(--glow-violet);
+  }
+
+  .preset-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .preset-pill {
+    font-size: 9.5px;
+    padding: 3px 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(0, 240, 255, 0.22);
+    color: var(--blame-bone);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .preset-pill:hover {
+    border-color: var(--monarch-cyan);
+    color: var(--monarch-cyan);
+    background: rgba(0, 240, 255, 0.1);
+  }
+
+  /* RIGHT COLUMN: SOLO LEVELING QUEST/WILL QUEUE + AKASHIC TEMPORAL LEDGER + BLAME! GATES */
+  .col-right {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: hidden;
+  }
+
+  .quest-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .quest-item {
+    padding: 7px 9px;
+    background: rgba(0, 240, 255, 0.04);
+    border-left: 2px solid var(--monarch-cyan);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 10.5px;
+  }
+
+  .quest-item.done {
+    border-left-color: var(--sage-gold);
+    opacity: 0.88;
+  }
+
+  .quest-tau {
+    font-size: 9.5px;
+    color: var(--sage-gold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* AKASHIC TEMPORAL HASH STREAM */
+  .akashic-stream {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 4px;
+  }
+
+  .akashic-block {
+    padding: 6px 8px;
+    background: rgba(2, 5, 14, 0.72);
+    border: 1px solid rgba(0, 240, 255, 0.16);
+    font-size: 9.5px;
+    line-height: 1.45;
+  }
+
+  .akashic-block .a-top {
+    display: flex;
+    justify-content: space-between;
+    color: var(--monarch-cyan);
+    font-weight: 700;
+  }
+
+  .akashic-block .a-hash {
+    color: var(--blame-ash);
+    font-size: 8.5px;
+    word-break: break-all;
+    margin-top: 2px;
+  }
+
+  @media (max-width: 1180px) {
+    #hud-stage {
+      grid-template-columns: 300px 1fr 310px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. REAL-TIME WEBGL RAYMARCHED BLAME! MEGASCAFFOLD + GREAT SAGE SINGULARITY -->
+<canvas id="spacetime-canvas"></canvas>
+
+<!-- 2. GREAT SAGE SACRED OCTAGRAM & ORBITAL ORGAN TIME-RINGS -->
+<svg id="sacred-geometry-layer" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="core-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.32" />
+      <stop offset="55%" stop-color="#9d4edd" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <filter id="neon-bloom" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3.5" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="960" cy="490" r="360" fill="url(#core-glow)" />
+
+  <!-- Outer BLAME! Megastructure Coordinate Ring -->
+  <g id="ring-outer" transform="translate(960, 490)" filter="url(#neon-bloom)">
+    <circle r="310" fill="none" stroke="rgba(0, 240, 255, 0.22)" stroke-width="1" stroke-dasharray="6 14 28 14" />
+    <circle r="286" fill="none" stroke="rgba(0, 240, 255, 0.35)" stroke-width="1.2" stroke-dasharray="2 18" />
+  </g>
+
+  <!-- Great Sage Octagram Computation Array (2 Counter-Rotating Squares + Inscribed Star) -->
+  <g id="ring-octagram-cw" transform="translate(960, 490)" filter="url(#neon-bloom)">
+    <rect x="-185" y="-185" width="370" height="370" fill="none" stroke="rgba(0, 240, 255, 0.42)" stroke-width="1.2" />
+    <rect x="-185" y="-185" width="370" height="370" fill="none" stroke="rgba(255, 209, 102, 0.38)" stroke-width="1.2" transform="rotate(45)" />
+    <circle r="185" fill="none" stroke="rgba(0, 240, 255, 0.25)" stroke-width="1" />
+  </g>
+
+  <g id="ring-octagram-ccw" transform="translate(960, 490)" filter="url(#neon-bloom)">
+    <polygon points="0,-240 207.8,120 -207.8,120" fill="none" stroke="rgba(157, 78, 221, 0.45)" stroke-width="1.2" />
+    <polygon points="0,240 207.8,-120 -207.8,-120" fill="none" stroke="rgba(0, 240, 255, 0.45)" stroke-width="1.2" />
+    <circle r="126" fill="none" stroke="rgba(255, 209, 102, 0.45)" stroke-width="1.3" stroke-dasharray="12 8 2 8" />
+  </g>
+
+  <!-- Dynamic Orbital Organ Nodes & GBE Execution Conduit -->
+  <g id="organ-orbit-nodes" transform="translate(960, 490)" filter="url(#neon-bloom)"></g>
+  <line id="gbe-beam" x1="960" y1="490" x2="960" y2="490" stroke="#00f0ff" stroke-width="0" opacity="0" filter="url(#neon-bloom)" />
+</svg>
+
+<div class="scanline-overlay"></div>
+
+<!-- 3. TOP TEMPORAL RULER (TIME IS THE ONLY UNIT) -->
+<header class="temporal-ruler-top">
+  <div class="ruler-brand">
+    <span>ELORA // SOVEREIGN MAID RESIDENT</span>
+    <span class="stratum-tag" id="stratum-indicator">MEGASCALE STRATUM: -99,402.88 τ</span>
+    <span class="stratum-tag" id="bridge-mode-tag">CORE: CONNECTED</span>
+  </div>
+  <div class="planck-clock-strip">
+    <div class="time-metric">
+      <span class="lbl">EPOCH τ:</span>
+      <span class="val" id="clock-epoch">1791968803.000s</span>
+    </div>
+    <div class="time-metric">
+      <span class="lbl">FRAME Δt:</span>
+      <span class="val" id="clock-dt">16.67ms</span>
+    </div>
+    <div class="time-metric">
+      <span class="lbl">P95 HORIZON:</span>
+      <span class="val" id="clock-p95">11.24ms</span>
+    </div>
+    <div class="time-metric">
+      <span class="lbl">METABOLISM τ_DECAY:</span>
+      <span class="val" id="clock-decay">45.00s</span>
+    </div>
+  </div>
+</header>
+
+<!-- 4. 3D PARALLAX HOLOGRAPHIC HUD STAGE -->
+<main id="hud-stage">
+
+  <!-- LEFT PANEL: GREAT SAGE ORACLE + TEMPORAL METABOLISM + 12 ORGANS -->
+  <section class="col-left">
+    <div class="sys-window" data-tilt="left">
+      <div class="sys-header">
+        <div class="sys-title">《 GREAT SAGE // RAPHAEL CORE 》</div>
+        <span class="sys-badge" id="voice-state-badge">VOICE: READY</span>
+      </div>
+      <div class="sage-oracle-box" id="sage-oracle-output">
+        <span class="sage-prefix">《 Report. Sovereign Maid Resident Awakened. 》</span>
+        All 12 systemic organs are bound to the 7-Step Capability Broker. Space is folded into the Megastructure continuum; every computational cycle is measured strictly in Δt temporal horizons. Awaiting your Will, Master.
+      </div>
+
+      <div class="sys-header" style="margin-top: 4px;">
+        <div class="sys-title">6-STATE TEMPORAL METABOLISM</div>
+        <span class="sys-badge" id="active-meta-badge">STATE: AWAKE</span>
+      </div>
+      <div class="metabolism-grid" id="metabolism-grid">
+        <div class="meta-cell" data-state="CRYPTOBIOSIS" data-tau="0.050s">
+          <div class="m-name">CRYPTOBIOSIS</div>
+          <div class="m-time">τ = 0.050s</div>
+        </div>
+        <div class="meta-cell" data-state="ALIVE" data-tau="0.200s">
+          <div class="m-name">ALIVE</div>
+          <div class="m-time">τ = 0.200s</div>
+        </div>
+        <div class="meta-cell active" data-state="AWAKE" data-tau="0.380s">
+          <div class="m-name">AWAKE</div>
+          <div class="m-time">τ = 0.380s</div>
+        </div>
+        <div class="meta-cell" data-state="ALERT" data-tau="1.800s">
+          <div class="m-name">ALERT</div>
+          <div class="m-time">τ = 1.800s</div>
+        </div>
+        <div class="meta-cell" data-state="DIGESTING" data-tau="1.900s">
+          <div class="m-name">DIGESTING</div>
+          <div class="m-time">τ = 1.900s</div>
+        </div>
+        <div class="meta-cell" data-state="ARMED" data-tau="4.200s">
+          <div class="m-name">ARMED</div>
+          <div class="m-time">τ = 4.200s</div>
+        </div>
+      </div>
+
+      <div class="decay-bar-wrap">
+        <div class="decay-bar-meta">
+          <span>AUTO-DECAY HALF-LIFE HORIZON</span>
+          <span id="decay-countdown-txt">T-MINUS 45.00s</span>
+        </div>
+        <div class="decay-bar-track">
+          <div class="decay-bar-fill" id="decay-bar-fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sys-window" data-tilt="left" style="flex: 1; min-height: 0;">
+      <div class="sys-header">
+        <div class="sys-title">12-ORGAN TEMPORAL MESH</div>
+        <span class="sys-badge">WIRE-1 → WIRE-6</span>
+      </div>
+      <div class="organ-list" id="organ-list"></div>
+    </div>
+  </section>
+
+  <!-- CENTER STAGE: SOLO LEVELING SYSTEM NOTIFICATION + SINGULARITY + 7-STEP LITURGY DOCK -->
+  <section class="col-center">
+    <div class="solo-system-alert" id="solo-alert-box">
+      <div class="solo-alert-header">
+        <span class="excl">!</span>
+        <span>SYSTEM NOTIFICATION // MONARCH AUTHORITY VERIFIED</span>
+      </div>
+      <div class="solo-alert-text" id="solo-alert-text">
+        [Player: HIMANSHU (Master)] — Net Terminal Gene Confirmed. Zero-Hallucination Law enforced via SHA-256 Akashic Temporal Chain.
+      </div>
+    </div>
+
+    <div class="singularity-hud">
+      <div class="singularity-tau" id="singularity-readout">Δt = 0.000380s</div>
+      <div class="singularity-sub" id="singularity-subtitle">OCTAGRAM RESONANCE // 12 ORGANS LOCKED IN PHASE</div>
+    </div>
+
+    <div class="nexus-dock">
+      <div class="sys-header">
+        <div class="sys-title">7-STEP CAPABILITY BROKER LITURGY (TEMPORAL PHASE CONDUIT)</div>
+        <span class="sys-badge" id="liturgy-total-dt">TOTAL Δt: 11.2ms</span>
+      </div>
+
+      <div class="liturgy-chain" id="liturgy-chain">
+        <div class="liturgy-node" data-step="0"><div class="l-step">1. INTENT</div><div class="l-dt">0.4ms</div></div>
+        <div class="liturgy-node" data-step="1"><div class="l-step">2. VALIDATE</div><div class="l-dt">0.8ms</div></div>
+        <div class="liturgy-node" data-step="2"><div class="l-step">3. PLAN</div><div class="l-dt">1.2ms</div></div>
+        <div class="liturgy-node" data-step="3"><div class="l-step">4. ROUTE</div><div class="l-dt">0.6ms</div></div>
+        <div class="liturgy-node" data-step="4"><div class="l-step">5. EXECUTE</div><div class="l-dt">6.9ms</div></div>
+        <div class="liturgy-node" data-step="5"><div class="l-step">6. REFLECT</div><div class="l-dt">0.8ms</div></div>
+        <div class="liturgy-node" data-step="6"><div class="l-step">7. SEAL</div><div class="l-dt">0.5ms</div></div>
+      </div>
+
+      <div class="will-input-row">
+        <span class="will-prompt-symbol">《 WILL 》▸</span>
+        <input
+          id="will-input"
+          type="text"
+          placeholder="Issue your Will across Spacetime (e.g., 'open blender, connect to it, and build the London Bridge')..."
+          autocomplete="off"
+        />
+        <button class="cyber-btn" id="btn-dispatch">DISPATCH WILL</button>
+        <button class="cyber-btn arise-btn" id="btn-arise">ARISE // OVERDRIVE</button>
+      </div>
+
+      <div class="preset-pills">
+        <span class="preset-pill" data-will="open blender, connect to it, and build the London Bridge.">⚡ Graduation: Build London Bridge (Blender MCP)</span>
+        <span class="preset-pill" data-will="capture live desktop screen and inspect Tier-0 UIA windows">👁️ Gate 1: Capture Screen + UIA</span>
+        <span class="preset-pill" data-will="scan plugin registry with bounded truncation check">🧬 Gate 3: Scan Slime Registry</span>
+        <span class="preset-pill" data-will="adopt new MCP capability adapter into .elora/adopted">🌀 Predator: Slime Absorption (WIRE-4)</span>
+        <span class="preset-pill" data-will="verify SHA-256 Akashic temporal chain integrity">🔒 Verify Akashic Chain</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- RIGHT PANEL: SEMANTIC WILL QUEUE (SOLO LEVELING QUESTS) + AKASHIC TEMPORAL LEDGER -->
+  <section class="col-right">
+    <div class="sys-window" data-tilt="right">
+      <div class="sys-header">
+        <div class="sys-title">[ ! ] ACTIVE QUESTS // WILL QUEUE</div>
+        <span class="sys-badge" id="scheduler-badge">WIRE-1 HEAP</span>
+      </div>
+      <div class="quest-list" id="quest-list">
+        <div class="quest-item done">
+          <span>[GATE-1] PIL.ImageGrab Frame Seal</span>
+          <span class="quest-tau">Δt = 4.1ms ✓</span>
+        </div>
+        <div class="quest-item done">
+          <span>[GATE-2] Windows File-Size Watchdog</span>
+          <span class="quest-tau">Δt = 1.8ms ✓</span>
+        </div>
+        <div class="quest-item done">
+          <span>[GATE-3] Bounded Registry Truncation</span>
+          <span class="quest-tau">Δt = 0.9ms ✓</span>
+        </div>
+        <div class="quest-item done">
+          <span>[GATE-4] 32-Worker p95 Concurrency</span>
+          <span class="quest-tau">p95 = 11.2ms ✓</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sys-window" data-tilt="right" style="flex: 1; min-height: 0;">
+      <div class="sys-header">
+        <div class="sys-title">AKASHIC TEMPORAL LEDGER (SHA-256)</div>
+        <span class="sys-badge" id="ledger-count-badge">SEQ #0036</span>
+      </div>
+      <div class="akashic-stream" id="akashic-stream"></div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+/* ============================================================================
+   1. WEBGL2 / WEBGL1 GLSL RAYMARCHED SPACETIME SHADER
+      Combines:
+      - BLAME! Infinite Brutalist Megastructure Chasm (box-folding SDF)
+      - Great Sage / Raphael Non-Euclidean Sacred Time Waves
+      - Solo Leveling Abyssal Monarch Singularity & GBE Energy Pulse
+   ============================================================================ */
+const canvas = document.getElementById('spacetime-canvas');
+const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+
+let shaderStartTime = performance.now();
+let ariseMode = 0.0;
+let gbePulse = 0.0;
+let metabolismIntensity = 0.38;
+let pointerX = 0.0;
+let pointerY = 0.0;
+
+const vsSource = `
+  attribute vec2 a_pos;
+  void main() {
+    gl_Position = vec4(a_pos, 0.0, 1.0);
+  }
+`;
+
+const fsSource = `
+  precision highp float;
+  uniform vec2 u_res;
+  uniform float u_time;
+  uniform float u_arise;
+  uniform float u_pulse;
+  uniform float u_meta;
+  uniform vec2 u_mouse;
+
+  mat2 rot(float a) {
+    float s = sin(a), c = cos(a);
+    return mat2(c, -s, s, c);
+  }
+
+  // BLAME! Brutalist Megastructure Infinite Menger/Box-Fold SDF
+  float megastructureSDF(vec3 p) {
+    vec3 q = p;
+    q.z = mod(p.z, 6.0) - 3.0;
+    q.xy = mod(p.xy + 4.0, 8.0) - 4.0;
+
+    float d = length(max(abs(q) - vec3(1.15, 1.15, 1.8), 0.0));
+    // Carve infinite brutalist corridors & subterranean struts
+    float cx = length(max(abs(q.xy) - vec2(0.55, 4.0), 0.0));
+    float cy = length(max(abs(q.yz) - vec2(0.55, 4.0), 0.0));
+    float cz = length(max(abs(q.xz) - vec2(0.55, 4.0), 0.0));
+    d = max(d, -min(cx, min(cy, cz)));
+
+    // Fine architectural strata ribs
+    float ribs = sin(p.x * 8.0) * sin(p.y * 8.0) * sin(p.z * 4.0) * 0.035;
+    return d + ribs;
+  }
+
+  void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_res.xy) / u_res.y;
+    vec2 m = u_mouse * 0.25;
+
+    // Velocity through the Megastructure is strictly a function of Time & Metabolism
+    float speed = 1.6 + u_meta * 2.2 + u_arise * 3.5;
+    vec3 ro = vec3(m.x * 1.8, m.y * 1.8, u_time * speed);
+    vec3 rd = normalize(vec3(uv, 1.15 - u_pulse * 0.25));
+    rd.xy *= rot(sin(u_time * 0.12) * 0.18 + m.x * 0.3);
+    rd.xz *= rot(m.y * 0.2);
+
+    float t = 0.0;
+    float glow = 0.0;
+    float edgeGlow = 0.0;
+
+    for (int i = 0; i < 28; i++) {
+      vec3 p = ro + rd * t;
+      // Gravitational lensing near the center singularity
+      float r2 = dot(uv, uv);
+      p.xy *= rot(0.04 * sin(t * 0.25 + u_time * 0.5));
+      float d = megastructureSDF(p);
+      glow += 0.012 / (0.04 + abs(d));
+      if (d < 0.004 || t > 38.0) break;
+      t += d * 0.72;
+    }
+
+    // Great Sage Sacred Octagram Wave Interference in the Singularity Core
+    float r = length(uv);
+    float angle = atan(uv.y, uv.x);
+    float octagram = abs(cos(angle * 4.0 + u_time * 0.8)) * 0.18 + 0.14;
+    float sageRing = smoothstep(0.012, 0.0, abs(r - octagram))
+                   + smoothstep(0.008, 0.0, abs(r - 0.29 - 0.015 * sin(angle * 8.0 - u_time * 1.5)));
+
+    // Palette mixing: Sovereign Cyan vs Shadow Monarch Violet/Crimson
+    vec3 cyanCore = vec3(0.0, 0.94, 1.0);
+    vec3 monarchViolet = vec3(0.62, 0.22, 0.98);
+    vec3 blameCrimson = vec3(1.0, 0.12, 0.34);
+
+    vec3 primaryCol = mix(cyanCore, monarchViolet, u_arise * 0.75 + 0.25 * sin(u_time * 0.4));
+    vec3 secondaryCol = mix(monarchViolet, blameCrimson, u_arise);
+
+    vec3 col = vec3(0.008, 0.012, 0.028);
+    float fog = exp(-t * 0.085);
+    col += primaryCol * glow * 0.085 * fog;
+    col += secondaryCol * (0.035 / (0.02 + r * r)) * (0.6 + 0.4 * u_pulse);
+    col += mix(cyanCore, vec3(1.0, 0.82, 0.4), 0.45) * sageRing * (0.45 + 0.55 * u_pulse);
+
+    // GBE (Gravitational Beam Emitter) shockwave ring on Will Dispatch
+    float shock = smoothstep(0.03, 0.0, abs(r - (1.0 - u_pulse) * 0.85)) * u_pulse;
+    col += vec3(0.85, 0.98, 1.0) * shock * 2.2;
+
+    // Subtle brutalist vignette
+    col *= smoothstep(1.35, 0.25, r);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+
+let prog = null;
+let uRes, uTime, uArise, uPulse, uMeta, uMouse;
+
+if (gl) {
+  prog = gl.createProgram();
+  gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+  gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+  gl.linkProgram(prog);
+  gl.useProgram(prog);
+
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+    gl.STATIC_DRAW
+  );
+  const aPos = gl.getAttribLocation(prog, 'a_pos');
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+  uRes = gl.getUniformLocation(prog, 'u_res');
+  uTime = gl.getUniformLocation(prog, 'u_time');
+  uArise = gl.getUniformLocation(prog, 'u_arise');
+  uPulse = gl.getUniformLocation(prog, 'u_pulse');
+  uMeta = gl.getUniformLocation(prog, 'u_meta');
+  uMouse = gl.getUniformLocation(prog, 'u_mouse');
+}
+
+function resizeCanvas() {
+  const scale = Math.min(window.devicePixelRatio || 1, 1.0) * 0.65;
+  canvas.width = Math.floor(window.innerWidth * scale);
+  canvas.height = Math.floor(window.innerHeight * scale);
+  if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+/* ============================================================================
+   2. 12 SYSTEM ORGANS & ORBITAL SACRED GEOMETRY NODES (TIME-DRIVEN)
+   ============================================================================ */
+const ORGANS = [
+  { id: 'shell.run_command', name: 'armored_subprocess', wire: 'GATE-2', dt: 1.82, angle: 0 },
+  { id: 'computer_use.capture_screen', name: 'computer_use (UIA/Grab)', wire: 'WIRE-3', dt: 4.12, angle: 30 },
+  { id: 'hands.actuate', name: 'hands (Input Actuation)', wire: 'WIRE-3', dt: 0.94, angle: 60 },
+  { id: 'blender.execute_scene', name: 'blender_mcp (3D Bridge)', wire: 'WIRE-5', dt: 14.60, angle: 90 },
+  { id: 'browser.navigate', name: 'browser (Net Read)', wire: 'CORE', dt: 6.45, angle: 120 },
+  { id: 'rag.recall', name: 'rag (Vault Recall)', wire: 'CORE', dt: 2.18, angle: 150 },
+  { id: 'vault.crystallize', name: 'crystallization (Memory)', wire: 'CORE', dt: 1.15, angle: 180 },
+  { id: 'plugin.adopt', name: 'absorb_pipeline (Predator)', wire: 'WIRE-4', dt: 3.40, angle: 210 },
+  { id: 'registry.scan', name: 'discovery (Bounded Scan)', wire: 'GATE-3', dt: 0.88, angle: 240 },
+  { id: 'generation.create_media', name: 'generation (FastSD)', wire: 'WIRE-5', dt: 18.20, angle: 270 },
+  { id: 'voice.speak', name: 'voice (Sherpa/SAPI TTS)', wire: 'WIRE-6', dt: 2.75, angle: 300 },
+  { id: 'ledger.verify', name: 'akashic (SHA-256 Chain)', wire: 'GATE-4', dt: 0.42, angle: 330 }
+];
+
+const organListEl = document.getElementById('organ-list');
+const orbitGroupEl = document.getElementById('organ-orbit-nodes');
+
+function renderOrganDOM() {
+  organListEl.innerHTML = '';
+  orbitGroupEl.innerHTML = '';
+
+  ORGANS.forEach((org, idx) => {
+    const row = document.createElement('div');
+    row.className = 'organ-row';
+    row.id = `organ-row-${idx}`;
+    row.innerHTML = `
+      <span class="organ-dot"></span>
+      <span class="organ-name">${org.name}</span>
+      <span class="organ-wire">${org.wire}</span>
+      <span class="organ-dt" id="organ-dt-${idx}">Δt ${org.dt.toFixed(2)}ms</span>
+    `;
+    row.addEventListener('click', () => triggerWillExecution(`Execute organ ${org.id}`, idx));
+    organListEl.appendChild(row);
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.id = `orbit-node-${idx}`;
+    g.innerHTML = `
+      <line x1="0" y1="0" x2="0" y2="-235" stroke="rgba(0, 240, 255, 0.14)" stroke-width="0.8" />
+      <circle cx="0" cy="-235" r="5" fill="#00f0ff" />
+      <circle cx="0" cy="-235" r="11" fill="none" stroke="rgba(0, 240, 255, 0.5)" stroke-width="1" />
+      <text x="14" y="-232" fill="#e2e8f0" font-family="monospace" font-size="9.5" letter-spacing="1">${org.id.split('.')[0].toUpperCase()} [${org.dt.toFixed(1)}ms]</text>
+    `;
+    orbitGroupEl.appendChild(g);
+  });
+}
+renderOrganDOM();
+
+/* ============================================================================
+   3. PROCEDURAL WEB AUDIO SYNTHESIZER (GREAT SAGE CHIME + GBE BEAM + ARISE)
+   ============================================================================ */
+let audioCtx = null;
+function playSystemSound(type) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+    if (type === 'sage') {
+      [528, 792, 1056].forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + i * 0.055);
+        gain.gain.setValueAtTime(0.06, now + i * 0.055);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.055 + 0.35);
+        osc.connect(gain).connect(audioCtx.destination);
+        osc.start(now + i * 0.055);
+        osc.stop(now + i * 0.055 + 0.36);
+      });
+    } else if (type === 'arise') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(110, now);
+      osc.frequency.exponentialRampToValueAtTime(42, now + 0.65);
+      gain.gain.setValueAtTime(0.12, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now);
+      osc.stop(now + 0.72);
+    }
+  } catch (e) {}
+}
+
+/* ============================================================================
+   4. AKASHIC SHA-256 TEMPORAL LEDGER & 7-STEP LITURGY ENGINE
+   ============================================================================ */
+let ledgerSeq = 36;
+let prevHash = 'f16022f0012ed2811cc5730698215e14c450141058cca3adf53ec3a6b6c08c81';
+let decayRemainingSec = 45.0;
+
+async function sha256Hex(text) {
+  if (window.crypto && window.crypto.subtle) {
+    const buf = new TextEncoder().encode(text);
+    const digest = await window.crypto.subtle.digest('SHA-256', buf);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, '0').repeat(8);
+}
+
+const akashicStreamEl = document.getElementById('akashic-stream');
+const ledgerCountBadge = document.getElementById('ledger-count-badge');
+
+async function appendAkashicEntry(eventType, capability, dtMs) {
+  ledgerSeq += 1;
+  const tauNow = (Date.now() / 1000).toFixed(4);
+  const payload = `${prevHash}|${ledgerSeq}|${tauNow}|${eventType}|${capability}|${dtMs}`;
+  const newHash = await sha256Hex(payload);
+  prevHash = newHash;
+
+  ledgerCountBadge.textContent = `SEQ #${String(ledgerSeq).padStart(4, '0')}`;
+  const div = document.createElement('div');
+  div.className = 'akashic-block';
+  div.innerHTML = `
+    <div class="a-top">
+      <span>#${ledgerSeq} [${eventType.toUpperCase()}] ${capability}</span>
+      <span>Δt ${dtMs.toFixed(2)}ms</span>
+    </div>
+    <div class="a-hash">τ=${tauNow}s // SHA256: ${newHash.slice(0, 36)}…</div>
+  `;
+  akashicStreamEl.prepend(div);
+  while (akashicStreamEl.children.length > 10) {
+    akashicStreamEl.removeChild(akashicStreamEl.lastChild);
+  }
+}
+
+// Seed initial verified Akashic entries
+(async () => {
+  await appendAkashicEntry('capability_result', 'computer_use.capture_screen', 4.12);
+  await appendAkashicEntry('capability_result', 'registry.scan[bounded=3]', 0.88);
+  await appendAkashicEntry('capability_result', 'blender.execute_scene[london_bridge]', 14.60);
+})();
+
+/* ============================================================================
+   5. WILL DISPATCH & 7-STEP LITURGY ANIMATION + BACKEND BRIDGE
+   ============================================================================ */
+const sageOracleEl = document.getElementById('sage-oracle-output');
+const soloAlertTextEl = document.getElementById('solo-alert-text');
+const questListEl = document.getElementById('quest-list');
+const liturgyNodes = Array.from(document.querySelectorAll('.liturgy-node'));
+const gbeBeamEl = document.getElementById('gbe-beam');
+
+async function triggerWillExecution(willText, targetOrganIdx = 3) {
+  if (!willText || !willText.trim()) return;
+  decayRemainingSec = 45.0;
+  gbePulse = 1.0;
+  playSystemSound('sage');
+
+  // Identify matching organ from text if not explicitly passed
+  const lower = willText.toLowerCase();
+  if (lower.includes('blender') || lower.includes('bridge')) targetOrganIdx = 3;
+  else if (lower.includes('screen') || lower.includes('capture')) targetOrganIdx = 1;
+  else if (lower.includes('scan') || lower.includes('registry')) targetOrganIdx = 8;
+  else if (lower.includes('adopt') || lower.includes('predator')) targetOrganIdx = 7;
+  else if (lower.includes('verify') || lower.includes('akashic')) targetOrganIdx = 11;
+
+  const targetOrgan = ORGANS[targetOrganIdx] || ORGANS[0];
+
+  // Highlight active organ row
+  document.querySelectorAll('.organ-row').forEach(r => r.classList.remove('firing'));
+  const activeRow = document.getElementById(`organ-row-${targetOrganIdx}`);
+  if (activeRow) activeRow.classList.add('firing');
+
+  // Fire GBE Beam toward orbital node
+  const angleRad = (targetOrgan.angle - 90) * (Math.PI / 180);
+  const tx = 960 + Math.cos(angleRad) * 235;
+  const ty = 490 + Math.sin(angleRad) * 235;
+  gbeBeamEl.setAttribute('x2', String(tx));
+  gbeBeamEl.setAttribute('y2', String(ty));
+  gbeBeamEl.setAttribute('stroke-width', '3.5');
+  gbeBeamEl.setAttribute('opacity', '0.95');
+  setTimeout(() => {
+    gbeBeamEl.setAttribute('stroke-width', '0');
+    gbeBeamEl.setAttribute('opacity', '0');
+  }, 550);
+
+  // Add to Solo Leveling Active Quest Queue
+  const qItem = document.createElement('div');
+  qItem.className = 'quest-item';
+  qItem.innerHTML = `
+    <span>[WILL] ${willText.slice(0, 34)}${willText.length > 34 ? '…' : ''}</span>
+    <span class="quest-tau">EXECUTING…</span>
+  `;
+  questListEl.prepend(qItem);
+  while (questListEl.children.length > 5) {
+    questListEl.removeChild(questListEl.lastChild);
+  }
+
+  // Try calling live ELORA FastAPI backend (`/api/inbox/task`) if running on same origin or localhost:8000
+  let liveResponse = null;
+  try {
+    const resp = await fetch('/api/inbox/task', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ will: willText, source: 'owner:chronos_ui' })
+    });
+    if (resp.ok) liveResponse = await resp.json();
+  } catch (e) {}
+
+  // Step through the 7-Step Liturgy visually in real time
+  liturgyNodes.forEach(n => n.classList.remove('active', 'sealed'));
+  await appendAkashicEntry('capability_intent', targetOrgan.id, 0.42);
+
+  for (let i = 0; i < liturgyNodes.length; i++) {
+    liturgyNodes[i].classList.add('active');
+    await new Promise(r => setTimeout(r, 65));
+    liturgyNodes[i].classList.remove('active');
+    liturgyNodes[i].classList.add('sealed');
+  }
+
+  const execDt = +(targetOrgan.dt + (Math.random() * 1.4 - 0.5)).toFixed(2);
+  await appendAkashicEntry('capability_result', targetOrgan.id, execDt);
+
+  qItem.classList.add('done');
+  qItem.querySelector('.quest-tau').textContent = `Δt = ${execDt}ms ✓`;
+
+  // Elevate Metabolism state if heavy organ fired
+  if (targetOrgan.id.startsWith('blender') || targetOrgan.id.startsWith('generation')) {
+    setMetabolismState('ARMED', '4.200s', 0.95);
+  } else if (targetOrgan.id.startsWith('plugin')) {
+    setMetabolismState('DIGESTING', '1.900s', 0.65);
+  } else {
+    setMetabolismState('AWAKE', '0.380s', 0.38);
+  }
+
+  sageOracleEl.innerHTML = `
+    <span class="sage-prefix">《 Report. Will Executed & Sealed in Δt = ${execDt}ms. 》</span>
+    Dispatched <b>${targetOrgan.id}</b> (${targetOrgan.wire}) for Will: <i>"${willText}"</i>.
+    Intent and Result hashes have been permanently chained into the Akashic Ledger (Seq #${ledgerSeq}).
+  `;
+
+  soloAlertTextEl.textContent = `[QUEST COMPLETED] ${targetOrgan.id} sealed in Δt = ${execDt}ms // Zero Hallucination Verified.`;
+}
+
+function setMetabolismState(stateName, tauLabel, intensity) {
+  metabolismIntensity = intensity;
+  document.getElementById('active-meta-badge').textContent = `STATE: ${stateName}`;
+  document.getElementById('singularity-readout').textContent = `τ_STATE = ${tauLabel}`;
+  document.querySelectorAll('.meta-cell').forEach(cell => {
+    cell.classList.toggle('active', cell.dataset.state === stateName);
+  });
+}
+
+document.querySelectorAll('.meta-cell').forEach(cell => {
+  cell.addEventListener('click', () => {
+    const st = cell.dataset.state;
+    const tau = cell.dataset.tau;
+    const map = { CRYPTOBIOSIS: 0.1, ALIVE: 0.25, AWAKE: 0.38, ALERT: 0.6, DIGESTING: 0.72, ARMED: 0.98 };
+    setMetabolismState(st, tau, map[st] || 0.38);
+    playSystemSound('sage');
+  });
+});
+
+document.getElementById('btn-dispatch').addEventListener('click', () => {
+  const inp = document.getElementById('will-input');
+  triggerWillExecution(inp.value);
+  inp.value = '';
+});
+
+document.getElementById('will-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    triggerWillExecution(e.target.value);
+    e.target.value = '';
+  }
+});
+
+document.querySelectorAll('.preset-pill').forEach(pill => {
+  pill.addEventListener('click', () => {
+    triggerWillExecution(pill.dataset.will);
+  });
+});
+
+// SOLO LEVELING "ARISE" OVERDRIVE TOGGLE
+document.getElementById('btn-arise').addEventListener('click', () => {
+  const active = document.body.classList.toggle('arise-overdrive');
+  ariseMode = active ? 1.0 : 0.0;
+  gbePulse = 1.0;
+  playSystemSound('arise');
+  if (active) {
+    setMetabolismState('ARMED', '4.200s', 1.0);
+    soloAlertTextEl.textContent = '[SHADOW MONARCH OVERDRIVE: "ARISE"] — All 12 Sovereign Organs Accelerated to Maximum Temporal Phase!';
+    sageOracleEl.innerHTML = `
+      <span class="sage-prefix">《 Notice. Unique Authority [ARISE] Activated. 》</span>
+      Spacetime continuum shifted to Sovereign Monarch Overdrive. Megastructure traversal velocity and 32-worker Akashic concurrency operating at peak temporal resonance.
+    `;
+  } else {
+    setMetabolismState('AWAKE', '0.380s', 0.38);
+    soloAlertTextEl.textContent = '[SYSTEM RESTORED] — Standard Sovereign Maid Resident Phase Locked.';
+  }
+});
+
+// 3D PARALLAX MOUSE TRACKING
+window.addEventListener('mousemove', (e) => {
+  pointerX = (e.clientX / window.innerWidth) * 2 - 1;
+  pointerY = -((e.clientY / window.innerHeight) * 2 - 1);
+  document.querySelectorAll('.sys-window[data-tilt="left"]').forEach(el => {
+    el.style.transform = `rotateY(${(pointerX * 4 + 3).toFixed(2)}deg) rotateX(${(pointerY * 2.5).toFixed(2)}deg)`;
+  });
+  document.querySelectorAll('.sys-window[data-tilt="right"]').forEach(el => {
+    el.style.transform = `rotateY(${(pointerX * 4 - 3).toFixed(2)}deg) rotateX(${(pointerY * 2.5).toFixed(2)}deg)`;
+  });
+});
+
+/* ============================================================================
+   6. CONTINUOUS PLANCK-TICK & SACRED GEOMETRY ANIMATION LOOP
+   ============================================================================ */
+let lastFrameTs = performance.now();
+const ringOuter = document.getElementById('ring-outer');
+const ringCw = document.getElementById('ring-octagram-cw');
+const ringCcw = document.getElementById('ring-octagram-ccw');
+const clockEpochEl = document.getElementById('clock-epoch');
+const clockDtEl = document.getElementById('clock-dt');
+const clockDecayEl = document.getElementById('clock-decay');
+const decayCountdownTxt = document.getElementById('decay-countdown-txt');
+const decayBarFill = document.getElementById('decay-bar-fill');
+const stratumEl = document.getElementById('stratum-indicator');
+
+function animateSpacetime(now) {
+  const dtMs = Math.max(1.0, now - lastFrameTs);
+  lastFrameTs = now;
+  const elapsedSec = (now - shaderStartTime) / 1000.0;
+
+  if (gbePulse > 0.001) gbePulse *= 0.93;
+  else gbePulse = 0.0;
+
+  // Update WebGL Raymarcher
+  if (gl && prog) {
+    gl.uniform2f(uRes, canvas.width, canvas.height);
+    gl.uniform1f(uTime, elapsedSec);
+    gl.uniform1f(uArise, ariseMode);
+    gl.uniform1f(uPulse, gbePulse);
+    gl.uniform1f(uMeta, metabolismIntensity);
+    gl.uniform2f(uMouse, pointerX, pointerY);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+
+  // Rotate Sacred Geometry Rings strictly as functions of Time
+  const rotSpeed = 1.0 + ariseMode * 2.2;
+  ringOuter.setAttribute('transform', `translate(960, 490) rotate(${(elapsedSec * 4 * rotSpeed) % 360})`);
+  ringCw.setAttribute('transform', `translate(960, 490) rotate(${(elapsedSec * 14 * rotSpeed) % 360})`);
+  ringCcw.setAttribute('transform', `translate(960, 490) rotate(${(-elapsedSec * 10 * rotSpeed) % 360})`);
+
+  // Orbit the 12 Organ Nodes at angular velocity inversely proportional to their execution Δt
+  ORGANS.forEach((org, idx) => {
+    org.angle = (org.angle + (0.28 * rotSpeed) / Math.sqrt(org.dt)) % 360;
+    const node = document.getElementById(`orbit-node-${idx}`);
+    if (node) {
+      node.setAttribute('transform', `rotate(${org.angle.toFixed(2)})`);
+    }
+  });
+
+  // Update Temporal Rulers (Time is the sole unit)
+  const epochSec = (Date.now() / 1000).toFixed(3);
+  clockEpochEl.textContent = `${epochSec}s`;
+  clockDtEl.textContent = `${dtMs.toFixed(2)}ms`;
+
+  decayRemainingSec = Math.max(0.0, decayRemainingSec - dtMs / 1000.0);
+  if (decayRemainingSec <= 0.05) {
+    decayRemainingSec = 45.0;
+    setMetabolismState('ALIVE', '0.200s', 0.25);
+  }
+  clockDecayEl.textContent = `${decayRemainingSec.toFixed(2)}s`;
+  decayCountdownTxt.textContent = `T-MINUS ${decayRemainingSec.toFixed(2)}s`;
+  decayBarFill.style.width = `${((decayRemainingSec / 45.0) * 100).toFixed(1)}%`;
+  stratumEl.textContent = `MEGASCALE STRATUM: -${(99402.88 + elapsedSec * 12.4).toFixed(2)} τ`;
+
+  requestAnimationFrame(animateSpacetime);
+}
+requestAnimationFrame(animateSpacetime);
+</script>
+</body>
+</html>

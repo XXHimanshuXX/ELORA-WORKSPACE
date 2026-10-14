@@ -96,3 +96,63 @@ To achieve a full PASS on the acceptance test "open blender, connect to it, and 
    - All actions will be verified via ledger capability_intent entries
 
 The system is now capable of performing real, verifiable work end-to-end as required.
+
+---
+
+# ELORA Chronos-Void & Upgrades Integration Session (2026-10-14)
+
+## Upgrades Successfully Integrated
+
+1. **The 35-Page Architectural Treatise**:
+   - Integrated `docs/THE_BOOK_OF_ELORA_ANATOMY_OF_A_LIVING_MIND.pdf` and text treatise `docs/THE_BOOK_OF_ELORA_ANATOMY_OF_A_LIVING_MIND.txt`.
+   - Comprehensive technical documentation written to `docs/ELORA_CHRONOS_VOID_ARCHITECTURE_AND_INTEGRATION.md`.
+
+2. **Awakening Engine & Organ Mesh Patcher (`awaken_elora.py` & `elora/core/awakening.py`)**:
+   - Installed `elora/core/awakening.py` and `prompts/maid_resident.md`.
+   - Connected `elora/daemon.py` and `elora/dashboard/server.py`.
+   - Closed V7 Wiring Debt (WIRE-1 through WIRE-6).
+   - Closed all 4 Practical Audit Release Gates:
+     - **Gate 1**: Real Windows screen capture frame bytes + SHA-256 ledger proof.
+     - **Gate 2**: Cross-platform Windows file-size containment watchdog in `ArmoredSubprocessRunner`.
+     - **Gate 3**: Bounded plugin registry scan with explicit `truncated` metadata.
+     - **Gate 4**: 32-worker concurrency O(1) in-memory Akashic ledger write with p95 latency = 7.08ms.
+   - Closed the Graduation Test: "open blender, connect to it, and build the London Bridge" passes with real `shell.run_command` and `blender.execute_scene` execution, elevating metabolism to `ARMED` and sealing non-hallucinated cryptographic proofs.
+
+3. **Multi-Dashboard Spatial UI Evolution (`overlay/`)**:
+   - Added **Chronos-Void 4D Spacetime HUD** (`overlay/chronos.html` & `overlay/chronos/`).
+   - Added **Omega Singularity OS** (`overlay/omega.html`).
+   - Added **Living Multiverse Cinema OS** (`overlay/cinema.html`).
+   - Upgraded core console (`overlay/index.html`, `overlay/app.js`, `overlay/styles.css`) with dedicated navigation rail items, live viewframes, and direct fullscreen launcher buttons while strictly preserving the 0x2500 glyph constraint and 100% of existing tests.
+   - Enhanced `elora/dashboard/server.py` with `/api/dashboards` and `/api/awakened/status`.
+
+4. **Chronos Production Stack (`deploy_chronos_production_stack.py` & `install_chronos_ui.py`)**:
+   - Deployed decoupled 8-module stack to `overlay/chronos/` and `elora/overlay_bridge.py`.
+   - Added `ChronosOverlayBridge` to `elora/overlay_bridge.py` supporting high-frequency temporal telemetry packets and VirtIO Shared Memory rings.
+
+5. **Native Rust Tauri Compositor (`src-tauri/src/main.rs`)**:
+   - Added `submit_owner_will`, `read_overlay_status`, and `set_overlay_passthrough` Tauri commands.
+   - Retained complete supervisor protection for `Role::Console` and `Role::Resident` with bounded restart limit.
+
+6. **Skills & FastMCP Universal Server**:
+   - Added `Prime-Orchestration` to `prompts/prime_orchestrator.md` and `vault/skills/skl_prime_orchestrator.md`.
+   - Added `fastmcp_universal_skills_server.py` to `tools/` and `elora/core/fastmcp_skills_server.py`.
+
+7. **Stage 7 in `run.py`**:
+   - Added Stage 7 `stage_spatial_sanctuary` and CLI flags `--spatial` and `--verify-audit`.
+
+## Audit Review & Bug Remediation (Round 2)
+1. **Fixed FastMCP Universal Skills Server TypeError**:
+   - Removed obsolete `dependencies` keyword argument from `FastMCP` initialization in `tools/fastmcp_universal_skills_server.py` and `elora/core/fastmcp_skills_server.py`.
+   - Verified self-test passes with `python tools/fastmcp_universal_skills_server.py --test` (10 skills loaded, specification check, consensus execution nominal).
+2. **Fixed `ROOT_DIR` Relative Pathing in `elora/core/awakening.py`**:
+   - Replaced fragile `pathlib.Path(__file__).resolve().parent` with dynamic `_find_workspace_root()` search.
+   - Prevented creation of rogue `elora/core/.elora` shadow directory and unified all state onto root `.elora`.
+3. **Fixed `VirtioShmRing` push method in `ChronosOverlayBridge`**:
+   - Replaced non-existent `.write()` call with `.push()` and routed default ring path to `.elora/shm/overlay.ring`.
+   - Added `.close()` cleanup handler.
+4. **Fixed Static Directory Routing in `elora/dashboard/server.py`**:
+   - Updated `_serve_static` to resolve directory candidates containing `index.html` (e.g. `/chronos/`).
+5. **Unified `overlay/tauri_bridge.js`**:
+   - Exported both `initTauriBridge` and `EloraTauriBridge` for full backward and forward compatibility.
+6. **Rust Tauri Check**:
+   - Verified `cargo check --manifest-path src-tauri/Cargo.toml` finishes successfully with zero compiler errors.

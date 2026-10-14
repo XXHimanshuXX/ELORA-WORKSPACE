@@ -50,3 +50,5 @@ Python/
 b_debug.txt
 proof.txt
 foo.py
+scratch/
+.pytest-tmp-codex/

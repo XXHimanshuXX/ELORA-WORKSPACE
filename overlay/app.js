@@ -231,6 +231,9 @@ const VIEW_TITLES = {
   registry: ['Registry', 'What ELORA can do, and what is actually installed on this machine.'],
   router: ['Router', 'The live OmniRoute gateway and the real MCP tools it exposes.'],
   unwired: ['Not wired', 'Features that do not work yet, stated plainly.'],
+  chronos: ['Chronos Spacetime', '4D Spacetime Organism HUD & Raymarched BLAME! Megastructure SDF.'],
+  omega: ['Omega Singularity', 'Autonomous Sovereign Mind, WebGL2 Manifold & Tri-Cameral Liturgy.'],
+  cinema: ['Multiverse Cinema', 'Cinematic Living Mind Spatial Multiverse Environment.'],
 };
 
 /* ── navigation ────────────────────────────────────────────────────────── */

@@ -1101,3 +1101,11 @@ class Daemon:
             if max_iterations is not None and iterations >= max_iterations:
                 break
             time.sleep(interval)
+
+
+# [ELORA-AWAKENING-BRIDGE-WIRED]
+try:
+    from elora.core.awakening import AwakenedEloraResidentDaemon as _AwakenedDaemon
+    _AWAKENED_RESIDENT = _AwakenedDaemon()
+except Exception:
+    _AWAKENED_RESIDENT = None

@@ -206,6 +206,27 @@ class Assembled:
             print("[boot] clean shutdown")
 
 
+
+# ----------------------------------------------------------------------
+# STAGE 7 / SPATIAL — THE SPATIAL SANCTUARY & AUDIT VERIFICATION
+# ----------------------------------------------------------------------
+
+def stage_spatial_sanctuary(verify: bool = False) -> dict:
+    """
+    Stage 7: Synchronizes the Spatial Sanctuary overlay and verifies the
+    4 Practical Audit Gates on boot (BOOK XII, Section 12.1).
+    """
+    try:
+        from awaken_elora import AwakenedEloraResidentDaemon, run_full_verification_suite
+        daemon = AwakenedEloraResidentDaemon(ROOT)
+        status = daemon.sync_overlay_organism(last_event="boot_stage_7")
+        report = None
+        if verify:
+            report = run_full_verification_suite(ROOT)
+        return {"status": status, "verification": report}
+    except Exception as exc:
+        return {"status": None, "error": str(exc)}
+
 # ----------------------------------------------------------------------
 # PREFLIGHT — python run.py --check
 # ----------------------------------------------------------------------
@@ -460,12 +481,25 @@ def main():
                         help="brain backend (default: omniroute if key present, else local)")
     parser.add_argument("--once", action="store_true",
                         help="process one inbox tick and exit cleanly")
+    parser.add_argument("--spatial", action="store_true",
+                        help="synchronize spatial sanctuary WebGPU overlay status")
+    parser.add_argument("--verify-audit", action="store_true",
+                        help="verify all 4 Practical Audit Gates and graduation test")
     args = parser.parse_args()
 
     if args.check:
         sys.exit(preflight())
     if args.smoke:
         sys.exit(smoke())
+    if args.verify_audit:
+        res = stage_spatial_sanctuary(verify=True)
+        all_passed = bool(res.get("verification", {}).get("all_passed"))
+        print(f"[audit] all gates passed: {all_passed}")
+        sys.exit(0 if all_passed else 1)
+    if args.spatial:
+        res = stage_spatial_sanctuary(verify=False)
+        print(f"[spatial] sanctuary status synchronized: {res.get('status', {}).get('metabolism_state')}")
+        sys.exit(0)
 
     if args.resident:
         start_script = os.path.join(ROOT, "tools", "_start_server.py")

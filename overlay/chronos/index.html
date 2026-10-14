@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ELORA // CHRONOS-VOID SOVEREIGN OS [MODULAR PRODUCTION STACK]</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+  <canvas id="spacetime-canvas"></canvas>
+
+  <svg id="sacred-geometry-layer" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <radialGradient id="core-glow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.32" />
+        <stop offset="55%" stop-color="#9d4edd" stop-opacity="0.08" />
+        <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+      </radialGradient>
+      <filter id="neon-bloom" x="-30%" y="-30%" width="160%" height="160%">
+        <feGaussianBlur stdDeviation="3.5" result="blur" />
+        <feMerge>
+          <feMergeNode in="blur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+    </defs>
+
+    <circle cx="960" cy="490" r="360" fill="url(#core-glow)" />
+
+    <g id="ring-outer" transform="translate(960, 490)" filter="url(#neon-bloom)">
+      <circle r="310" fill="none" stroke="rgba(0, 240, 255, 0.22)" stroke-width="1" stroke-dasharray="6 14 28 14" />
+      <circle r="286" fill="none" stroke="rgba(0, 240, 255, 0.35)" stroke-width="1.2" stroke-dasharray="2 18" />
+    </g>
+
+    <g id="ring-octagram-cw" transform="translate(960, 490)" filter="url(#neon-bloom)">
+      <rect x="-185" y="-185" width="370" height="370" fill="none" stroke="rgba(0, 240, 255, 0.42)" stroke-width="1.2" />
+      <rect x="-185" y="-185" width="370" height="370" fill="none" stroke="rgba(255, 209, 102, 0.38)" stroke-width="1.2" transform="rotate(45)" />
+      <circle r="185" fill="none" stroke="rgba(0, 240, 255, 0.25)" stroke-width="1" />
+    </g>
+
+    <g id="ring-octagram-ccw" transform="translate(960, 490)" filter="url(#neon-bloom)">
+      <polygon points="0,-240 207.8,120 -207.8,120" fill="none" stroke="rgba(157, 78, 221, 0.45)" stroke-width="1.2" />
+      <polygon points="0,240 207.8,-120 -207.8,-120" fill="none" stroke="rgba(0, 240, 255, 0.45)" stroke-width="1.2" />
+      <circle r="126" fill="none" stroke="rgba(255, 209, 102, 0.45)" stroke-width="1.3" stroke-dasharray="12 8 2 8" />
+    </g>
+
+    <!-- 4D Hypercube (Tesseract) Stereographic Projection Path -->
+    <g transform="translate(960, 490)" filter="url(#neon-bloom)">
+      <path id="tesseract-4d-wireframe" d="" fill="none" stroke="rgba(0, 240, 255, 0.42)" stroke-width="1.1" />
+    </g>
+
+    <g id="organ-orbit-nodes" transform="translate(960, 490)" filter="url(#neon-bloom)"></g>
+    <line id="gbe-beam" x1="960" y1="490" x2="960" y2="490" stroke="#00f0ff" stroke-width="0" opacity="0" filter="url(#neon-bloom)" />
+  </svg>
+
+  <div class="scanline-overlay"></div>
+
+  <header class="temporal-ruler-top">
+    <div class="ruler-brand">
+      <span>ELORA // SOVEREIGN MAID RESIDENT</span>
+      <span class="stratum-tag" id="stratum-indicator">MEGASCALE STRATUM: -99,402.88 τ</span>
+      <span class="stratum-tag" id="bridge-mode-tag">ENGINE: INITIALIZING</span>
+    </div>
+    <div class="planck-clock-strip">
+      <div class="time-metric">
+        <span class="lbl">EPOCH τ:</span>
+        <span class="val" id="clock-epoch">1791968803.000s</span>
+      </div>
+      <div class="time-metric">
+        <span class="lbl">FRAME Δt:</span>
+        <span class="val" id="clock-dt">16.67ms</span>
+      </div>
+      <div class="time-metric">
+        <span class="lbl">P95 HORIZON:</span>
+        <span class="val" id="clock-p95">11.24ms</span>
+      </div>
+      <div class="time-metric">
+        <span class="lbl">METABOLISM τ_DECAY:</span>
+        <span class="val" id="clock-decay">45.00s</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="hud-stage">
+    <section class="col-left">
+      <div class="sys-window" data-tilt="left">
+        <div class="sys-header">
+          <div class="sys-title">《 GREAT SAGE // RAPHAEL CORE 》</div>
+          <span class="sys-badge" id="voice-state-badge">VOICE: READY</span>
+        </div>
+        <div class="sage-oracle-box" id="sage-oracle-output">
+          <span class="sage-prefix">《 Report. Modular 8-Layer Architecture Online. 》</span>
+          All 12 systemic organs, the 4D Tesseract stereographic manifold, and the 7-Step Capability Broker are synchronized. Space is folded into the Megastructure continuum; Time (τ) is the sole unit.
+        </div>
+
+        <div class="sys-header" style="margin-top: 4px;">
+          <div class="sys-title">6-STATE TEMPORAL METABOLISM</div>
+          <span class="sys-badge" id="active-meta-badge">STATE: AWAKE</span>
+        </div>
+        <div class="metabolism-grid" id="metabolism-grid">
+          <div class="meta-cell" data-state="CRYPTOBIOSIS" data-tau="0.050s"><div class="m-name">CRYPTOBIOSIS</div><div class="m-time">τ = 0.050s</div></div>
+          <div class="meta-cell" data-state="ALIVE" data-tau="0.200s"><div class="m-name">ALIVE</div><div class="m-time">τ = 0.200s</div></div>
+          <div class="meta-cell active" data-state="AWAKE" data-tau="0.380s"><div class="m-name">AWAKE</div><div class="m-time">τ = 0.380s</div></div>
+          <div class="meta-cell" data-state="ALERT" data-tau="1.800s"><div class="m-name">ALERT</div><div class="m-time">τ = 1.800s</div></div>
+          <div class="meta-cell" data-state="DIGESTING" data-tau="1.900s"><div class="m-name">DIGESTING</div><div class="m-time">τ = 1.900s</div></div>
+          <div class="meta-cell" data-state="ARMED" data-tau="4.200s"><div class="m-name">ARMED</div><div class="m-time">τ = 4.200s</div></div>
+        </div>
+
+        <div class="decay-bar-wrap">
+          <div class="decay-bar-meta">
+            <span>AUTO-DECAY HALF-LIFE HORIZON</span>
+            <span id="decay-countdown-txt">T-MINUS 45.00s</span>
+          </div>
+          <div class="decay-bar-track">
+            <div class="decay-bar-fill" id="decay-bar-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sys-window" data-tilt="left" style="flex: 1; min-height: 0;">
+        <div class="sys-header">
+          <div class="sys-title">12-ORGAN TEMPORAL MESH</div>
+          <span class="sys-badge">WIRE-1 → WIRE-6</span>
+        </div>
+        <div class="organ-list" id="organ-list"></div>
+      </div>
+    </section>
+
+    <section class="col-center">
+      <div class="solo-system-alert">
+        <div class="solo-alert-header">
+          <span class="excl">!</span>
+          <span>SYSTEM NOTIFICATION // MONARCH AUTHORITY VERIFIED</span>
+        </div>
+        <div class="solo-alert-text" id="solo-alert-text">
+          [Player: HIMANSHU (Master)] — Net Terminal Gene Confirmed. 4D Tesseract & SHA-256 Akashic Temporal Chain Active.
+        </div>
+      </div>
+
+      <div class="singularity-hud">
+        <div class="singularity-tau" id="singularity-readout">Δt = 0.000380s</div>
+        <div class="singularity-sub" id="singularity-subtitle">4D TESSERACT × OCTAGRAM RESONANCE // 12 ORGANS LOCKED</div>
+      </div>
+
+      <div class="nexus-dock">
+        <div class="sys-header">
+          <div class="sys-title">7-STEP CAPABILITY BROKER LITURGY (TEMPORAL PHASE CONDUIT)</div>
+          <span class="sys-badge">TOTAL Δt: 11.2ms</span>
+        </div>
+
+        <div class="liturgy-chain" id="liturgy-chain">
+          <div class="liturgy-node" data-step="0"><div class="l-step">1. INTENT</div><div class="l-dt">0.4ms</div></div>
+          <div class="liturgy-node" data-step="1"><div class="l-step">2. VALIDATE</div><div class="l-dt">0.8ms</div></div>
+          <div class="liturgy-node" data-step="2"><div class="l-step">3. PLAN</div><div class="l-dt">1.2ms</div></div>
+          <div class="liturgy-node" data-step="3"><div class="l-step">4. ROUTE</div><div class="l-dt">0.6ms</div></div>
+          <div class="liturgy-node" data-step="4"><div class="l-step">5. EXECUTE</div><div class="l-dt">6.9ms</div></div>
+          <div class="liturgy-node" data-step="5"><div class="l-step">6. REFLECT</div><div class="l-dt">0.8ms</div></div>
+          <div class="liturgy-node" data-step="6"><div class="l-step">7. SEAL</div><div class="l-dt">0.5ms</div></div>
+        </div>
+
+        <div class="will-input-row">
+          <span class="will-prompt-symbol">《 WILL 》▸</span>
+          <input
+            id="will-input"
+            type="text"
+            placeholder="Issue your Will across Spacetime (e.g., 'open blender, connect to it, and build the London Bridge')..."
+            autocomplete="off"
+          />
+          <button class="cyber-btn" id="btn-dispatch">DISPATCH WILL</button>
+          <button class="cyber-btn arise-btn" id="btn-arise">ARISE // OVERDRIVE</button>
+        </div>
+
+        <div class="preset-pills">
+          <span class="preset-pill" data-will="open blender, connect to it, and build the London Bridge.">⚡ Graduation: Build London Bridge (Blender MCP)</span>
+          <span class="preset-pill" data-will="capture live desktop screen and inspect Tier-0 UIA windows">👁️ Gate 1: Capture Screen + UIA</span>
+          <span class="preset-pill" data-will="scan plugin registry with bounded truncation check">🧬 Gate 3: Scan Slime Registry</span>
+          <span class="preset-pill" data-will="adopt new MCP capability adapter into .elora/adopted">🌀 Predator: Slime Absorption (WIRE-4)</span>
+          <span class="preset-pill" data-will="verify SHA-256 Akashic temporal chain integrity">🔒 Verify Akashic Chain</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="col-right">
+      <div class="sys-window" data-tilt="right">
+        <div class="sys-header">
+          <div class="sys-title">[ ! ] ACTIVE QUESTS // WILL QUEUE</div>
+          <span class="sys-badge">WIRE-1 HEAP</span>
+        </div>
+        <div class="quest-list" id="quest-list">
+          <div class="quest-item done"><span>[GATE-1] PIL.ImageGrab Frame Seal</span><span class="quest-tau">Δt = 4.1ms ✓</span></div>
+          <div class="quest-item done"><span>[GATE-2] Windows File-Size Watchdog</span><span class="quest-tau">Δt = 1.8ms ✓</span></div>
+          <div class="quest-item done"><span>[GATE-3] Bounded Registry Truncation</span><span class="quest-tau">Δt = 0.9ms ✓</span></div>
+          <div class="quest-item done"><span>[GATE-4] 32-Worker p95 Concurrency</span><span class="quest-tau">p95 = 11.2ms ✓</span></div>
+        </div>
+      </div>
+
+      <div class="sys-window" data-tilt="right" style="flex: 1; min-height: 0;">
+        <div class="sys-header">
+          <div class="sys-title">AKASHIC TEMPORAL LEDGER (SHA-256)</div>
+          <span class="sys-badge" id="ledger-count-badge">SEQ #0036</span>
+        </div>
+        <div class="akashic-stream" id="akashic-stream"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

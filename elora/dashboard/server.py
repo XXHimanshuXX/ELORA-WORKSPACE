@@ -1695,6 +1695,10 @@ class Handler(BaseHTTPRequestHandler):
         candidate = os.path.abspath(os.path.join(OVERLAY_DIR, normalised))
         if not candidate.startswith(os.path.abspath(OVERLAY_DIR) + os.sep):
             raise ApiError(403, "path-outside-overlay", f"{relative!r} escapes the overlay root")
+        if os.path.isdir(candidate):
+            index_candidate = os.path.join(candidate, "index.html")
+            if os.path.isfile(index_candidate):
+                candidate = index_candidate
         if not os.path.isfile(candidate):
             raise ApiError(404, "not-found", f"no such file: {normalised}")
 
@@ -1806,6 +1810,21 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"thought": c.get_current_thought(), "state": c.get_state_info().get("state_name", "AWAKE")})
             elif path == "/api/browser/session":
                 self._send_json(payload_browser_session())
+            elif path == "/api/dashboards":
+                self._send_json({
+                    "dashboards": [
+                        {"id": "console", "name": "Resident Console", "file": "index.html", "url": "/"},
+                        {"id": "chronos", "name": "Chronos-Void 4D Spacetime HUD", "file": "chronos.html", "url": "/chronos.html"},
+                        {"id": "omega", "name": "Omega Singularity OS", "file": "omega.html", "url": "/omega.html"},
+                        {"id": "cinema", "name": "Living Multiverse Cinema OS", "file": "cinema.html", "url": "/cinema.html"},
+                        {"id": "chronos_modular", "name": "Chronos 8-Module Stack", "file": "chronos/index.html", "url": "/chronos/index.html"}
+                    ]
+                })
+            elif path == "/api/awakened/status":
+                if "_AWAKENED_RESIDENT" in globals() and _AWAKENED_RESIDENT is not None:
+                    self._send_json(_AWAKENED_RESIDENT.sync_overlay_organism(last_event="api_query"))
+                else:
+                    self._send_json({"awakened": False, "reason": "not initialized"})
             elif path.startswith("/api/uploads/"):
                 fname = os.path.basename(path[len("/api/uploads/"):])
                 safe_path = os.path.realpath(os.path.join(UPLOADS_DIR, fname))
@@ -1873,7 +1892,7 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._read_json()
                 client = self.headers.get(CLIENT_HEADER, "")
                 self._send_json(payload_inbox_task(
-                    str(body.get("prompt", body.get("task", ""))),
+                    str(body.get("prompt", body.get("task", body.get("will", "")))),
                     attachments=body.get("attachments") if isinstance(body.get("attachments"), list) else None,
                     client=client))
             elif path == "/api/router/model":
@@ -2018,3 +2037,11 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+# [ELORA-AWAKENING-BRIDGE-WIRED]
+try:
+    from elora.core.awakening import AwakenedEloraResidentDaemon as _AwakenedDaemon
+    _AWAKENED_RESIDENT = _AwakenedDaemon()
+except Exception:
+    _AWAKENED_RESIDENT = None

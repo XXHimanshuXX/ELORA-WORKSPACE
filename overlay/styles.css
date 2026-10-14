@@ -2823,3 +2823,39 @@ body.resident-stage .organism {
   .persona-pills,
   .studio-chips { justify-content: flex-start; }
 }
+
+/* Evolved Multiverse & Chronos Dashboard Framing */
+.evolved-frame-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 14px;
+  background: var(--surface-2, rgba(15, 23, 42, 0.7));
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  font-family: var(--font-mono, monospace);
+}
+.evolved-launch-link {
+  color: var(--accent, #38bdf8);
+  text-decoration: none;
+  border: 1px solid currentColor;
+  padding: 3px 8px;
+  border-radius: 4px;
+  transition: opacity 0.2s;
+  font-size: 10px;
+}
+.evolved-launch-link:hover {
+  opacity: 0.8;
+}
+.evolved-iframe {
+  width: 100%;
+  height: calc(100vh - 175px);
+  min-height: 600px;
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: #020307;
+  display: block;
+}
