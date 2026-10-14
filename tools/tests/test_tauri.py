@@ -102,6 +102,51 @@ class TestTauriDesktopPackaging:
         assert "--resident" not in source
         assert 'window.emit("ripple"' not in source
 
+    def test_tauri_shell_reports_failures_and_supervises_crashed_children(self):
+        """The shell must say why it has no organism, and bring a crashed one back.
+
+        Both children used to be spawned through `if let Ok(...)`, which discarded
+        the error. With an unresolvable interpreter the console server never bound
+        its port, the window loaded a refused connection, and nothing anywhere said
+        why. These assertions pin the honest behaviour that replaced it: a failed
+        spawn is recorded with its reason, and a crash is restarted a bounded
+        number of times rather than never or forever.
+        """
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        source_path = os.path.join(root, "src-tauri", "src", "main.rs")
+        with open(source_path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+
+        # The silent-discard form is what produced an unexplained dead window.
+        assert "if let Ok((mut rx, _child)) = cmd.spawn()" not in source
+
+        # A failed spawn reaches the log and a durable file, carrying the reason.
+        assert "could not be started" in source
+        assert "tauri_shell.json" in source
+        assert '"failed".to_string()' in source
+
+        # The pid comes from a live handle, so "running" means a process exists.
+        assert "child.pid()" in source
+
+        # Both children go through the supervisor.
+        assert "Role::Console" in source
+        assert "Role::Resident" in source
+
+        # Restart is bounded, so a permanent fault cannot spin forever.
+        assert "const MAX_RESTARTS: u32 = 3;" in source
+        assert "restarts >= MAX_RESTARTS" in source
+
+        # A clean exit is a shutdown request; only a crash is restarted.
+        assert "let crashed = exit_code != Some(0);" in source
+
+        # CommandEvent is #[non_exhaustive]; without the wildcard arm the desktop
+        # build does not compile at all.
+        assert "_ => {}" in source
+
+        # The interpreter is overridable: a bare `python` can resolve to the
+        # Microsoft Store stub, which exits non-zero without running anything.
+        assert "ELORA_PYTHON" in source
+
     def test_hermetic_smoke_runs_and_verifies_akashic(self):
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         run_py = os.path.join(root, "run.py")
