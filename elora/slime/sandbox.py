@@ -67,8 +67,16 @@ def _pytest_target(target: str, root: str) -> str | None:
         resolved = _resolve(raw, root)
     except ValueError:
         return None
-    base = os.path.abspath(root)
-    if resolved != base and not resolved.startswith(base + os.sep):
+    # _resolve already realpaths and jails the target, so compare canonical
+    # forms only. A raw startswith() against abspath() is wrong on Windows:
+    # the workspace directory can present a different long name than
+    # abspath() yields (here "ELORA Workspace" -> "ELORA-Workspace"), which
+    # rejected paths that are genuinely inside the workspace.
+    base = os.path.normcase(os.path.realpath(os.path.abspath(root)))
+    try:
+        if os.path.commonpath((base, os.path.normcase(resolved))) != base:
+            return None
+    except ValueError:
         return None
     return resolved
 
