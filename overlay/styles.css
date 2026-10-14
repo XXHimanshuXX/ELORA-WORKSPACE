@@ -2859,3 +2859,111 @@ body.resident-stage .organism {
   background: #020307;
   display: block;
 }
+
+/* Unified Master Compass & Telemetry Horizon */
+.unified-compass-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 10px;
+  background: color-mix(in srgb, var(--el-surface-raised, #161b2c) 75%, transparent);
+  border: 1px solid color-mix(in srgb, var(--el-border, #1a2236) 80%, transparent);
+  border-radius: var(--el-radius-control, 4px);
+  margin-left: auto;
+  font-family: var(--el-font-mono, monospace);
+  font-size: 10px;
+}
+.compass-item {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.compass-item .ci-label {
+  color: var(--el-ink-faint, #5a647d);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+}
+.compass-item .ci-val {
+  color: var(--el-accent, #9ec5ff);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 7-Step Liturgy Combo Ribbon */
+.liturgy-combo-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 6px;
+  font-family: var(--el-font-mono, monospace);
+}
+.combo-step {
+  flex: 1;
+  padding: 3px 5px;
+  background: color-mix(in srgb, var(--el-surface-sunken, #05060c) 80%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--el-accent, #9ec5ff) 35%, transparent);
+  text-align: center;
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  color: var(--el-ink-muted, #8b97b3);
+  border-radius: 2px 2px 0 0;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.combo-step.firing {
+  background: var(--el-accent, #9ec5ff);
+  color: var(--el-canvas, #07080f);
+  border-bottom-color: #ffffff;
+  box-shadow: 0 0 12px var(--el-accent, #9ec5ff);
+  transform: translateY(-1px);
+}
+.combo-step.sealed {
+  background: color-mix(in srgb, var(--el-ok, #5fd0b5) 16%, transparent);
+  color: var(--el-ok, #5fd0b5);
+  border-bottom-color: var(--el-ok, #5fd0b5);
+}
+
+/* Multi-World Selector Strip */
+.world-multiplexer-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: color-mix(in srgb, var(--el-surface-sunken, #05060c) 90%, transparent);
+  border-bottom: 1px solid var(--el-border, #1a2236);
+  overflow-x: auto;
+  font-family: var(--el-font-mono, monospace);
+}
+.world-portal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--el-border, #1a2236) 70%, transparent);
+  color: var(--el-ink-muted, #8b97b3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.world-portal-pill:hover,
+.world-portal-pill.active {
+  background: color-mix(in srgb, var(--el-accent, #9ec5ff) 18%, transparent);
+  color: var(--el-ink-strong, #f3f6ff);
+  border-color: var(--el-accent, #9ec5ff);
+}
+.world-portal-pill .wp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-ok, #5fd0b5);
+  box-shadow: 0 0 6px var(--el-ok, #5fd0b5);
+}
+

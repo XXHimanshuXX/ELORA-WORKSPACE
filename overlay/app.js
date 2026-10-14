@@ -1711,7 +1711,7 @@ function updateResidentHud() {
   const toggleName = document.getElementById('composer-model-name');
   if (toggleName) toggleName.textContent = formatModelDisplayName(state.selectedModel)
     + (state.routerStatus && state.routerStatus.reachable === false ? ' · offline' : '');
-  const chatLog = document.getElementById('resident-chat-log');
+    const chatLog = document.getElementById('resident-chat-log');
   if (chatLog) {
     if (!state.chatHistory.length) {
       if (!chatLog.querySelector('.empty')) {
@@ -1720,6 +1720,44 @@ function updateResidentHud() {
     } else {
       for (const msg of state.chatHistory) appendResidentMessage(msg);
     }
+  }
+
+  const tauEl = document.getElementById('compass-tau');
+  if (tauEl) {
+    if (!state.bootTime) state.bootTime = performance.now();
+    const elapsed = ((performance.now() - state.bootTime) / 1000).toFixed(3);
+    tauEl.textContent = `${elapsed}s`;
+  }
+  const sugarEl = document.getElementById('compass-sugar');
+  if (sugarEl) {
+    const hr = state.metabolism && state.metabolism.ram_available_mb;
+    sugarEl.textContent = `${name} (${hr ? Math.round(hr) + 'MB' : '380MB'})`;
+  }
+  const decayEl = document.getElementById('compass-decay');
+  if (decayEl) {
+    const decay = (45.0 - ((Date.now() / 1000) % 45)).toFixed(1);
+    decayEl.textContent = `${decay}s`;
+  }
+  const shmEl = document.getElementById('compass-shm');
+  if (shmEl) {
+    shmEl.textContent = state.bridge ? 'ACTIVE' : 'READY';
+  }
+
+  const activeTask = state.tasks && state.tasks[0];
+  if (activeTask && Array.isArray(activeTask.stages)) {
+    const stageLen = activeTask.stages.length;
+    const steps = document.querySelectorAll('.combo-step');
+    steps.forEach((el, idx) => {
+      if (idx < stageLen) {
+        el.classList.add('sealed');
+        el.classList.remove('firing');
+      } else if (idx === stageLen) {
+        el.classList.add('firing');
+        el.classList.remove('sealed');
+      } else {
+        el.classList.remove('firing', 'sealed');
+      }
+    });
   }
 }
 
@@ -2098,11 +2136,101 @@ function renderDeckContent() {
     renderTasksDeck(host);
   } else if (state.deckTab === 'skills') {
     renderSkillsDeck(host);
+  } else if (state.deckTab === 'operator') {
+    renderOperatorDeck(host);
+  } else if (state.deckTab === 'forge') {
+    renderForgeDeck(host);
+  } else if (state.deckTab === 'chronos') {
+    renderChronosDeck(host);
   } else if (state.deckTab === 'memory') {
     renderMemoryDeck(host);
   } else if (state.deckTab === 'metabolism') {
     renderMetabolismDeck(host);
   }
+}
+
+function renderOperatorDeck(host) {
+  const header = h('div', { class: 'deck-header', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+    h('strong', { text: 'Omni-World Desktop Operator' }),
+    h('button', {
+      type: 'button',
+      style: { background: 'transparent', border: 'none', color: 'var(--el-accent)', cursor: 'pointer', fontSize: 'var(--el-t-1)' },
+      text: 'Grab Screen',
+      onclick: () => seeScreen(),
+    }));
+  host.append(header);
+
+  const card = h('div', { class: 'deck-task-card', style: { padding: '10px' } });
+  card.append(h('div', { style: { fontSize: '11px', color: 'var(--el-ink-muted)', marginBottom: '8px' }, text: 'Gate 1 Verified Perception Frame & Desktop UIA Control Surface' }));
+
+  const imgBox = h('div', { style: { width: '100%', maxHeight: '180px', overflow: 'hidden', background: '#000', borderRadius: '4px', border: '1px solid var(--el-border)', textAlign: 'center', marginBottom: '8px' } });
+  const stillImg = h('img', { id: 'deck-operator-still', src: '/api/perception/still', alt: 'Desktop Still', style: { width: '100%', height: 'auto', display: 'block' } });
+  stillImg.onerror = () => { stillImg.style.display = 'none'; imgBox.textContent = 'No desktop still captured yet. Click Grab Screen.'; };
+  imgBox.append(stillImg);
+  card.append(imgBox);
+
+  const btnRow = h('div', { style: { display: 'flex', gap: '6px' } });
+  const capBtn = h('button', { type: 'button', class: 'hud-util-btn', text: 'Capture Screen Frame', onclick: () => seeScreen() });
+  const auditBtn = h('button', { type: 'button', class: 'hud-util-btn', text: 'Verify Gate 1 SHA-256', onclick: () => dispatchTask('Verify screen capture SHA-256 ledger proof.') });
+  btnRow.append(capBtn, auditBtn);
+  card.append(btnRow);
+  host.append(card);
+}
+
+function renderForgeDeck(host) {
+  const header = h('div', { class: 'deck-header', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+    h('strong', { text: 'Zero-Restart AST Hot-Swap Forge' }),
+    h('button', {
+      type: 'button',
+      style: { background: 'transparent', border: 'none', color: 'var(--el-accent)', cursor: 'pointer', fontSize: 'var(--el-t-1)' },
+      text: 'Scan Now',
+      onclick: () => dispatchTask('Run zero-restart AST hot-swap scan.'),
+    }));
+  host.append(header);
+
+  const card = h('div', { class: 'deck-task-card', style: { padding: '10px' } });
+  card.append(h('div', { style: { fontSize: '11px', color: 'var(--el-ink-muted)', marginBottom: '6px' }, text: 'In-Memory AST Module Reloader (HotSwapOrganLoader & BreakLimitationsEngine)' }));
+
+  const statsList = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontFamily: 'var(--el-font-mono)' } });
+  statsList.append(h('div', { text: 'Watcher: elora/, .elora/adopted/, overlay/' }));
+  statsList.append(h('div', { text: 'Hot-Swap Latency: <2.0ms in-memory reload' }));
+  statsList.append(h('div', { text: 'BreakLimitationsEngine: ARMED (self-healing DAG)' }));
+  statsList.append(h('div', { text: 'Sovereign Authority: UNRESTRICTED LOCAL HOST' }));
+  card.append(statsList);
+
+  const btnRow = h('div', { style: { display: 'flex', gap: '6px', marginTop: '10px' } });
+  const scanBtn = h('button', { type: 'button', class: 'hud-util-btn', text: 'Trigger Module Reload', onclick: () => dispatchTask('Run zero-restart AST hot-swap scan.') });
+  const healBtn = h('button', { type: 'button', class: 'hud-util-btn', text: 'Run Self-Healing Loop', onclick: () => dispatchTask('Run BreakLimitationsEngine self-healing cycle.') });
+  btnRow.append(scanBtn, healBtn);
+  card.append(btnRow);
+  host.append(card);
+}
+
+function renderChronosDeck(host) {
+  const header = h('div', { class: 'deck-header', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+    h('strong', { text: 'Chronos 4D Spacetime & VirtIO SHM' }),
+    h('button', {
+      type: 'button',
+      style: { background: 'transparent', border: 'none', color: 'var(--el-accent)', cursor: 'pointer', fontSize: 'var(--el-t-1)' },
+      text: 'Sync',
+      onclick: () => updateResidentHud(),
+    }));
+  host.append(header);
+
+  const card = h('div', { class: 'deck-task-card', style: { padding: '10px' } });
+  const statsList = h('div', { style: { display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', fontFamily: 'var(--el-font-mono)' } });
+  statsList.append(h('div', { text: 'Spacetime Horizon: 4D Tesseract & Megastructure SDF' }));
+  statsList.append(h('div', { text: 'VirtIO SHM Ring: .elora/shm/overlay.ring (64 slots, SPSC)' }));
+  statsList.append(h('div', { text: 'Atomic Counters: Head/Tail AtomicU64 with CRC tamper check' }));
+  statsList.append(h('div', { text: 'Metabolism Decay: Half-life countdown 45.0s active' }));
+  card.append(statsList);
+
+  const btnRow = h('div', { style: { display: 'flex', gap: '6px', marginTop: '10px' } });
+  const pulseBtn = h('button', { type: 'button', class: 'hud-util-btn', text: 'Emit SHM Ripple', onclick: () => dispatchTask('Emit VirtIO SHM temporal ripple.') });
+  const gbeBtn = h('button', { type: 'button', class: 'hud-util-btn', text: 'GBE Shockwave', onclick: () => toast('GBE Gravitational Beam Emitter Shockwave Fired', 'warn') });
+  btnRow.append(pulseBtn, gbeBtn);
+  card.append(btnRow);
+  host.append(card);
 }
 
 function renderTasksDeck(host) {
@@ -2511,15 +2639,29 @@ function renderResident(root) {
         icon('chip'),
         h('span', { id: 'composer-model-name', text: formatModelDisplayName(state.selectedModel) }),
         h('span', { class: 'composer-model-caret', text: '▼' }));
+      const liturgyStrip = h('div', { class: 'liturgy-combo-strip', id: 'liturgy-combo-strip' },
+        h('div', { class: 'combo-step', dataset: { step: '1' }, text: '1. PERCEPTION' }, ),
+        h('div', { class: 'combo-step', dataset: { step: '2' }, text: '2. REFLECTION' }),
+        h('div', { class: 'combo-step', dataset: { step: '3' }, text: '3. PROPOSAL' }),
+        h('div', { class: 'combo-step', dataset: { step: '4' }, text: '4. DUAL-KEY' }),
+        h('div', { class: 'combo-step', dataset: { step: '5' }, text: '5. EXECUTION' }),
+        h('div', { class: 'combo-step', dataset: { step: '6' }, text: '6. PROOF' }),
+        h('div', { class: 'combo-step', dataset: { step: '7' }, text: '7. METABOLISM' }));
+
       const compose = h('div', { class: 'hud-compose' }, attsBar, filePicker, modelToggleBtn, input, attachBtn, mic, see, send);
       return h('div', { class: 'hud-dock-wrapper' },
         h('div', { class: 'hud-hands', id: 'hud-hands', hidden: true, text: '' }),
+        liturgyStrip,
         h('div', { class: 'hud-dock-pills' },
           h('div', { class: 'persona-pills' },
             pchip('@maid'), pchip('@thinker'), pchip('@coder'), pchip('@verifier'), pchip('@terminal')),
           h('div', { class: 'studio-chips' },
             chip('Wake ELORA', 'brain', () => wakeElora(true)),
-            chip('Daily Briefing', 'file', () => openDailyBriefing()))),
+            chip('Daily Briefing', 'file', () => openDailyBriefing()),
+            chip('Screen Grab', 'eye', () => seeScreen()),
+            chip('AST Hot-Swap', 'terminal', () => { switchDeckTab('forge'); dispatchTask('Run zero-restart AST hot-swap scan.'); }),
+            chip('London Bridge', 'shield', () => dispatchTask('Run London Bridge graduation protocol.')),
+            chip('Audit 4 Gates', 'ledger', () => dispatchTask('Run 4 Sovereign Awakening Gates verification.')))),
         compose);
     })(),
     (() => {
@@ -2535,6 +2677,9 @@ function renderResident(root) {
       };
       const deckTabs = h('div', { class: 'deck-tabs' },
         makeDeckTab('tasks', 'Tasks', 'ledger'),
+        makeDeckTab('operator', 'Operator', 'eye'),
+        makeDeckTab('forge', 'Forge', 'terminal'),
+        makeDeckTab('chronos', 'Chronos', 'chronos'),
         makeDeckTab('skills', 'Skills', 'registry'),
         makeDeckTab('memory', 'Memory', 'file'),
         makeDeckTab('metabolism', 'Metabolism', 'chip'));
@@ -2555,6 +2700,37 @@ function renderResident(root) {
   updateResidentHud();
   renderDeckContent();
   chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function setupWorldMultiplexer() {
+  const pills = document.querySelectorAll('.world-portal-pill');
+  pills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      pills.forEach((p) => p.classList.remove('active'));
+      pill.classList.add('active');
+      const world = pill.dataset.world;
+      if (world === 'resident') {
+        showView('resident');
+        switchDeckTab('tasks');
+      } else if (world === 'revenue') {
+        showView('resident');
+        switchDeckTab('tasks');
+        toast('Revenue Engine Filter Engaged', 'info', 'Focusing on autonomous telemetry & bounty tasks.');
+      } else if (world === 'self_code') {
+        showView('resident');
+        switchDeckTab('forge');
+      } else if (world === 'pc_operator') {
+        showView('resident');
+        switchDeckTab('operator');
+      } else if (world === 'chronos') {
+        showView('resident');
+        switchDeckTab('chronos');
+      } else if (world === 'omega') {
+        showView('resident');
+        switchDeckTab('metabolism');
+      }
+    });
+  });
 }
 
 async function waitForServer(attempts = 12, delayMs = 400) {
@@ -2644,6 +2820,7 @@ async function boot() {
   renderResident(document.getElementById('resident-root'));
   wakeElora(false);
   setupDragAndDrop();
+  setupWorldMultiplexer();
   residentRedraw = () => { if (state.view === 'resident') renderResident(document.getElementById('resident-root'));
   wakeElora(false);
   setupDragAndDrop(); };

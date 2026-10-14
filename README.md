@@ -132,35 +132,44 @@ $$\text{Intent} \longrightarrow \text{Validate} \longrightarrow \text{Plan} \lon
 
 ---
 
-## 5. Multi-Dashboard Spatial Suite
+## 5. Unified Single-Dashboard Spatial Cockpit Architecture
 
-ELORA provides a unified, multi-dashboard spatial interface accessible via any modern browser or the native desktop Tauri application:
+In response to the vision of combining all disparate UI systems and engines into **one single integrated cockpit**, ELORA v7.4 unifies the central console (`overlay/index.html` at `http://127.0.0.1:8765/`) into an all-in-one command surface:
 
 ```
-┌────────────────────────────────────────────────────────────────────────┐
-│ ELORA Spatial Dashboard Suite (http://127.0.0.1:8765)                   │
-├──────────────┬─────────────────────────────────────────────────────────┤
-│ [Resident]   │ Core Maid Console: Chat, Chore Book, State Badge, Logs   │
-│ [Ledger]     │ Akashic Cryptographic Hash Chain Browser & Verifier     │
-│ [Genome]     │ OKLCH Dynamic Color & Sensory Aesthetics Inspector      │
-│ [Registry]   │ Installed Capabilities, Tools & MCP Server Inventory    │
-│ [Router]     │ OmniRoute Gateway Status & Model Switching Console      │
-│ [Not Wired]  │ Explicit Blueprint Transparency of Unimplemented Items  │
-│ [Chronos]    │ 4D Spacetime Void HUD & Raymarched Megastructure SDF    │
-│ [Omega]      │ Omega Singularity OS: WebGL2 Manifold & Tri-Cameral Mind │
-│ [Cinema]     │ Living Multiverse Cinema OS: Cinematic Canvas Projections│
-│ [Omni]       │ Omni-World Autonomous Mission & Zero-Restart AST OS      │
-│ [Origin]     │ Origin 6-DOF Spatial 3D Game Engine & Procedural Maid    │
-└──────────────┴─────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ ELORA SOVEREIGN UNIFIED DASHBOARD (http://127.0.0.1:8765)                              │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Resident] [Revenue Engine] [AST Forge] [PC Operator] [Chronos Void] [Omega Mind]     │ <-- World Multiplexer Strip
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ TAU: 14.281s  |  SUGAR: AWAKE (380MB)  |  DECAY: 42.4s  |  SHM RING: ACTIVE            │ <-- Master Compass Horizon
+├────────────────────────────────┬───────────────────────────────────────────────────────┤
+│ [3D Blender/WebGPU Organism]   │ [Studio Deck Tabs]                                    │
+│ - Procedural Organism Body     │  • Tasks: Proactive chore book, stage flow, trace logs │
+│ - Gyroid & Metaball Physics    │  • Operator: Gate 1 screen capture & UIA surface      │
+│ - Live Gyroscope & Stances     │  • Forge: Zero-restart AST reloader (<2ms hot-swap)   │
+│                                │  • Chronos: VirtIO SHM ring metrics & atomic counters │
+│ [Resident Maid Dialogue View]  │  • Skills: FastMCP universal tool registry (35 tools) │
+│ - Append-only verifiable chat  │  • Memory: Akashic ledger & Obsidian markdown vault   │
+│ - Model switching (/model)     │  • Metabolism: 6-state blood sugar & RAM headroom     │
+├────────────────────────────────┴───────────────────────────────────────────────────────┤
+│ [1. PERCEPTION] [2. REFLECTION] [3. PROPOSAL] [4. DUAL-KEY] [5. EXECUTION] [6. PROOF]  │ <-- 7-Step Liturgy Ribbon
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ [Actions]: Wake ELORA | Daily Briefing | Screen Grab | AST Hot-Swap | London Bridge   │ <-- Instant Studio Chips
+│ [Composer]: Persona pills (@maid, @thinker, @coder, @verifier, @terminal), Mic, Attach │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Resident Console (`/` or `index.html`)**: The primary interface. Features an orbital SVG navigation rail, live metabolic state badge, proactive chore book, surgical file viewer, and real-time chat with capability reflection.
-2. **Chronos-Void 4D Spacetime HUD (`/chronos.html` or `/chronos/`)**: High-frequency temporal telemetry stream (`elora.chronos.v7.2`), relativistic clock synchronization, and a raymarched BLAME! Megastructure SDF canvas.
-3. **Omega Singularity OS (`/omega.html`)**: Autonomous sovereign consciousness manifold. Visualizes the Tri-Cameral Liturgy (Perception, Deliberation, Will) over an interactive WebGL2 particle field.
-4. **Living Multiverse Cinema OS (`/cinema.html`)**: Cinematic spatial environment projecting live audio, video, and memory graph visualizers.
-5. **Omni-World Autonomous Mission & Self-Coding OS (`/omni.html`)**: Features the Multi-World Portal Multiplexer, live browser/desktop UIA operator (`ELORA_HAND`), self-healing mutation DAG, and built-in Self-Coding AST Forge for zero-restart live DOM patching.
-6. **Origin 6-DOF 3D Spatial Game Engine (`/origin.html`)**: Full 360° 3D orbit camera, procedurally articulated 3D Sovereign Maid ELORA (cursor-tracking IK head/eyes, breathing heart, 8 spring-physics skirt plates, 6 jointed wings), 5 whip-pan camera stances, and interactive monolith-shattering physics.
-7. **Chronos 8-Module Stack (`/chronos/index.html`)**: Decoupled production stack separating spacetime state, telemetry, graphics, and input handlers.
+### Integrated Subsystem Decks in the Single Cockpit:
+1. **World Multiplexer Strip**: Switches runtime context instantaneously across Resident Core, Revenue Engine, AST Forge, PC Operator, Chronos Void, and Omega Mind without leaving the cockpit or losing context.
+2. **Master Compass Horizon**: Telemetry strip streaming real-time uptime ($\tau$), blood sugar state, RAM decay half-life countdown, and memory-mapped VirtIO SHM ring health.
+3. **Omni-World Desktop Operator (`operator` deck)**: Real-time Win32 desktop frame capture, Gate 1 SHA-256 verification receipt inspection, and UIA control actuation.
+4. **Zero-Restart AST Hot-Swap Forge (`forge` deck)**: In-memory module reloader (`HotSwapOrganLoader`) operating under `<2.0ms` latency and `BreakLimitationsEngine` self-healing DAG.
+5. **Chronos 4D Spacetime & VirtIO SHM (`chronos` deck)**: Atomic head/tail tracking for `.elora/shm/overlay.ring` (64-slot SPSC buffer), GBE shockwave pulses, and relativistic clock sync.
+6. **7-Step Liturgy Combo Ribbon**: Real-time visual pipeline step tracker lighting up (`firing` -> `sealed`) as intentions pass through Perception, Reflection, Proposal, Dual-Key Consent, Execution, Proof, and Metabolism.
+7. **Instant Action Chips**: One-click triggers for `Wake ELORA`, `Daily Briefing`, `Screen Grab`, `AST Hot-Swap`, `London Bridge`, and `Audit 4 Gates`.
+
+*(Note: Specialized full-screen projection canvases remain available at `/chronos.html`, `/omega.html`, `/cinema.html`, `/omni.html`, and `/origin.html` for dedicated multi-monitor installations and hardware benchmark rigs.)*
 
 ---
 

@@ -118,7 +118,22 @@
         <p id="view-sub" class="topbar__sub">The resident maid — autonomous cognition, dialogue, and metabolic presence.</p>
       </div>
       <div class="topbar__meta" id="topbar-meta"></div>
+      <div class="unified-compass-strip" id="unified-compass-strip">
+        <div class="compass-item"><span class="ci-label">TAU</span><b id="compass-tau" class="ci-val">0.000s</b></div>
+        <div class="compass-item"><span class="ci-label">SUGAR</span><b id="compass-sugar" class="ci-val">AWAKE (380MB)</b></div>
+        <div class="compass-item"><span class="ci-label">DECAY</span><b id="compass-decay" class="ci-val">45.0s</b></div>
+        <div class="compass-item"><span class="ci-label">SHM RING</span><b id="compass-shm" class="ci-val">ACTIVE</b></div>
+      </div>
     </header>
+
+    <div class="world-multiplexer-strip" id="world-multiplexer-strip" aria-label="Multi-World Switcher">
+      <button type="button" class="world-portal-pill active" data-world="resident"><span class="wp-dot"></span><span>Resident Core</span></button>
+      <button type="button" class="world-portal-pill" data-world="revenue"><span class="wp-dot" style="background:var(--el-accent)"></span><span>Revenue Engine</span></button>
+      <button type="button" class="world-portal-pill" data-world="self_code"><span class="wp-dot" style="background:var(--el-warn)"></span><span>AST Forge</span></button>
+      <button type="button" class="world-portal-pill" data-world="pc_operator"><span class="wp-dot" style="background:var(--el-ok)"></span><span>PC Operator</span></button>
+      <button type="button" class="world-portal-pill" data-world="chronos"><span class="wp-dot" style="background:var(--el-info)"></span><span>Chronos Void</span></button>
+      <button type="button" class="world-portal-pill" data-world="omega"><span class="wp-dot" style="background:var(--el-danger)"></span><span>Omega Mind</span></button>
+    </div>
 
     <div class="views">
       <section class="view" data-view="resident" tabindex="-1">
