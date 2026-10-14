@@ -1321,11 +1321,16 @@ class AwakenedEloraResidentDaemon:
 
     def poll_inbox_files(self) -> int:
         count = 0
-        for path in sorted(self.inbox_dir.glob("*.json")):
+        inbox_files = sorted(list(self.inbox_dir.glob("*.json")) + list(self.inbox_dir.glob("*.txt")))
+        for path in inbox_files:
             try:
-                payload = json.loads(path.read_text(encoding="utf-8"))
-                text = payload.get("will") or payload.get("prompt") or payload.get("text") or ""
-                source = payload.get("source", "owner:inbox")
+                if path.suffix == ".json":
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    text = payload.get("will") or payload.get("prompt") or payload.get("text") or ""
+                    source = payload.get("source", "owner:inbox")
+                else:
+                    text = path.read_text(encoding="utf-8").strip()
+                    source = "owner:chat"
                 if text:
                     self.scheduler.enqueue(path.stem, text, source=source)
                     count += 1
@@ -1346,6 +1351,27 @@ class AwakenedEloraResidentDaemon:
         )
         outcome = self.brain.handle_will(item.text, source=item.source)
         self.sync_overlay_organism(last_event=f"completed:{item.task_id}")
+
+        # Post reply to chat.json so dashboard UI immediately displays ELORA's voice
+        chat_path = self.root_dir / ".elora" / "chat.json"
+        if chat_path.exists():
+            try:
+                chats = json.loads(chat_path.read_text(encoding="utf-8"))
+            except Exception:
+                chats = []
+        else:
+            chats = []
+        chats.append({
+            "sender": "elora",
+            "text": outcome.get("reply", "Will executed."),
+            "task_id": item.task_id,
+            "ts": time.time(),
+            "proactive": False,
+            "organ": "maid_brain",
+            "recorded": True
+        })
+        chat_path.write_text(json.dumps(chats, indent=2), encoding="utf-8")
+
         return {"ok": True, "processed": True, "task_id": item.task_id, **outcome}
 
     def run_resident_loop(self, poll_seconds: float = 1.5, max_cycles: Optional[int] = None) -> None:

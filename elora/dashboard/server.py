@@ -1823,8 +1823,9 @@ class Handler(BaseHTTPRequestHandler):
                     ]
                 })
             elif path == "/api/awakened/status":
-                if "_AWAKENED_RESIDENT" in globals() and _AWAKENED_RESIDENT is not None:
-                    self._send_json(_AWAKENED_RESIDENT.sync_overlay_organism(last_event="api_query"))
+                awakened = _get_awakened_resident()
+                if awakened is not None:
+                    self._send_json(awakened.sync_overlay_organism(last_event="api_query"))
                 else:
                     self._send_json({"awakened": False, "reason": "not initialized"})
             elif path.startswith("/api/uploads/"):
@@ -1971,6 +1972,20 @@ class Handler(BaseHTTPRequestHandler):
                 500, "internal-error", f"{type(exc).__name__}: {exc}"))
 
 
+_AWAKENED_RESIDENT = None
+
+
+def _get_awakened_resident():
+    global _AWAKENED_RESIDENT
+    if _AWAKENED_RESIDENT is None:
+        try:
+            from elora.core.awakening import AwakenedEloraResidentDaemon
+            _AWAKENED_RESIDENT = AwakenedEloraResidentDaemon()
+        except Exception:
+            _AWAKENED_RESIDENT = None
+    return _AWAKENED_RESIDENT
+
+
 def _start_autonomous_presence_thread():
     import threading
     def _presence_worker():
@@ -1981,12 +1996,29 @@ def _start_autonomous_presence_thread():
             c.wake(reason="server_boot", force_greeting=False)
         except Exception:
             pass
+
+        awakened = _get_awakened_resident()
+        if awakened:
+            try:
+                awakened.sync_overlay_organism(last_event="server_boot")
+            except Exception:
+                pass
+
         while True:
-            time.sleep(40)
+            time.sleep(3)
             try:
                 c.tick_idle()
             except Exception:
                 pass
+            if awakened:
+                try:
+                    awakened.poll_inbox_files()
+                    while awakened.scheduler.pending_count() > 0:
+                        awakened.process_next_scheduled()
+                    awakened.metabolism.step_down_if_idle(idle_threshold_sec=45.0)
+                    awakened.sync_overlay_organism(last_event="heartbeat_tick")
+                except Exception:
+                    pass
     t = threading.Thread(target=_presence_worker, daemon=True, name="elora-proactive")
     t.start()
 
@@ -2039,11 +2071,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-# [ELORA-AWAKENING-BRIDGE-WIRED]
-try:
-    from elora.core.awakening import AwakenedEloraResidentDaemon as _AwakenedDaemon
-    _AWAKENED_RESIDENT = _AwakenedDaemon()
-except Exception:
-    _AWAKENED_RESIDENT = None
