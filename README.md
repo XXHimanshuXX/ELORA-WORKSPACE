@@ -7,7 +7,7 @@
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
-> **Latest practical snapshot (2026-10-13):** The live dashboard rendered and Resident completed a read-only task in Brave. The full test suite passed **285 tests**. The desktop UI scored **9.0/10**; the overall practical score was **8.1/10**. Screen capture still failed in that run. See the [full practical audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md) for evidence, category scores, scaling results, and remaining work. These are measurements from one local Windows setup, not a general production guarantee.
+> **Latest practical snapshot (2026-10-13):** The live dashboard rendered and Resident completed a read-only task in Brave. The full test suite passed **285 tests**. The desktop UI scored **9.0/10**; the overall practical score was **8.1/10**. Screen capture still failed in that run. Read the [grand practical blueprint](ELORA_GRAND_PRACTICAL_BLUEPRINT.md) for the step-by-step acceptance map, and the [full audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md) for measurements and category scores. These are results from one local Windows setup, not a general production guarantee.
 
 ---
 
@@ -266,6 +266,7 @@ These are observed gaps, not a complete security or reliability certification. S
 
 ## Blueprint & Documentation
 
+- [Grand practical blueprint](ELORA_GRAND_PRACTICAL_BLUEPRINT.md) — request-to-evidence flow, operator walkthrough, subsystem acceptance map, and open release gates.
 - [Practical runtime, feature, and scaling audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md) — live Brave checks, category scores, scaling sample, and open issues.
 - [ELORA handoff](ELORA_HANDOFF.md) — current execution invariants and implementation priorities.
 - [v7 upgrade blueprint](docs/ELORA-TRUE-BLUEPRINT-V7-UPGRADE.md) — system architecture and wiring goals.
