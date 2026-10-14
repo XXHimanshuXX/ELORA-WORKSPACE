@@ -8,7 +8,8 @@ from elora.core.broker import Broker, Rejected, Result
 from elora.core.capabilities import SkillToken, Tier
 from elora.core.metabolism import Metabolism
 from elora.core.owner_will import WORKSPACE_ROOT
-from elora.daemon import Daemon, Event, Task, TaskState, public_chat_answer
+from elora.daemon import (Daemon, Event, Task, TaskState, _git_status_summary,
+                          _no_work_reply, _spoken_tool_result, public_chat_answer)
 from conftest import FakeLedger, FakeVault
 
 
@@ -54,6 +55,59 @@ def test_public_chat_answer_suppresses_successful_code_edit():
     task_err.trace = [{"tool": "code.edit", "ok": False}]
     task_err.messages = [{"role": "assistant", "content": "I failed to edit. DONE"}]
     assert "failed to edit" in public_chat_answer(task_err)
+
+
+def test_git_status_result_has_a_compact_branch_and_change_summary():
+    output = json.dumps({
+        "ok": True,
+        "stdout": "## main...origin/main\n M tracked.py\nA  staged.py\n?? new.py\n",
+    })
+    summary = _git_status_summary("git.status", 0, output)
+    assert summary == "branch main; 3 changed paths (2 tracked, 1 untracked)."
+    task = Task(id="status-summary", event=Event.from_text("git status"))
+    task.trace = [{"tool": "git.status", "ok": True, "summary": summary}]
+    assert _spoken_tool_result(task) == "git.status: " + summary
+
+
+def test_no_work_reply_explains_when_no_capability_ran():
+    assert _no_work_reply("Hlo") == "Hello. I'm here. What would you like me to do?"
+    assert "no capability ran" in _no_work_reply("Give me the daily briefing")
+    assert "didn't run anything" in _no_work_reply("xzczxczxcz")
+
+
+def test_daemon_tick_uses_no_work_reply_over_brain_text(tmp_path):
+    env = _loop(tmp_path)
+    env["brain"].script = ["ELORA online. Workspace root: D:\\Coding\\ELORA-Workspace. Ready."]
+    _drop(env["inbox"], "Hlo")
+    try:
+        tasks = env["daemon"].tick()
+        assert tasks[0].state == TaskState.DONE
+        rows = json.loads((tmp_path / "chat.json").read_text(encoding="utf-8"))
+        spoken = [row["text"] for row in rows if row["sender"] == "elora"]
+        assert spoken[-1] == "Hello. I'm here. What would you like me to do?"
+    finally:
+        env["metabolism"].shutdown()
+
+
+def test_resident_speaks_git_status_summary_after_a_successful_read(tmp_path, monkeypatch):
+    env = _loop(tmp_path)
+    status_output = "## main...origin/main\n M tracked.py\nA  staged.py\n?? new.py\n"
+    monkeypatch.setattr(
+        env["daemon"].broker,
+        "request",
+        lambda *_args, **_kwargs: Result(
+            stdout=json.dumps({"ok": True, "stdout": status_output}), returncode=0
+        ),
+    )
+    _drop(env["inbox"], "git status", name="status.txt")
+    try:
+        tasks = env["daemon"].tick()
+        assert tasks[0].state == TaskState.DONE
+        rows = json.loads((tmp_path / "chat.json").read_text(encoding="utf-8"))
+        spoken = [row["text"] for row in rows if row["sender"] == "elora"]
+        assert spoken[-1] == "git.status: branch main; 3 changed paths (2 tracked, 1 untracked)."
+    finally:
+        env["metabolism"].shutdown()
 
 def test_daemon_tick_suppresses_successful_code_edit_final_answer(tmp_path):
     env = _loop(tmp_path)
@@ -303,3 +357,14 @@ def test_narrow_post_code_edit_response_suppression():
     task.trace = [{"tool": "fs.write", "ok": True}]
     task.messages = [{"role": "assistant", "content": "I wrote the config file. DONE"}]
     assert public_chat_answer(task) == "I wrote the config file."
+
+
+def test_public_chat_answer_does_not_speak_json():
+    event = Event.from_text("look at the screen")
+    task = Task(id="t-json", event=event)
+    task.trace = [{"tool": "screen.capture", "ok": True}]
+    task.messages = [
+        {"role": "user", "content": 'result: {"ok": true, "path": "x.png"}'},
+        {"role": "assistant", "content": "DONE"},
+    ]
+    assert public_chat_answer(task).strip() == ""

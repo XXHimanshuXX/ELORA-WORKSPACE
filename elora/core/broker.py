@@ -181,6 +181,12 @@ class Broker:
                     "stdout_sha256": stdout_sha,
                     "out_sha": stdout_sha[:16] if stdout_sha else "",
                     "skill": token.name,
+                    # This proves only that the capability process returned 0.
+                    # Snapshot, post-state, and invariant evidence are not
+                    # available on every in-process or subprocess handler.
+                    "verified": execution.returncode == 0,
+                    "verification_basis": "capability_returncode",
+                    "stage": "CAPABILITY_RC_ZERO" if execution.returncode == 0 else "CAPABILITY_FAILED",
                 },
             )
         except Exception as exc:
@@ -627,14 +633,26 @@ class Broker:
         import hashlib, json
         from elora.slime import computer_use
         out_path = args.get("out_path")
-        res = computer_use.capture(out_path)
-        body = json.dumps(res)
-        digest = res.get("sha256", hashlib.sha256(body.encode()).hexdigest())
-        return ExecutionResult(
-            returncode=0, timed_out=False, killed_by=None, duration_s=0.0,
-            stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
-            stdout=body, stderr="", work_dir=token.workspace or ".",
-        )
+        started = time.monotonic()
+        try:
+            res = computer_use.capture(out_path)
+            body = json.dumps(res)
+            digest = res.get("sha256", hashlib.sha256(body.encode()).hexdigest())
+            return ExecutionResult(
+                returncode=0, timed_out=False, killed_by=None,
+                duration_s=time.monotonic() - started,
+                stdout_sha256=digest, stderr_sha256=hashlib.sha256(b"").hexdigest(),
+                stdout=body, stderr="", work_dir=token.workspace or ".",
+            )
+        except Exception as exc:
+            error = str(exc)
+            return ExecutionResult(
+                returncode=1, timed_out=False, killed_by=None,
+                duration_s=time.monotonic() - started,
+                stdout_sha256=hashlib.sha256(b"").hexdigest(),
+                stderr_sha256=hashlib.sha256(error.encode()).hexdigest(),
+                stdout="", stderr=error, work_dir=token.workspace or ".",
+            )
 
     def _execute_screen_control(self, token: SkillToken, args: dict) -> ExecutionResult:
         import hashlib, json

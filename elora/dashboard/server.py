@@ -36,6 +36,9 @@ DESIGN RULES, and what each one costs.
 from __future__ import annotations
 
 import argparse
+import base64
+import bisect
+import copy
 import hashlib
 import json
 import os
@@ -59,6 +62,11 @@ STATE_DIR = os.path.join(ROOT, ".elora")
 RUNTIME_PATH = os.path.join(STATE_DIR, "dashboard.json")
 LEDGER_PATH = os.path.join(STATE_DIR, "akashic.db")
 OMNI_KEY_PATH = os.path.join(STATE_DIR, "secrets", "omniroute_api_key")
+SELECTED_MODEL_PATH = os.path.join(STATE_DIR, "selected_model.txt")
+UPLOADS_DIR = os.path.join(STATE_DIR, "uploads")
+_TASKS_CACHE_LOCK = threading.Lock()
+_TASKS_CACHE_KEY: tuple[Any, ...] | None = None
+_TASKS_CACHE_VALUE: dict[str, Any] | None = None
 
 DEFAULT_PORT = 8765
 SERVER_NAME = "elora-dashboard/1.0"
@@ -99,6 +107,37 @@ class ApiError(Exception):
 # ----------------------------------------------------------------------
 
 
+def get_selected_model() -> str:
+    try:
+        if os.path.exists(SELECTED_MODEL_PATH):
+            with open(SELECTED_MODEL_PATH, "r", encoding="utf-8") as handle:
+                val = handle.read().strip()
+                if val:
+                    return val
+    except OSError:
+        pass
+    return os.environ.get("OMNIROUTE_MODEL", "")
+
+
+def set_selected_model(model: str) -> str:
+    cleaned = (model or "").strip()
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(SELECTED_MODEL_PATH, "w", encoding="utf-8") as handle:
+        handle.write(cleaned)
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            AkashicLedger(LEDGER_PATH, load_history=False).append(
+                organ="router",
+                kind="model_selected",
+                message=f"Model switched to {cleaned or 'auto'}",
+                payload={"model": cleaned},
+            )
+        except Exception:
+            pass
+    return cleaned
+
+
 def omniroute_config() -> dict[str, Any]:
     key = ""
     try:
@@ -109,7 +148,30 @@ def omniroute_config() -> dict[str, Any]:
     return {
         "url": os.environ.get("OMNIROUTE_URL", "http://localhost:20128").rstrip("/"),
         "key": key,
-        "model": os.environ.get("OMNIROUTE_MODEL", ""),
+        "model": get_selected_model(),
+    }
+
+
+def payload_select_model(model: str) -> dict[str, Any]:
+    cleaned = (model or "").strip()
+    if not cleaned:
+        raise ApiError(400, "empty-model", "model name cannot be empty")
+    saved = set_selected_model(cleaned)
+    try:
+        picked = resolve_model(saved)
+        resolved = picked["model"]
+        chosen_by = picked["chosen_by"]
+        is_al = picked["is_alias"]
+    except Exception:
+        resolved = saved
+        chosen_by = "user-pinned"
+        is_al = is_alias(saved)
+    return {
+        "ok": True,
+        "configured_model": saved,
+        "resolved_model": resolved,
+        "resolved_by": chosen_by,
+        "is_alias": is_al,
     }
 
 
@@ -154,7 +216,7 @@ def _omni_request(path: str, timeout: float = 15.0,
 
 
 def list_models() -> list[str]:
-    payload = _omni_request("/v1/models", timeout=20.0)
+    payload = _omni_request("/v1/models", timeout=5.0)
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, list):
         # Some gateways answer /api/tags instead.
@@ -472,14 +534,30 @@ def payload_router_tool(name: str) -> dict[str, Any]:
         "Tool execution is owned by CORE and the capability broker.",
     )
 
+_REASONING_PATTERNS: frozenset[str] = frozenset({
+    "who am i", "who are you", "what am i", "who i am",
+    "what patterns", "what do you see", "what do you know about me",
+    "what can you tell", "what can you infer",
+    "summarize", "summary", "recent activity",
+    "based on my memories", "based on the memories",
+    "tell me about me", "tell me about my",
+    "describe me", "my activity", "my work", "my habits",
+    "my profile", "my history", "what have i been",
+    "what am i building", "active projects", "what should i work on",
+    "work on next", "what should i focus", "what are my projects",
+    "status", "tasks", "what are you doing", "what is happening",
+})
+
+
+def _is_reasoning_query(message: str) -> bool:
+    m = message.lower()
+    return any(p in m for p in _REASONING_PATTERNS)
+
+
 def payload_chat(message: str, model: str = "", history: list | None = None) -> dict[str, Any]:
     """
-    A real completion. Nothing here is simulated, including the failures.
-
-    This deliberately calls the gateway directly rather than going through the
-    daemon's tool-call loop: the console is for talking to the router, and
-    quietly executing capabilities from a web form would be a privilege
-    escalation with a chat box for a handle.
+    A real completion enriched with Eidolon OS temporal memory, OpenDAN persona routing,
+    and NAVA-style action proposals. Nothing here is simulated.
     """
     if not message.strip():
         raise ApiError(400, "empty-message", "the message was empty after stripping whitespace")
@@ -488,7 +566,80 @@ def payload_chat(message: str, model: str = "", history: list | None = None) -> 
     picked = resolve_model(model or config["model"])
     chosen = picked["model"]
 
-    messages = []
+    # 1. OpenDAN persona extraction
+    raw_message = message.strip()
+    persona = "maid"
+    persona_system = (
+        "You are ELORA, an assistant in a local application. Respond concisely and accurately. "
+        "Do not claim that you inspected files, used a capability, measured the host, or verified "
+        "an invariant unless the supplied context or a recorded tool result proves it. "
+        "When the requested evidence is absent, say so plainly."
+    )
+    for p_tag in ["@thinker", "@coder", "@verifier", "@terminal", "@maid"]:
+        if raw_message.lower().startswith(p_tag):
+            persona = p_tag[1:]
+            raw_message = raw_message[len(p_tag):].strip()
+            break
+
+    if persona == "thinker":
+        persona_system += " Persona: Thinker — Multi-step cognitive reasoning, system design, and architectural deliberation."
+    elif persona == "coder":
+        persona_system += " Persona: Coder — High-precision systems programming, AST safety, and patch correctness."
+    elif persona == "verifier":
+        persona_system += " Persona: Verifier — Adversarial invariant verification, security contracts, and proof auditing."
+    elif persona == "terminal":
+        persona_system += " Persona: Terminal — DevOps commands, build logs, and test harness execution."
+
+    # 2. Eidolon OS Memory & Temporal Enrichment
+    sources: list[dict[str, Any]] = []
+    enriched = False
+    context_lines = []
+
+    if _is_reasoning_query(raw_message):
+        enriched = True
+        try:
+            vault_res = payload_vault_search(raw_message, limit=3)
+            for item in vault_res.get("results", []):
+                sources.append({
+                    "title": item.get("id", "Vault Skill"),
+                    "source": item.get("path", "vault/skills"),
+                    "snippet": item.get("snippet", "")[:180],
+                })
+                context_lines.append(f"- Vault [{item.get('id')}]: {item.get('snippet','')[:140]}")
+        except Exception:
+            pass
+
+        try:
+            from elora.organs.akashic import AkashicLedger
+            if os.path.exists(LEDGER_PATH):
+                for ev in AkashicLedger.read_recent_events(LEDGER_PATH, n=5):
+                    h_short = ev.get("hash", "")[:8]
+                    sources.append({
+                        "title": f"Ledger #{h_short}",
+                        "source": ev.get("organ", "broker"),
+                        "snippet": f"{ev.get('kind')}: {ev.get('message', '')}",
+                    })
+                    context_lines.append(f"- Ledger [{ev.get('organ')}]: {ev.get('kind')} - {ev.get('message', '')}")
+        except Exception:
+            pass
+
+    # 3. Action intent detection (NAVA)
+    action_proposal = None
+    lower_msg = raw_message.lower()
+    if "pytest" in lower_msg or "run test" in lower_msg:
+        action_proposal = {"command": "/task run pytest", "label": "Run Pytest Suite", "tier": "CORE"}
+    elif "git status" in lower_msg or "git diff" in lower_msg:
+        action_proposal = {"command": "/task git status", "label": "Check Git Status", "tier": "CORE"}
+    elif "briefing" in lower_msg or "daily briefing" in lower_msg:
+        action_proposal = {"command": "/briefing", "label": "View Daily Briefing", "tier": "TRUSTED"}
+    elif "adopt" in lower_msg:
+        action_proposal = {"command": "/adopt", "label": "Adopt Skill Repo", "tier": "TRUSTED"}
+
+    system_text = persona_system
+    if context_lines:
+        system_text += "\n\nRetrieved Context & Recent Activity:\n" + "\n".join(context_lines)
+
+    messages = [{"role": "system", "content": system_text}]
     for turn in (history or [])[-12:]:
         if isinstance(turn, dict) and turn.get("role") in ("user", "assistant"):
             messages.append({"role": turn["role"], "content": str(turn.get("content", ""))[:8000]})
@@ -523,6 +674,10 @@ def payload_chat(message: str, model: str = "", history: list | None = None) -> 
         "model_is_alias": picked["is_alias"],
         "model_requested": model or config["model"] or "(unset)",
         "latency_ms": latency_ms,
+        "persona": persona,
+        "sources": sources,
+        "reasoning_enriched": enriched,
+        "action_proposal": action_proposal,
         "usage": {
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
@@ -620,18 +775,26 @@ def payload_capabilities() -> dict[str, Any]:
     }
 
 
-def payload_ledger(limit: int = 60) -> dict[str, Any]:
+def payload_ledger(limit: int = 60, before_seq: int | None = None) -> dict[str, Any]:
     from elora.organs.akashic import AkashicLedger
 
     if not os.path.exists(LEDGER_PATH):
         return {"available": False, "events": [], "count": 0,
                 "note": f"no ledger at {LEDGER_PATH}"}
     try:
-        ledger = AkashicLedger(LEDGER_PATH)
-        events = ledger.recent_events(n=max(1, min(limit, 500)))
+        page_size = max(1, min(int(limit), 500))
+        events = AkashicLedger.read_recent_events(
+            LEDGER_PATH, n=page_size, before_seq=before_seq)
     except Exception as exc:                            # noqa: BLE001
         raise ApiError(500, "ledger-unreadable", f"{type(exc).__name__}: {exc}") from exc
-    return {"available": True, "count": len(events), "events": events}
+    oldest_seq = events[0]["seq"] if events else None
+    return {
+        "available": True,
+        "count": len(events),
+        "events": events,
+        "oldest_seq": oldest_seq,
+        "has_older": bool(oldest_seq is not None and oldest_seq > 1),
+    }
 
 
 def payload_plugins() -> dict[str, Any]:
@@ -750,16 +913,22 @@ def payload_organism_state(state_file: Optional[str] = None) -> dict[str, Any]:
     seed = int(hashlib.sha256(seed_src.encode("utf-8")).hexdigest()[:8], 16) / 0xFFFFFFFF
 
     vm = state.get("metabolism", state.get("state_name", "ALIVE"))
+    from elora.core.system_metrics import memory_snapshot
+    memory = memory_snapshot()
     return {
         "available": True,
         "metabolism_index": _STATE_INDEX.get(vm, 1),
         "seed": round(seed, 6),
-        "ram_headroom": state.get("ram_headroom", 0.7),
-        "ripple_events": state.get("ripple_events_recent", 0),
+        "ram_headroom": memory["ram_headroom"],
+        "ram_available_mb": memory["ram_available_mb"],
+        "ram_total_mb": memory["ram_total_mb"],
+        "ram_metric_available": memory["ram_metric_available"],
+        "ripple_events": state.get("ripple_events_recent"),
         "data": {
             "current_task": state.get("current_task") or "Idle",
             "current_capability": state.get("current_capability") or "none",
             "execution_tier": state.get("execution_tier") or "CORE",
+            "brain_backend": state.get("brain_backend"),
             "status": state.get("status") or "IDLE",
             "last_action": state.get("last_action") or "none",
             "state_name": state.get("state_name") or vm,
@@ -774,7 +943,12 @@ def payload_resident_briefing() -> dict[str, Any]:
     if os.path.exists(LEDGER_PATH):
         try:
             from elora.organs.akashic import AkashicLedger
-            ledger = AkashicLedger(LEDGER_PATH)
+            class RecentLedgerView:
+                @staticmethod
+                def recent_events(n=1000):
+                    return AkashicLedger.read_recent_events(LEDGER_PATH, n=n)
+
+            ledger = RecentLedgerView()
         except Exception:
             ledger = None
     return generate_daily_briefing(ledger=ledger)
@@ -808,7 +982,7 @@ def payload_browser_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     if os.path.exists(LEDGER_PATH):
         try:
             from elora.organs.akashic import AkashicLedger
-            AkashicLedger(LEDGER_PATH).append(
+            AkashicLedger(LEDGER_PATH, load_history=False).append(
                 organ="browser", kind="session_handoff",
                 message="browser extension session handed off",
                 payload={"captured_at": result.get("captured_at"),
@@ -819,11 +993,69 @@ def payload_browser_handoff(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def payload_inbox_task(prompt: str, client: str = RESIDENT_CLIENT) -> dict[str, Any]:
-    """Enqueues a spoken will into .elora/inbox and records its client identity."""
+def payload_upload(body: dict[str, Any]) -> dict[str, Any]:
+    """Saves uploaded media (image, video, document) into .elora/uploads."""
+    filename = str(body.get("filename", body.get("name", "upload.bin"))).strip()
+    filename = os.path.basename(filename)
+    clean_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+    if not clean_name:
+        clean_name = "upload.bin"
+    mime_type = str(body.get("type", "application/octet-stream")).strip()
+    data_b64 = str(body.get("data_base64", body.get("data", "")))
+    if not data_b64:
+        raise ApiError(400, "empty-upload-data", "upload data_base64 is empty")
+
+    if "," in data_b64 and data_b64.startswith("data:"):
+        data_b64 = data_b64.split(",", 1)[1]
+
+    try:
+        raw_bytes = base64.b64decode(data_b64)
+    except Exception as exc:
+        raise ApiError(400, "invalid-base64", f"Could not decode base64 data: {exc}")
+
+    if len(raw_bytes) > 50 * 1024 * 1024:
+        raise ApiError(413, "upload-too-large", "Uploaded file exceeds 50MB limit")
+
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    ts = int(time.time() * 1000)
+    stored_name = f"{ts}_{clean_name}"
+    target_path = os.path.join(UPLOADS_DIR, stored_name)
+    with open(target_path, "wb") as f:
+        f.write(raw_bytes)
+
+    rel_path = os.path.relpath(target_path, ROOT).replace("\\", "/")
+    url_path = f"/api/uploads/{stored_name}"
+
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            AkashicLedger(LEDGER_PATH, load_history=False).append(
+                organ="uploads",
+                kind="file_received",
+                message=f"Received upload: {stored_name} ({len(raw_bytes)} bytes)",
+                payload={"filename": stored_name, "original": filename, "size": len(raw_bytes), "type": mime_type},
+            )
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "filename": stored_name,
+        "original_name": filename,
+        "path": rel_path,
+        "url": url_path,
+        "size": len(raw_bytes),
+        "type": mime_type,
+    }
+
+
+def payload_inbox_task(prompt: str, attachments: list | None = None, client: str = RESIDENT_CLIENT) -> dict[str, Any]:
+    """Enqueues a spoken will into .elora/inbox and records its client identity and attachments."""
     clean = (prompt or "").strip()
-    if not clean:
+    if not clean and not attachments:
         raise ApiError(400, "empty-task", "prompt cannot be empty")
+    if not clean and attachments:
+        clean = "Inspect attached media / file"
     inbox_dir = os.path.join(STATE_DIR, "inbox")
     os.makedirs(inbox_dir, exist_ok=True)
     ts = int(time.time() * 1000)
@@ -831,17 +1063,28 @@ def payload_inbox_task(prompt: str, client: str = RESIDENT_CLIENT) -> dict[str, 
     target = os.path.join(inbox_dir, filename)
     if not os.path.isfile(LEDGER_PATH):
         raise ApiError(503, "ledger-unavailable", "Akashic ledger is unavailable; will was not queued")
+
+    task_body = clean
+    if attachments:
+        att_lines = []
+        for att in attachments:
+            name = att.get("name") or att.get("filename") or "file"
+            path = att.get("path") or att.get("url") or ""
+            mime = att.get("type") or "file"
+            att_lines.append(f"[Attached: {name} ({mime}) -> {path}]")
+        task_body += "\n\n" + "\n".join(att_lines)
+
     with open(target, "w", encoding="utf-8") as handle:
-        handle.write(clean)
+        handle.write(task_body)
 
     try:
         from elora.organs.akashic import AkashicLedger
-        ledger = AkashicLedger(LEDGER_PATH)
+        ledger = AkashicLedger(LEDGER_PATH, load_history=False)
         ledger.append(
             organ="inbox",
             kind="task_queued",
             message=f"task queued: {clean[:60]}",
-            payload={"filename": filename, "task": clean, "client": client},
+            payload={"filename": filename, "task": clean, "attachments": attachments or [], "client": client},
         )
     except Exception:
         try:
@@ -858,14 +1101,17 @@ def payload_inbox_task(prompt: str, client: str = RESIDENT_CLIENT) -> dict[str, 
                 messages = json.load(handle)
         except Exception:
             messages = []
-    messages.append({
+    msg_entry = {
         "sender": "user",
         "text": clean,
         "task_id": filename,
         "ts": time.time(),
         "status": "queued",
         "client": client,
-    })
+    }
+    if attachments:
+        msg_entry["attachments"] = attachments
+    messages.append(msg_entry)
     try:
         with open(chat_path, "w", encoding="utf-8") as handle:
             json.dump(messages, handle, indent=2)
@@ -873,6 +1119,445 @@ def payload_inbox_task(prompt: str, client: str = RESIDENT_CLIENT) -> dict[str, 
         pass
 
     return {"ok": True, "task_id": filename}
+
+
+def payload_specialists() -> dict[str, Any]:
+    from elora.slime.specialists import list_specialists
+    return {"specialists": list_specialists()}
+
+
+def payload_task_detail(task_id: str) -> dict[str, Any]:
+    tasks = payload_tasks(limit=1000).get("tasks", [])
+    found = next((t for t in tasks if t.get("id") == task_id
+                  or task_id in t.get("related_ids", [])), None)
+    if not found:
+        raise ApiError(404, "task-not-found", f"Task {task_id!r} not found")
+
+    events = []
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            events = _linked_task_events(
+                found, AkashicLedger.read_recent_events(LEDGER_PATH, n=2000))
+        except Exception:
+            pass
+
+    verification = _task_receipt(events)
+    return {
+        "task": found,
+        "events": events,
+        "audit_receipt": {
+            "task_id": task_id,
+            **verification,
+            "stages_recorded": len(found.get("stages", [])),
+        }
+    }
+
+
+def _task_event_index(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build lookup tables once so each task does not rescan the ledger."""
+    by_identity: dict[str, list[dict[str, Any]]] = {}
+    by_goal: dict[str, list[dict[str, Any]]] = {}
+    by_kind_message: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    ordered = sorted(events, key=lambda event: event.get("seq", 0))
+    for event in ordered:
+        payload = event.get("payload")
+        payload = payload if isinstance(payload, dict) else {}
+        identity_values = (event.get("message"), payload.get("task_id"),
+                           payload.get("filename"), payload.get("task"))
+        for value in identity_values:
+            if isinstance(value, str) and value:
+                by_identity.setdefault(value, []).append(event)
+        for value in (payload.get("text"), payload.get("task")):
+            if isinstance(value, str) and value:
+                by_goal.setdefault(value, []).append(event)
+        kind, message = event.get("kind"), event.get("message")
+        if isinstance(kind, str) and isinstance(message, str) and message:
+            by_kind_message.setdefault((kind, message), []).append(event)
+    return {
+        "events": ordered,
+        "seqs": [event.get("seq", 0) for event in ordered],
+        "by_identity": by_identity,
+        "by_goal": by_goal,
+        "by_kind_message": by_kind_message,
+    }
+
+
+def _linked_task_events(
+    task: dict[str, Any],
+    events: list[dict[str, Any]],
+    event_index: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Return events linked by exact task identity or a matched daemon run window."""
+    index = event_index or _task_event_index(events)
+    task_id = str(task.get("id", ""))
+    goal = str(task.get("goal", "")).strip()
+    direct_by_seq = {
+        event.get("seq"): event
+        for event in (
+            list(index["by_identity"].get(task_id, []))
+            + list(index["by_goal"].get(goal, []))
+        )
+    }
+    direct = list(direct_by_seq.values())
+
+    # Daemon task_started carries the submitted text; pair its runtime id with
+    # task_finished, then include Broker records inside that exact run window.
+    linked = {event.get("seq"): event for event in direct}
+    runtime_ids = {
+        str(event.get("message", "")) for event in direct
+        if event.get("kind") == "task_started" and event.get("message")
+    }
+    for runtime_id in runtime_ids:
+        finished = index["by_kind_message"].get(("task_finished", runtime_id), [])
+        for event in finished:
+            linked[event.get("seq")] = event
+        started = [event for event in direct
+                   if event.get("kind") == "task_started"
+                   and str(event.get("message", "")) == runtime_id]
+        for begin in started:
+            end = next((event for event in finished
+                        if event.get("seq", 0) > begin.get("seq", 0)), None)
+            upper = end.get("seq", 0) if end else float("inf")
+            left = bisect.bisect_left(index["seqs"], begin.get("seq", 0))
+            right = bisect.bisect_right(index["seqs"], upper)
+            for event in index["events"][left:right]:
+                if event.get("kind") in (
+                    "capability_intent", "capability_result"
+                ):
+                    linked[event.get("seq")] = event
+
+    return sorted(linked.values(), key=lambda event: event.get("seq", 0))
+
+
+def _task_receipt(events: list[dict[str, Any]]) -> dict[str, Any]:
+    results = [event for event in events if event.get("kind") == "capability_result"]
+    passing = [event for event in results
+               if isinstance(event.get("payload"), dict)
+               and event["payload"].get("rc") == 0
+               and event["payload"].get("verified") is True]
+    result = passing[-1] if passing else (results[-1] if results else None)
+    return {
+        "verified": bool(passing),
+        "status": ("BROKER REPORTED RC=0" if passing else
+                   "BROKER REPORTED FAILURE" if result else "NOT RECORDED"),
+        "invariants_audited": False,
+        "hash": result.get("hash") if result else None,
+        "capability_results": len(results),
+    }
+
+
+def _task_source_fingerprint(limit: int) -> tuple[Any, ...]:
+    """Cheap invalidation key for the files and ledger used by the task view."""
+    fixed_paths = (
+        os.path.join(STATE_DIR, "chores.json"),
+        os.path.join(STATE_DIR, "household.json"),
+        os.path.join(STATE_DIR, "chat.json"),
+        LEDGER_PATH,
+        LEDGER_PATH + "-wal",
+        os.path.join(STATE_DIR, "inbox"),
+    )
+    parts: list[Any] = [limit]
+    for path in fixed_paths:
+        try:
+            stat = os.stat(path)
+            parts.append((path, stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size))
+        except OSError:
+            parts.append((path, None))
+    inbox_dir = os.path.join(STATE_DIR, "inbox")
+    try:
+        inbox_files = []
+        for name in os.listdir(inbox_dir):
+            if name.endswith(".txt"):
+                path = os.path.join(inbox_dir, name)
+                try:
+                    stat = os.stat(path)
+                    inbox_files.append((name, stat.st_mtime_ns, stat.st_size))
+                except OSError:
+                    continue
+        parts.append(tuple(sorted(inbox_files)))
+    except OSError:
+        parts.append(())
+    return tuple(parts)
+
+
+def payload_tasks(limit: int = 50) -> dict[str, Any]:
+    """Return a cached, evidence-linked task view, invalidated by source changes."""
+    global _TASKS_CACHE_KEY, _TASKS_CACHE_VALUE
+    key = _task_source_fingerprint(limit)
+    with _TASKS_CACHE_LOCK:
+        if _TASKS_CACHE_KEY == key and _TASKS_CACHE_VALUE is not None:
+            return copy.deepcopy(_TASKS_CACHE_VALUE)
+        result = _payload_tasks_uncached(limit)
+        if _task_source_fingerprint(limit) == key:
+            _TASKS_CACHE_KEY = key
+            _TASKS_CACHE_VALUE = copy.deepcopy(result)
+        return result
+
+
+def _payload_tasks_uncached(limit: int = 50) -> dict[str, Any]:
+    """
+    Read task records from chores, inbox, chat, and linked Akashic events.
+    Inferred routing is labeled as a suggestion; execution status requires evidence.
+    """
+    tasks = []
+    seen_ids = set()
+
+    # 1. Active / recent chores from household chore book
+    chores_path = os.path.join(STATE_DIR, "chores.json")
+    if not os.path.exists(chores_path):
+        chores_path = os.path.join(STATE_DIR, "household.json")
+    if os.path.exists(chores_path):
+        try:
+            with open(chores_path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+                items = raw if isinstance(raw, list) else raw.get("chores", [])
+                for c in items:
+                    if isinstance(c, dict) and c.get("id"):
+                        cid = c["id"]
+                        seen_ids.add(cid)
+                        c_status = c.get("status", "open")
+                        tasks.append({
+                            "id": cid,
+                            "goal": c.get("goal", ""),
+                            "status": c_status,
+                            "source": c.get("source", "household"),
+                            "attempts": c.get("attempts", 0),
+                            "created": c.get("created", time.time()),
+                            "notes": c.get("notes", []),
+                            "stages": [],
+                            "trace": [],
+                        })
+        except Exception:
+            pass
+
+    # 2. Queued tasks in .elora/inbox
+    inbox_dir = os.path.join(STATE_DIR, "inbox")
+    if os.path.isdir(inbox_dir):
+        try:
+            for fname in os.listdir(inbox_dir):
+                if fname.endswith(".txt"):
+                    fpath = os.path.join(inbox_dir, fname)
+                    mtime = os.path.getmtime(fpath)
+                    try:
+                        with open(fpath, "r", encoding="utf-8") as f:
+                            content = f.read().strip()
+                    except Exception:
+                        content = ""
+                    tid = fname
+                    if tid not in seen_ids:
+                        seen_ids.add(tid)
+                        tasks.append({
+                            "id": tid,
+                            "goal": content,
+                            "status": "queued",
+                            "source": "inbox",
+                            "attempts": 0,
+                            "created": mtime,
+                            "notes": ["Queued in .elora/inbox waiting for reactor tick"],
+                            "stages": [],
+                            "trace": [],
+                        })
+        except Exception:
+            pass
+
+    # 3. Tasks recorded in .elora/chat.json
+    chat_path = os.path.join(STATE_DIR, "chat.json")
+    if os.path.exists(chat_path):
+        try:
+            with open(chat_path, "r", encoding="utf-8") as f:
+                chat_msgs = json.load(f)
+                if isinstance(chat_msgs, list):
+                    for m in chat_msgs:
+                        if not isinstance(m, dict) or m.get("sender") != "user":
+                            continue
+                        if isinstance(m, dict) and m.get("proactive") is True:
+                            continue
+                        tid = m.get("task_id")
+                        if tid and tid not in seen_ids:
+                            seen_ids.add(tid)
+                            st = m.get("status", "unknown")
+                            tasks.append({
+                                "id": tid,
+                                "goal": m.get("text", ""),
+                                "status": st,
+                                "source": m.get("client", "chat"),
+                                "attempts": 1,
+                                "created": m.get("ts", time.time()),
+                                "notes": [],
+                                "stages": [],
+                                "trace": [],
+                            })
+        except Exception:
+            pass
+
+    # 4. Attach only records that can be linked to the individual task.
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            recent_events = AkashicLedger.read_recent_events(LEDGER_PATH, n=2000)
+            event_index = _task_event_index(recent_events)
+            for task in tasks:
+                linked = _linked_task_events(task, recent_events, event_index)
+                task["trace"] = [{
+                    "seq": e.get("seq"),
+                    "organ": e.get("organ", "unknown"),
+                    "kind": e.get("kind", "unknown"),
+                    "message": e.get("message", ""),
+                    "payload": e.get("payload", {}),
+                    "hash": str(e.get("hash", ""))[:12],
+                    "ts": e.get("ts", 0),
+                } for e in linked]
+                task["stages"] = _stages_from_events(linked)
+                finished = next((event for event in reversed(linked)
+                                 if event.get("kind") == "task_finished"), None)
+                if finished and isinstance(finished.get("payload"), dict):
+                    recorded_status = str(finished["payload"].get("status", "")).strip().lower()
+                    if recorded_status:
+                        task["status"] = recorded_status
+                task["terminal_log"] = [
+                    f"[#{e.get('seq')}] {e.get('organ', 'unknown')}.{e.get('kind', 'unknown')}: {e.get('message', '')}"
+                    for e in linked
+                ]
+                task["verification"] = _task_receipt(linked)
+        except Exception:
+            pass
+
+    from elora.slime.specialists import route_will_to_specialist
+    for t in tasks:
+        spec = route_will_to_specialist(t.get("goal", ""))
+        t["suggested_specialist"] = spec.name
+        t["specialist_id"] = spec.specialist_id
+        t["specialist_icon"] = spec.icon
+        t["risk_tier"] = spec.tier.name
+        t.setdefault("verification", _task_receipt(t.get("trace", [])))
+        t.setdefault("terminal_log", [])
+
+    # Chores, inbox rows, and user chat messages can describe the same will.
+    # Merge only when they resolve to the identical non-empty ledger sequence;
+    # matching text alone is not enough to collapse two separate requests.
+    deduplicated = []
+    by_evidence = {}
+    for task in tasks:
+        seqs = tuple(trace.get("seq") for trace in task.get("trace", [])
+                     if trace.get("seq") is not None)
+        if not seqs:
+            deduplicated.append(task)
+            continue
+        normalized_goal = " ".join(str(task.get("goal", "")).lower().split())
+        evidence_key = (normalized_goal, seqs)
+        existing = by_evidence.get(evidence_key)
+        if existing is None:
+            task["related_ids"] = [task.get("id")]
+            by_evidence[evidence_key] = task
+            deduplicated.append(task)
+            continue
+        related_ids = list(existing.get("related_ids", [])) + [task.get("id")]
+        if len(task.get("trace", [])) > len(existing.get("trace", [])):
+            existing.update(task)
+        existing["related_ids"] = list(dict.fromkeys(related_ids))
+
+    tasks = deduplicated
+    tasks.sort(key=lambda t: t.get("created", 0), reverse=True)
+    return {
+        "available": True,
+        "count": len(tasks),
+        "tasks": tasks[:limit],
+    }
+
+
+def _stages_from_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Display only lifecycle milestones present in linked ledger records."""
+    names = {
+        "task_queued": "Will queued",
+        "task_started": "Daemon started",
+        "capability_intent": "Broker intent recorded",
+        "capability_result": "Broker result recorded",
+        "task_finished": "Daemon finished",
+    }
+    return [
+        {"name": names[event["kind"]], "key": event["kind"], "state": "done"}
+        for event in events if event.get("kind") in names
+    ]
+
+
+def payload_vault_search(query: str = "", limit: int = 20) -> dict[str, Any]:
+    """
+    Hybrid RAG Memory Search across Vault & Skills (Eidetic OS & EIDOLON style).
+    Searches markdown notes, skills specs, and memory episodes.
+    """
+    clean = (query or "").strip().lower()
+    vault_dir = os.path.join(ROOT, "vault")
+    results = []
+    if os.path.isdir(vault_dir):
+        for root_dir, _, files in os.walk(vault_dir):
+            for file in files:
+                if file.endswith((".md", ".txt", ".json")):
+                    fpath = os.path.join(root_dir, file)
+                    relpath = os.path.relpath(fpath, ROOT).replace("\\", "/")
+                    try:
+                        with open(fpath, "r", encoding="utf-8", errors="replace") as f:
+                            text = f.read()
+                        if clean and clean in text.lower():
+                            idx = text.lower().find(clean)
+                            start = max(0, idx - 80)
+                            end = min(len(text), idx + 160)
+                            snippet = ("..." if start > 0 else "") + text[start:end].replace("\n", " ") + ("..." if end < len(text) else "")
+                            results.append({
+                                "path": relpath,
+                                "filename": file,
+                                "snippet": snippet,
+                                "size": len(text),
+                            })
+                        elif not clean:
+                            results.append({
+                                "path": relpath,
+                                "filename": file,
+                                "snippet": text[:180].replace("\n", " "),
+                                "size": len(text),
+                            })
+                    except Exception:
+                        pass
+                if len(results) >= limit:
+                    break
+            if len(results) >= limit:
+                break
+    return {
+        "available": True,
+        "query": query,
+        "count": len(results),
+        "results": results,
+    }
+
+
+def payload_task_consent(token: str, approved: bool) -> dict[str, Any]:
+    """Handles interactive dual-key consent approvals for Risk-5 capabilities."""
+    clean_token = (token or "").strip()
+    if not clean_token:
+        raise ApiError(400, "empty-token", "consent token cannot be empty")
+    consent_dir = os.path.join(STATE_DIR, "consent")
+    os.makedirs(consent_dir, exist_ok=True)
+    target = os.path.join(consent_dir, f"{clean_token}.json")
+    record = {
+        "token": clean_token,
+        "approved": approved,
+        "ts": time.time(),
+        "signer": "Master",
+    }
+    with open(target, "w", encoding="utf-8") as f:
+        json.dump(record, f, indent=2)
+    if os.path.exists(LEDGER_PATH):
+        try:
+            from elora.organs.akashic import AkashicLedger
+            AkashicLedger(LEDGER_PATH, load_history=False).append(
+                organ="broker",
+                kind="consent_granted" if approved else "consent_refused",
+                message=f"Dual-key consent {'granted' if approved else 'refused'} for token {clean_token}",
+                payload={"token": clean_token, "approved": approved},
+            )
+        except Exception:
+            pass
+    return {"ok": True, "token": clean_token, "approved": approved}
 
 
 # ----------------------------------------------------------------------
@@ -964,6 +1649,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self._origin_allowed():
             raise ApiError(403, "origin-refused",
                            f"Origin {self.headers.get('Origin')!r} is not allowed")
+        # Media asset requests from <img>, <video>, <a> tags cannot supply custom headers.
+        if not mutating and (path.startswith("/api/uploads/") or path == "/api/perception/still"):
+            return
         client = self.headers.get(CLIENT_HEADER, "")
         if mutating and path == "/api/inbox/task":
             allowed = {RESIDENT_CLIENT, CORE_CLIENT}
@@ -978,15 +1666,15 @@ class Handler(BaseHTTPRequestHandler):
                 f"{CLIENT_HEADER} must be one of: {expected}",
                 "The client identity is checked before an organ can receive the request.")
 
-    def _read_json(self) -> dict[str, Any]:
+    def _read_json(self, max_size: int = 1_000_000) -> dict[str, Any]:
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             raise ApiError(400, "bad-content-length", "Content-Length is not a number")
         if length <= 0:
             return {}
-        if length > 1_000_000:
-            raise ApiError(413, "body-too-large", f"{length} bytes exceeds the 1MB limit")
+        if length > max_size:
+            raise ApiError(413, "body-too-large", f"{length} bytes exceeds the {max_size} bytes limit")
         raw = self.rfile.read(length)
         try:
             parsed = json.loads(raw.decode("utf-8"))
@@ -1016,7 +1704,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", _STATIC_TYPES.get(ext, "application/octet-stream"))
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
@@ -1069,7 +1759,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(payload_capabilities())
             elif path == "/api/ledger":
                 limit = int(query.get("limit", ["60"])[0])
-                self._send_json(payload_ledger(limit))
+                raw_before = query.get("before", [None])[0]
+                try:
+                    before_seq = int(raw_before) if raw_before is not None else None
+                except (TypeError, ValueError) as exc:
+                    raise ApiError(400, "bad-ledger-cursor", "before must be an integer sequence") from exc
+                self._send_json(payload_ledger(limit, before_seq=before_seq))
             elif path == "/api/plugins":
                 self._send_json(payload_plugins())
             elif path == "/api/organism_state":
@@ -1094,20 +1789,66 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(payload_resident_briefing())
             elif path == "/api/chat/history":
                 self._send_json(payload_chat_history())
+            elif path == "/api/tasks":
+                limit = int(query.get("limit", ["50"])[0])
+                self._send_json(payload_tasks(limit=limit))
+            elif path == "/api/vault/search":
+                q = query.get("q", query.get("query", [""]))[0]
+                self._send_json(payload_vault_search(query=q))
+            elif path == "/api/specialists":
+                self._send_json(payload_specialists())
+            elif path == "/api/tasks/detail":
+                tid = query.get("id", [""])[0]
+                self._send_json(payload_task_detail(tid))
+            elif path == "/api/resident/thought":
+                from elora.core.proactive import get_consciousness
+                c = get_consciousness()
+                self._send_json({"thought": c.get_current_thought(), "state": c.get_state_info().get("state_name", "AWAKE")})
             elif path == "/api/browser/session":
                 self._send_json(payload_browser_session())
+            elif path.startswith("/api/uploads/"):
+                fname = os.path.basename(path[len("/api/uploads/"):])
+                safe_path = os.path.realpath(os.path.join(UPLOADS_DIR, fname))
+                uploads_jail = os.path.realpath(UPLOADS_DIR)
+                try:
+                    if os.path.commonpath((uploads_jail, safe_path)) != uploads_jail:
+                        raise ApiError(403, "path-forbidden", "path outside uploads jail")
+                except ValueError:
+                    raise ApiError(403, "path-forbidden", "invalid path")
+                if not os.path.isfile(safe_path):
+                    raise ApiError(404, "file-not-found", f"Upload {fname!r} not found")
+
+                ext = os.path.splitext(fname)[1].lower()
+                mime = _STATIC_TYPES.get(ext, "application/octet-stream")
+                if ext in (".mp4", ".m4v"):
+                    mime = "video/mp4"
+                elif ext in (".webm",):
+                    mime = "video/webm"
+                elif ext in (".mov",):
+                    mime = "video/quicktime"
+                elif ext in (".jpg", ".jpeg"):
+                    mime = "image/jpeg"
+                elif ext in (".webp",):
+                    mime = "image/webp"
+                elif ext in (".gif",):
+                    mime = "image/gif"
+                elif ext in (".pdf",):
+                    mime = "application/pdf"
+
+                with open(safe_path, "rb") as handle:
+                    body = handle.read()
+                self.send_response(200)
+                self.send_header("Content-Type", mime)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
             else:
                 raise ApiError(404, "unknown-endpoint", f"no route for {path}")
         except ApiError as exc:
             self._send_error_json(exc)
         except ConnectionError:
-            # The client hung up mid-response — a reload cancelling an in-flight
-            # fetch, most often. BrokenPipeError alone was not enough: on Windows
-            # a cancelled request raises ConnectionAbortedError (WinError 10053),
-            # which is a sibling under ConnectionError rather than a subclass. It
-            # therefore fell through to the handler below, which tried to send a
-            # 500 down the same dead socket and logged a full traceback for every
-            # cancelled fetch — burying real failures in noise.
             pass
         except Exception as exc:                          # noqa: BLE001
             self._send_error_json(ApiError(
@@ -1132,7 +1873,39 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._read_json()
                 client = self.headers.get(CLIENT_HEADER, "")
                 self._send_json(payload_inbox_task(
-                    str(body.get("prompt", body.get("task", ""))), client=client))
+                    str(body.get("prompt", body.get("task", ""))),
+                    attachments=body.get("attachments") if isinstance(body.get("attachments"), list) else None,
+                    client=client))
+            elif path == "/api/router/model":
+                body = self._read_json()
+                self._send_json(payload_select_model(str(body.get("model", ""))))
+            elif path == "/api/upload":
+                body = self._read_json(max_size=60_000_000)
+                self._send_json(payload_upload(body))
+            elif path == "/api/tasks/consent":
+                body = self._read_json()
+                self._send_json(payload_task_consent(
+                    str(body.get("token", "")),
+                    bool(body.get("approved", False)),
+                ))
+            elif path == "/api/vault/search":
+                body = self._read_json()
+                self._send_json(payload_vault_search(
+                    query=str(body.get("query", body.get("q", ""))),
+                    limit=int(body.get("limit", 20)),
+                ))
+            elif path == "/api/resident/wake":
+                body = self._read_json() if self.headers.get("Content-Length") else {}
+                from elora.core.proactive import get_consciousness
+                res = get_consciousness().wake(
+                    reason=str(body.get("reason", "console_user_presence")),
+                    force_greeting=bool(body.get("force", False)),
+                )
+                self._send_json(res)
+            elif path == "/api/resident/proactive_tick":
+                from elora.core.proactive import get_consciousness
+                res = get_consciousness().tick_idle(force=True)
+                self._send_json(res or {"ok": False, "reason": "cooldown_or_busy"})
             elif path == "/api/browser/session":
                 self._send_json(payload_browser_handoff(self._read_json()))
             elif path == "/api/mcp/call":
@@ -1177,10 +1950,31 @@ class Handler(BaseHTTPRequestHandler):
                 500, "internal-error", f"{type(exc).__name__}: {exc}"))
 
 
+def _start_autonomous_presence_thread():
+    import threading
+    def _presence_worker():
+        from elora.core.proactive import get_consciousness
+        c = get_consciousness()
+        time.sleep(2)
+        try:
+            c.wake(reason="server_boot", force_greeting=False)
+        except Exception:
+            pass
+        while True:
+            time.sleep(40)
+            try:
+                c.tick_idle()
+            except Exception:
+                pass
+    t = threading.Thread(target=_presence_worker, daemon=True, name="elora-proactive")
+    t.start()
+
+
 def serve(host: str = "127.0.0.1", port: int = DEFAULT_PORT) -> ThreadingHTTPServer:
     if host not in ("127.0.0.1", "localhost", "::1"):
         raise SystemExit(
             f"refusing to bind {host}: this console can call MCP tools and must stay local")
+    _start_autonomous_presence_thread()
     httpd = ThreadingHTTPServer((host, port), Handler)
     httpd.daemon_threads = True
     return httpd

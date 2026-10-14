@@ -26,7 +26,7 @@
    is what makes this import legal. It is the only part of this console that
    requires the desktop shell — everything else reads the same server over HTTP. */
 import { initTauriBridge } from './tauri_bridge.js';
-import { Organism } from './organism.js';
+import { Organism } from './organism.js?v=omni_v5';
 
 /* ── the API ───────────────────────────────────────────────────────────── */
 
@@ -200,9 +200,12 @@ const state = {
   chatHistory: [],
   chatHistoryEncoded: '',
   chatRendered: new Set(),
+  showAllHistory: false,
+  showAllTasks: false,
   briefing: null,
   organism: null,
   models: [],
+  routerStatus: null,
   modelFilter: '',
   view: 'resident',
   booted: false,
@@ -210,6 +213,15 @@ const state = {
   metabolism: null,      // the last native daemon-state payload
   metabolismEncoded: '', // so an unchanged payload does not force a repaint
   pollersStarted: false,
+  tasks: [],
+  deckTab: 'tasks',
+  vaultQuery: '',
+  vaultResults: [],
+  capabilities: null,
+  pendingAttachments: [],
+  selectedModel: 'auto/best-coding',
+  modelCategory: 'all',
+  modelQuery: '',
 };
 
 const VIEW_TITLES = {
@@ -225,6 +237,7 @@ const VIEW_TITLES = {
 
 function showView(name) {
   state.view = name;
+  document.body.classList.toggle('resident-stage', name === 'resident');
   for (const button of document.querySelectorAll('[data-nav]')) {
     if (button.dataset.nav === name) {
       button.setAttribute('aria-current', 'page');
@@ -783,6 +796,7 @@ function renderDiscoveryBrowser(root) {
   const resultsHost = h('div', { class: 'card__body' });
   const scope = { value: 'skills' };
   const scopeButtons = {};
+  let shownLimit = 100;
 
   const draw = () => {
     const data = state.discovery;
@@ -797,16 +811,17 @@ function renderDiscoveryBrowser(root) {
       : source;
 
     clear(resultsHost);
+    const visible = matched.slice(0, shownLimit);
     resultsHost.append(
       h('div', { class: 'topbar__meta', style: { marginBottom: 'var(--el-space-4)' } },
-        chip(`${fmtInt(matched.length)} of ${fmtInt(source.length)} shown`, matched.length ? 'info' : 'warn'),
+        chip(`${fmtInt(visible.length)} shown · ${fmtInt(matched.length)} matched`, matched.length ? 'info' : 'warn'),
         needle && matched.length !== source.length ? chip('filtered', 'accent') : null),
       matched.length
         ? h('div', { class: 'scroller' }, h('table', { class: 'table' },
             h('thead', {}, h('tr', {},
               h('th', { text: 'name' }), h('th', { text: 'vendor' }),
               h('th', { text: 'source' }), h('th', { text: 'description' }), h('th', { text: 'path' }))),
-            h('tbody', {}, matched.slice(0, 400).map((item) => h('tr', { class: 'row-tight' },
+            h('tbody', {}, visible.map((item) => h('tr', { class: 'row-tight' },
               h('td', {}, h('span', { class: 'strong', text: item.name || '' }),
                 item.marketplace ? h('span', { class: 'faint', text: `  ${item.marketplace}` }) : null),
               h('td', { class: 'mono dim', text: item.vendor || '' }),
@@ -814,6 +829,11 @@ function renderDiscoveryBrowser(root) {
               h('td', { class: 'dim', text: (item.description || '').slice(0, 140) || '—' }),
               h('td', { class: 'mono faint wrap', text: item.path || '' }))))))
         : h('div', { class: 'empty', text: needle ? `Nothing matched "${needle}".` : 'This source returned no entries.' }));
+    if (visible.length < matched.length) {
+      const more = h('button', { class: 'btn btn--quiet', type: 'button', text: `Show next ${Math.min(100, matched.length - visible.length)}` });
+      more.addEventListener('click', () => { shownLimit += 100; draw(); });
+      resultsHost.append(more);
+    }
   };
 
   const seg = h('div', { class: 'seg' }, [['skills', 'Skills'], ['agents', 'Agents'], ['plugins', 'Plugin manifests']]
@@ -821,6 +841,7 @@ function renderDiscoveryBrowser(root) {
       const button = h('button', { type: 'button', text: label, 'aria-pressed': String(value === 'skills') });
       button.addEventListener('click', () => {
         scope.value = value;
+        shownLimit = 100;
         for (const [key, other] of Object.entries(scopeButtons)) other.setAttribute('aria-pressed', String(key === value));
         draw();
       });
@@ -829,7 +850,11 @@ function renderDiscoveryBrowser(root) {
     }));
 
   let timer = null;
-  searchInput.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 120); });
+  searchInput.addEventListener('input', () => {
+    shownLimit = 100;
+    clearTimeout(timer);
+    timer = setTimeout(draw, 120);
+  });
 
   root.append(h('section', { class: 'card' },
     h('div', { class: 'card__head' },
@@ -849,33 +874,59 @@ function renderLedger(root) {
   clear(root);
   const body = h('div', { class: 'card__body card__body--flush' });
   const refresh = h('button', { class: 'btn btn--quiet', type: 'button' }, icon('refresh'), 'Reload');
+  const loadOlder = h('button', { class: 'btn btn--quiet', type: 'button', text: 'Load older events', hidden: true });
+  let eventsHost = null;
+  let beforeSeq = null;
+  let hasOlder = false;
 
-  const load = async () => {
+  const load = async (older = false) => {
     busy(refresh, true);
-    clear(body);
-    body.append(h('div', { class: 'card__body' }, skeleton(5)));
-    try {
-      const data = await api('/api/ledger?limit=100');
+    busy(loadOlder, older);
+    if (!older) {
+      beforeSeq = null;
+      eventsHost = null;
       clear(body);
+      body.append(h('div', { class: 'card__body' }, skeleton(5)));
+    }
+    try {
+      const cursor = older && beforeSeq ? `&before=${encodeURIComponent(beforeSeq)}` : '';
+      const data = await api(`/api/ledger?limit=100${cursor}`);
       if (!data.available) {
+        clear(body);
         body.append(h('div', { class: 'card__body' }, warnBanner('No ledger yet', data.note, '')));
         return;
       }
-      body.append(h('div', { class: 'events' }, (data.events || []).map((event) =>
+      if (!eventsHost) {
+        clear(body);
+        eventsHost = h('div', { class: 'events' });
+        body.append(eventsHost, loadOlder);
+      }
+      const rows = (data.events || []).map((event) =>
         h('div', { class: 'event' },
           h('span', { class: 'event__seq', text: `#${event.seq}` }),
           h('span', { class: 'event__organ', text: event.organ || '' }),
           h('div', {}, h('span', { class: 'event__msg', text: event.message || '' }),
-            h('span', { class: 'event__kind', text: `${event.kind || ''}  ${event.ts ? new Date(event.ts * 1000).toLocaleString() : ''}` }))))));
+            h('span', { class: 'event__kind', text: `${event.kind || ''}  ${event.ts ? new Date(event.ts * 1000).toLocaleString() : ''}` }))));
+      if (older) eventsHost.prepend(...rows);
+      else eventsHost.append(...rows);
+      if (!older || rows.length) beforeSeq = data.oldest_seq || beforeSeq;
+      hasOlder = Boolean(data.has_older);
+      loadOlder.hidden = !hasOlder;
     } catch (err) {
-      clear(body);
-      body.append(h('div', { class: 'card__body' }, errorCard(err, 'Ledger')));
+      if (!older) {
+        clear(body);
+        body.append(h('div', { class: 'card__body' }, errorCard(err, 'Ledger')));
+      } else {
+        toast('Could not load older ledger events', 'danger', err.message);
+      }
     } finally {
       busy(refresh, false);
+      busy(loadOlder, false);
     }
   };
 
-  refresh.addEventListener('click', load);
+  refresh.addEventListener('click', () => load(false));
+  loadOlder.addEventListener('click', () => { if (hasOlder) load(true); });
   root.append(h('section', { class: 'card' },
     h('div', { class: 'card__head' },
       h('h3', { class: 'card__title' }, icon('ledger'), 'Akashic ledger — hash-chained, append-only'),
@@ -954,7 +1005,6 @@ function renderUnwired(root) {
 const RESIDENT_LABELS = {
   state: 'state',
   state_name: 'state name',
-  chainOk: 'chain ok',
   current_task: 'current task',
   current_capability: 'capability',
   status: 'status',
@@ -965,6 +1015,22 @@ const RESIDENT_LABELS = {
 };
 
 let residentRedraw = null;
+
+
+async function syncRouterStatus() {
+  try {
+    state.routerStatus = await api('/api/router/status');
+    if (state.routerStatus && state.routerStatus.configured_model && state.routerStatus.configured_model !== '(unset)') {
+      state.selectedModel = state.routerStatus.configured_model;
+    }
+    updateAllModelDisplays(state.selectedModel);
+    if (state.view === 'resident') updateResidentHud();
+  } catch (err) {
+    state.routerStatus = { reachable: false, error: err.code || String(err), key_present: false };
+    updateAllModelDisplays(state.selectedModel);
+    if (state.view === 'resident') updateResidentHud();
+  }
+}
 
 async function syncPerception() {
   const img = document.getElementById('house-still');
@@ -1046,6 +1112,14 @@ async function syncBriefing() {
   }
 }
 
+async function openDailyBriefing() {
+  await syncBriefing();
+  switchDeckTab('memory');
+  if (!state.briefing || !state.briefing.summary) {
+    toast('Daily briefing unavailable', 'warn');
+  }
+}
+
 async function syncChat() {
   try {
     let messages = null;
@@ -1065,7 +1139,36 @@ async function syncChat() {
       if (encoded !== state.chatHistoryEncoded) {
         state.chatHistoryEncoded = encoded;
         const localFailures = state.chatHistory.filter((msg) => msg.status === 'failed' && !msg.task_id);
-        state.chatHistory = [...messages, ...localFailures];
+        const isLegacyClaim = (msg) => Boolean(msg.proactive && /\b70%\b|unbounded filesystem writes|kernel is hot|ring buffer is synchronized|crystallized skills|invariant guard|memory vault is grounded|RAM headroom is optimal/i.test(String(msg.text || '')));
+        const isPlaceholderReply = (msg) => {
+          if (msg.sender !== 'elora') return false;
+          const text = String(msg.text || '').trim();
+          return /^(here|done)\.?$/i.test(text)
+            || /^elora online\. workspace root: .+\. ready\.$/i.test(text);
+        };
+        const placeholderTaskFiles = new Set(messages
+          .filter(isPlaceholderReply)
+          .map((msg) => String(msg.task_id || '').match(/chat_\d+\.txt/)?.[0])
+          .filter(Boolean));
+        const isPlaceholderPrompt = (msg) => msg.sender === 'user' && placeholderTaskFiles.has(msg.task_id);
+        const legacyCount = messages.filter(isLegacyClaim).length;
+        const placeholderCount = messages.filter(isPlaceholderReply).length;
+        const placeholderPromptCount = messages.filter(isPlaceholderPrompt).length;
+        const recentMessages = state.showAllHistory
+          ? messages
+          : messages.filter((msg) => !isLegacyClaim(msg) && !isPlaceholderReply(msg) && !isPlaceholderPrompt(msg)).slice(-100);
+        const hiddenCount = messages.length - recentMessages.length;
+        const historyNotice = hiddenCount > 0 || legacyCount > 0
+          ? [{
+            sender: 'system',
+            status: 'history_notice',
+            text: state.showAllHistory
+              ? `Showing all ${messages.length} saved chat entries. ${legacyCount} legacy proactive entries are marked unverified; ${placeholderCount} generic placeholder replies and ${placeholderPromptCount} matching prompts are included.`
+              : `Showing the latest ${recentMessages.length} saved entries. ${legacyCount} legacy proactive claims, ${placeholderCount} generic placeholder replies, and ${placeholderPromptCount} matching prompts are hidden from this view; the original history remains saved.`,
+            hiddenCount,
+          }]
+          : [];
+        state.chatHistory = [...historyNotice, ...recentMessages, ...localFailures];
         if (state.view === 'resident' && typeof residentRedraw === 'function') {
           residentRedraw();
         }
@@ -1076,15 +1179,455 @@ async function syncChat() {
   }
 }
 
+
+async function uploadFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const data_base64 = reader.result;
+        const res = await api('/api/upload', {
+          method: 'POST',
+          body: {
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            data_base64,
+          },
+        });
+        resolve({
+          id: 'att_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          url: res.url,
+          path: res.path,
+          isImage: (file.type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(file.name),
+          isVideo: (file.type || '').startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(file.name),
+          isFile: !(file.type || '').startsWith('image/') && !(file.type || '').startsWith('video/'),
+        });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderComposerAttachments() {
+  const bar = document.getElementById('composer-attachments-bar');
+  if (!bar) return;
+  clear(bar);
+  if (!Array.isArray(state.pendingAttachments) || !state.pendingAttachments.length) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  for (let i = 0; i < state.pendingAttachments.length; i += 1) {
+    const att = state.pendingAttachments[i];
+    const idx = i;
+    const chip = h('div', { class: 'composer-att-chip' });
+    if (att.isImage) {
+      chip.append(h('img', { class: 'composer-att-thumb', src: att.url, alt: att.name }));
+    } else {
+      chip.append(h('span', { class: 'composer-att-icon' }, icon(att.isVideo ? 'camera' : 'file')));
+    }
+    chip.append(
+      h('span', { class: 'composer-att-name', title: att.name, text: att.name }),
+      att.size ? h('span', { class: 'composer-att-size', text: `${Math.round(att.size / 1024)} KB` }) : null,
+      h('button', {
+        type: 'button',
+        class: 'composer-att-del',
+        text: '×',
+        title: 'Remove attachment',
+        onclick: (e) => {
+          e.stopPropagation();
+          state.pendingAttachments.splice(idx, 1);
+          renderComposerAttachments();
+        },
+      })
+    );
+    bar.append(chip);
+  }
+}
+
+function formatModelDisplayName(id) {
+  if (!id || id === 'auto' || id === '(unset)') return 'Auto route';
+  const clean = String(id).trim();
+  const map = {
+    'auto/best-coding': 'Auto · best coding',
+    'auto/best-reasoning': 'Auto · reasoning',
+    'auto/best-fast': 'Auto · fast',
+    'auto/best-vision': 'Auto · vision',
+    'auto/best-chat': 'Auto · chat',
+    'auto/coding': 'Auto · coding',
+    'auto/coding:fast': 'Auto · fast coding',
+    'auto/reasoning': 'Auto · reasoning',
+    'auto/fast': 'Auto · fast',
+  };
+  if (map[clean]) return map[clean];
+  return clean;
+}
+
+function updateAllModelDisplays(modelId) {
+  const friendly = formatModelDisplayName(modelId)
+    + (state.routerStatus && state.routerStatus.reachable === false ? ' · offline' : '');
+  const mindEl = document.getElementById('hud-mind');
+  if (mindEl) mindEl.textContent = friendly;
+  const chipName = document.getElementById('hud-model-chip-name');
+  if (chipName) chipName.textContent = friendly;
+  const toggleName = document.getElementById('composer-model-name');
+  if (toggleName) toggleName.textContent = friendly;
+}
+
+async function switchModel(modelId) {
+  if (!modelId) return false;
+  try {
+    const res = await api('/api/router/model', {
+      method: 'POST',
+      body: { model: modelId },
+    });
+    state.selectedModel = (res && res.configured_model) ? res.configured_model : modelId;
+    updateAllModelDisplays(state.selectedModel);
+    toast(`Model switched to ${formatModelDisplayName(state.selectedModel)}`, 'ok', state.selectedModel);
+    return true;
+  } catch (err) {
+    toast('Failed to switch model', 'danger', err.message);
+    return false;
+  }
+}
+
+function toggleComposerModelDropdown(anchorBtn) {
+  const existing = document.getElementById('composer-model-dropdown');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  const dropdown = h('div', { class: 'composer-model-dropdown', id: 'composer-model-dropdown' });
+
+  const quickPicks = (Array.isArray(state.models) ? state.models : []).map((id) => ({
+    id,
+    name: formatModelDisplayName(id),
+    tag: id.startsWith('auto/') ? 'ALIAS' : 'MODEL',
+    desc: id,
+  }));
+
+  const header = h('div', { class: 'dropdown-header' },
+    h('div', { class: 'dropdown-title' },
+      icon('chip'),
+      h('span', { text: 'Router chat model' })),
+    h('span', { class: 'dropdown-shortcut-hint', text: 'Ctrl+M / /model' }));
+
+  const searchInput = h('input', {
+    type: 'text',
+    class: 'dropdown-search-input',
+    placeholder: 'Filter models or type alias...',
+  });
+
+  const list = h('div', { class: 'dropdown-list' });
+
+  const renderDropdownItems = (filterText = '') => {
+    clear(list);
+    const q = (filterText || '').toLowerCase().trim();
+    const items = quickPicks.filter(p => !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q));
+
+    if (!items.length) {
+      const message = quickPicks.length
+        ? `No models matching "${q}"`
+        : state.routerStatus && state.routerStatus.reachable === false
+          ? 'Model gateway offline. No live catalog is available.'
+          : 'No live model catalog is available. Check the gateway status.';
+      list.append(h('div', { class: 'dropdown-empty', text: message }));
+      return;
+    }
+
+    for (const item of items) {
+      const isCur = (state.selectedModel || 'auto/best-coding') === item.id;
+      const row = h('div', {
+        class: 'dropdown-item',
+        dataset: { current: String(isCur) },
+        onclick: async (e) => {
+          e.stopPropagation();
+          dropdown.remove();
+          await switchModel(item.id);
+        },
+      },
+        h('div', { class: 'dropdown-item-main' },
+          h('div', { class: 'dropdown-item-header' },
+            h('strong', { class: 'dropdown-item-name', text: item.name }),
+            h('span', { class: 'dropdown-item-tag', text: item.tag }),
+            isCur ? h('span', { class: 'dropdown-item-active', text: '✓ ACTIVE' }) : null),
+          h('div', { class: 'dropdown-item-desc', text: item.desc })),
+        h('div', { class: 'dropdown-item-id', text: item.id }));
+      list.append(row);
+    }
+  };
+
+  searchInput.addEventListener('input', () => {
+    renderDropdownItems(searchInput.value);
+  });
+
+  const footer = h('div', { class: 'dropdown-footer' },
+    h('button', {
+      type: 'button',
+      class: 'dropdown-catalog-btn',
+      text: 'Explore live model catalog...',
+      onclick: (e) => {
+        e.stopPropagation();
+        dropdown.remove();
+        openModelSelector();
+      },
+    }));
+
+  dropdown.append(header, searchInput, list, footer);
+
+  const onOutsideClick = (e) => {
+    if (!dropdown.contains(e.target) && (!anchorBtn || !anchorBtn.contains(e.target))) {
+      dropdown.remove();
+      document.removeEventListener('click', onOutsideClick);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', onOutsideClick), 10);
+
+  dropdown.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      dropdown.remove();
+      document.removeEventListener('click', onOutsideClick);
+    }
+  });
+
+  const compose = document.querySelector('.hud-compose');
+  if (compose) {
+    compose.append(dropdown);
+  } else {
+    document.body.append(dropdown);
+  }
+
+  renderDropdownItems();
+  searchInput.focus();
+}
+
+async function openModelSelector() {
+  const existing = document.getElementById('model-selector-overlay');
+  if (existing) {
+    existing.remove();
+    return;
+  }
+
+  if (!state.models || !state.models.length) {
+    try {
+      const res = await api('/api/router/models');
+      if (res && Array.isArray(res.models)) {
+        state.models = res.models;
+        if (res.configured_model && res.configured_model !== '(unset)') {
+          state.selectedModel = res.configured_model;
+        }
+      }
+    } catch (e) {
+      // quiet fallback
+    }
+  }
+
+  const overlay = h('div', { class: 'model-selector-overlay', id: 'model-selector-overlay' });
+  const panel = h('div', { class: 'model-selector-panel' });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+
+  const header = h('div', { class: 'model-selector-header' },
+    h('div', { class: 'model-selector-title' },
+      icon('chip'),
+      h('span', { text: 'Select Router Chat Model' }),
+      h('span', { class: 'model-badge', text: state.models.length
+        ? `${state.models.length} models reported`
+        : state.routerStatus && state.routerStatus.reachable === false ? 'Gateway offline' : 'No models reported' })),
+    h('button', {
+      type: 'button',
+      class: 'composer-att-del',
+      style: { fontSize: '1.4rem' },
+      text: '×',
+      onclick: () => overlay.remove(),
+    }));
+
+  const searchInput = h('input', {
+    type: 'text',
+    class: 'model-search-input',
+    placeholder: 'Filter by model name, e.g. claude, gpt, deepseek, auto...',
+    value: state.modelQuery || '',
+  });
+
+  const categories = [
+    { id: 'all', label: 'All Models' },
+    { id: 'aliases', label: '⚡ Router Aliases' },
+    { id: 'claude', label: 'Claude / Anthropic' },
+    { id: 'gpt', label: 'GPT / OpenAI' },
+    { id: 'deepseek', label: 'DeepSeek' },
+    { id: 'local', label: 'Local / BitNet' },
+  ];
+
+  const catContainer = h('div', { class: 'model-category-chips' });
+  const listContainer = h('div', { class: 'model-list-scroller' });
+
+  const renderModelList = () => {
+    clear(listContainer);
+    const q = (searchInput.value || '').trim().toLowerCase();
+    const cat = state.modelCategory || 'all';
+
+    const sourceModels = Array.isArray(state.models) ? state.models : [];
+
+    let filtered = sourceModels.filter((m) => {
+      const lm = m.toLowerCase();
+      if (q && !lm.includes(q)) return false;
+      if (cat === 'aliases') return m.startsWith('auto/');
+      if (cat === 'claude') return lm.includes('claude');
+      if (cat === 'gpt') return lm.includes('gpt') || lm.includes('o1') || lm.includes('o3');
+      if (cat === 'deepseek') return lm.includes('deepseek');
+      if (cat === 'local') return lm.includes('bitnet') || lm.includes('ollama') || lm.includes('local');
+      return true;
+    });
+
+    if (!filtered.length) {
+      const message = sourceModels.length
+        ? `No models matching "${q}" in this category.`
+        : 'No model catalog is available from the gateway.';
+      listContainer.append(h('div', { class: 'empty', text: message }));
+      return;
+    }
+
+    const slice = filtered.slice(0, 80);
+    for (const m of slice) {
+      const isCur = m === state.selectedModel;
+      const isAlias = m.startsWith('auto/');
+      const card = h('div', {
+        class: 'model-option-card',
+        dataset: { current: String(isCur) },
+        onclick: async () => {
+          overlay.remove();
+          await switchModel(m);
+        },
+      },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+          isCur ? h('span', { style: { color: 'var(--el-ok)', fontSize: '0.9rem' }, text: '✓' }) : null,
+          h('span', { class: 'model-option-name', text: m })),
+        h('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
+          isAlias ? h('span', { class: 'model-badge', text: 'ALIAS' }) : null,
+          isCur ? h('span', { class: 'model-badge', style: { color: 'var(--el-ok)' }, text: 'ACTIVE' }) : null));
+      listContainer.append(card);
+    }
+  };
+
+  for (const c of categories) {
+    const chipBtn = h('button', {
+      type: 'button',
+      class: 'model-category-chip',
+      dataset: { active: String(state.modelCategory === c.id) },
+      text: c.label,
+      onclick: () => {
+        state.modelCategory = c.id;
+        for (const sibling of catContainer.children) {
+          sibling.dataset.active = 'false';
+        }
+        chipBtn.dataset.active = 'true';
+        renderModelList();
+      },
+    });
+    catContainer.append(chipBtn);
+  }
+
+  searchInput.addEventListener('input', () => {
+    state.modelQuery = searchInput.value;
+    renderModelList();
+  });
+
+  const searchBox = h('div', { class: 'model-search-box' }, searchInput, catContainer);
+  panel.append(header, searchBox, listContainer);
+  overlay.append(panel);
+  document.body.append(overlay);
+  searchInput.focus();
+  renderModelList();
+}
+
+function setupDragAndDrop() {
+  let dragCounter = 0;
+
+  if (!document.getElementById('hud-drag-overlay')) {
+    const overlay = h('div', { class: 'hud-drag-overlay', id: 'hud-drag-overlay' },
+      h('div', { class: 'hud-drag-card' },
+        h('div', { class: 'hud-drag-title', text: 'Drop Media or Files to Attach' }),
+        h('div', { class: 'hud-drag-sub', text: 'Images (PNG, JPG, WEBP), Videos (MP4, WEBM, MOV), Documents, and Code will be attached directly to your will.' }),
+        h('div', { class: 'hud-drag-types' },
+          h('span', { class: 'hud-drag-tag', text: 'Images' }),
+          h('span', { class: 'hud-drag-tag', text: 'Videos' }),
+          h('span', { class: 'hud-drag-tag', text: 'Documents' }),
+          h('span', { class: 'hud-drag-tag', text: 'Code & Data' }))));
+    document.body.append(overlay);
+  }
+
+  window.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter += 1;
+    document.body.classList.add('is-dragging-files');
+  });
+
+  window.addEventListener('dragover', (e) => {
+    e.preventDefault();
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter -= 1;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      document.body.classList.remove('is-dragging-files');
+    }
+  });
+
+  window.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    document.body.classList.remove('is-dragging-files');
+
+    const dt = e.dataTransfer;
+    if (!dt || !dt.files || !dt.files.length) return;
+
+    const files = Array.from(dt.files);
+    toast(`Processing ${files.length} dropped file(s)...`, 'info');
+    for (const f of files) {
+      try {
+        const uploaded = await uploadFile(f);
+        state.pendingAttachments.push(uploaded);
+      } catch (err) {
+        toast(`Upload failed for ${f.name}`, 'danger', err.message);
+      }
+    }
+    renderComposerAttachments();
+  });
+}
+
 async function dispatchTask(prompt) {
   const clean = (prompt || '').trim();
-  if (!clean) return;
+  if (clean.toLowerCase().startsWith('/model')) {
+    const target = clean.slice(6).trim();
+    if (!target) {
+      const toggleBtn = document.getElementById('composer-model-toggle');
+      toggleComposerModelDropdown(toggleBtn);
+      return;
+    }
+    await switchModel(target);
+    return;
+  }
+  const atts = Array.isArray(state.pendingAttachments) ? [...state.pendingAttachments] : [];
+  if (!clean && !atts.length) return;
   try {
     await api('/api/inbox/task', {
       method: 'POST',
       client: 'resident-overlay',
-      body: { prompt: clean },
+      body: { prompt: clean || 'Inspect attached media / file', attachments: atts },
     });
+    state.pendingAttachments = [];
+    renderComposerAttachments();
     await syncChat();
   } catch (err) {
     const failure = {
@@ -1115,17 +1658,123 @@ function residentStateSummary() {
   if (!payload) return 'daemon state not reported';
   if (payload.available === false) return 'daemon state unavailable';
   const data = payload.data && typeof payload.data === 'object' ? payload.data : payload;
-  const facts = [data.state_name, data.status, data.execution_tier, data.current_capability ? 'organ ' + data.current_capability : null].filter(Boolean).map(String);
+  const facts = [data.state_name, data.status, data.execution_tier,
+    data.brain_backend ? 'task brain ' + data.brain_backend : 'task brain not reported',
+    data.current_capability ? 'organ ' + data.current_capability : null].filter(Boolean).map(String);
   return facts.length ? facts.join(' · ') : 'daemon state incomplete';
 }
 
+function hudStateName() {
+  const payload = state.metabolism;
+  if (!payload) return 'UNKNOWN';
+  if (payload.available === false) return 'OFFLINE';
+  const data = payload.data && typeof payload.data === 'object' ? payload.data : payload;
+  return String(data.state_name || data.status || 'ALIVE');
+}
+
+function updateResidentHud() {
+  const name = hudStateName();
+  const stateEl = document.getElementById('hud-state');
+  if (stateEl) stateEl.textContent = name;
+  const summary = document.getElementById('resident-state-line');
+  if (summary) summary.textContent = residentStateSummary();
+  const loadEl = document.getElementById('hud-load');
+  if (loadEl) {
+    const hr = state.metabolism && state.metabolism.ram_headroom;
+    loadEl.textContent = typeof hr === 'number' ? hr.toFixed(2) : '—';
+  }
+  const organEl = document.getElementById('hud-organ');
+  if (organEl) {
+    const payload = state.metabolism;
+    const data = payload && payload.data && typeof payload.data === 'object' ? payload.data : payload;
+    organEl.textContent = (data && data.current_capability) ? String(data.current_capability) : 'none';
+  }
+  const mindEl = document.getElementById('hud-mind');
+  if (mindEl) {
+    const r = state.routerStatus;
+    if (!r) mindEl.textContent = 'unqueried';
+    else if (r.reachable) {
+      const m = String(state.selectedModel || r.configured_model || '');
+      mindEl.textContent = (m && m !== '(unset)') ? formatModelDisplayName(m) : 'Provider reachable · model unset';
+    } else {
+      mindEl.textContent = 'OmniRoute offline';
+    }
+  }
+  const chipName = document.getElementById('hud-model-chip-name');
+  if (chipName) chipName.textContent = formatModelDisplayName(state.selectedModel)
+    + (state.routerStatus && state.routerStatus.reachable === false ? ' · offline' : '');
+  const toggleName = document.getElementById('composer-model-name');
+  if (toggleName) toggleName.textContent = formatModelDisplayName(state.selectedModel)
+    + (state.routerStatus && state.routerStatus.reachable === false ? ' · offline' : '');
+  const chatLog = document.getElementById('resident-chat-log');
+  if (chatLog) {
+    if (!state.chatHistory.length) {
+      if (!chatLog.querySelector('.empty')) {
+        chatLog.append(h('div', { class: 'empty', text: 'nothing spoken yet' }));
+      }
+    } else {
+      for (const msg of state.chatHistory) appendResidentMessage(msg);
+    }
+  }
+}
+
+function listenWill(button) {
+  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Speech) {
+    toast('Mic is not in this browser', 'danger', 'Type a will, or CORE can run voice.listen.');
+    return;
+  }
+  const rec = new Speech();
+  rec.lang = 'en-US';
+  rec.interimResults = false;
+  rec.onresult = (event) => {
+    const text = event.results && event.results[0] && event.results[0][0]
+      ? event.results[0][0].transcript : '';
+    if (text.trim()) dispatchTask(text.trim());
+  };
+  rec.onerror = (event) => toast('Mic failed', 'danger', String(event.error || event));
+  rec.onend = () => button.setAttribute('aria-pressed', 'false');
+  button.setAttribute('aria-pressed', 'true');
+  rec.start();
+}
+
+function seeScreen() {
+  dispatchTask('Look at the screen.');
+  syncPerception();
+}
+
 function sizeResidentRoom() {
-  const layout = document.querySelector('.resident-layout');
-  if (!layout || !layout.parentElement) return;
-  const available = layout.parentElement.getBoundingClientRect().width;
-  layout.style.gridTemplateColumns = available >= 620
-    ? 'minmax(0, 0.9fr) minmax(0, 1.1fr)'
-    : '1fr';
+  updateResidentHud();
+}
+
+function isVendorLeak(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw === '.') return true;
+  if (raw.startsWith('{') || raw.startsWith('[')) return true;
+  if (raw.length > 420) return true;
+  const t = raw.toLowerCase();
+  return t.includes('antigravity') || t.includes('google deepmind') ||
+    t.includes('cannot adopt') || t.includes('initialization parameters acknowledged') ||
+    t.includes('i am a language model trained by google') ||
+    t.includes('[organ:') || t.includes('has been observed') ||
+    t.includes('awaiting further instruction') || t.startsWith('call only ');
+}
+
+async function wakeElora(force = false) {
+  try {
+    const res = await api('/api/resident/wake', { method: 'POST', body: { force } });
+    if (res && res.state) {
+      if (!state.metabolism) state.metabolism = {};
+      state.metabolism.state_name = res.state;
+      updateResidentHud();
+    }
+    await syncChat();
+    if (state.organism && res && res.spoken) {
+      state.organism.ripple();
+    }
+  } catch (e) {
+    // quiet fallback
+  }
 }
 
 function appendResidentMessage(msg) {
@@ -1133,6 +1782,26 @@ function appendResidentMessage(msg) {
   if (!chatLog) return;
   const key = residentMessageKey(msg);
   if (state.chatRendered.has(key)) return;
+  if (msg.status === 'history_notice') {
+    const previousNotice = chatLog.querySelector('.resident-history-notice');
+    if (previousNotice) previousNotice.remove();
+    const notice = h('div', { class: 'turn resident-history-notice', dataset: { role: 'notice' } },
+      h('div', { class: 'turn__role', text: 'Saved history' }),
+      h('div', { class: 'turn__body', text: msg.text }),
+      h('button', {
+        type: 'button',
+        class: 'btn btn--ghost',
+        text: state.showAllHistory ? 'Show latest activity' : 'Show all saved messages',
+        onclick: () => {
+          state.showAllHistory = !state.showAllHistory;
+          state.chatHistoryEncoded = '';
+          void syncChat();
+        },
+      }));
+    chatLog.prepend(notice);
+    state.chatRendered.add(key);
+    return;
+  }
   const empty = chatLog.querySelector('.empty');
   if (empty) empty.remove();
 
@@ -1141,32 +1810,38 @@ function appendResidentMessage(msg) {
   const rawRc = msg.rc;
   const rc = rawRc === undefined || rawRc === null || rawRc === '' ? null : Number(rawRc);
   const hasRc = rc !== null && Number.isFinite(rc);
-  let label = 'ELORA';
-  if (isWill) {
-    label = '[SYSTEM QUEST]';
-  } else if (organMessage) {
-    const failed = msg.status === 'failed' || (hasRc && rc !== 0);
-    const deferred = msg.status === 'deferred';
-    const succeeded = msg.status === 'ok' || msg.status === 'success' || (hasRc && rc === 0);
-    const result = failed ? 'FAILED' : deferred ? 'DEFERRED' : succeeded ? 'SUCCESS' : 'RECORDED';
-    label = '[ORGAN: ' + (msg.organ || 'unnamed') + ' ' + result +
-      (hasRc ? ' · rc=' + rc : '') + ']';
+  if (organMessage) {
+    if (msg.sender === 'organ' && msg.recorded === true && state.organism) state.organism.ripple();
+    const name = String(msg.organ || 'unnamed');
+    if (name !== 'infer_owner_organs') {
+      const hands = document.getElementById('hud-hands');
+      if (hands) {
+        hands.hidden = false;
+        hands.textContent = 'Last organ: ' + name + (hasRc ? ' rc=' + rc : '');
+      }
+    }
+    state.chatRendered.add(key);
+    return;
   }
+  if (isVendorLeak(msg.text)) {
+    state.chatRendered.add(key);
+    return;
+  }
+  let label = isWill ? 'Master' : 'ELORA';
   let bodyText = String(msg.text || '');
-  if (organMessage && msg.organ) {
-    const prefix = msg.organ + ': ';
-    if (bodyText.startsWith(prefix)) bodyText = bodyText.slice(prefix.length);
-    if (msg.evidence) bodyText = String(msg.evidence);
-  }
-  const maxLength = isWill ? 2400 : organMessage ? 260 : 520;
-  const displayText = shortResidentText(bodyText, maxLength);
-  const ledgerText = organMessage ? (msg.recorded === true ? 'Akashic recorded' : 'not recorded') : '';
+  const legacyClaim = Boolean(msg.proactive && /\b70%\b|unbounded filesystem writes|kernel is hot|ring buffer is synchronized|crystallized skills|invariant guard|memory vault is grounded|RAM headroom is optimal/i.test(bodyText));
+  const visibleText = legacyClaim ? `Historical claim — not verified by ELORA's current sensors: ${bodyText}` : bodyText;
+  const displayText = shortResidentText(visibleText, isWill ? 2400 : 520);
+  const ledgerText = '';
+  const isProactive = Boolean(msg.proactive);
+  if (isProactive && state.organism) state.organism.ripple();
   const row = h('div', {
     class: 'turn',
-    dataset: { role: isWill ? 'will' : organMessage ? 'organ' : 'elora' },
-    style: { alignSelf: 'stretch', alignItems: 'flex-start', width: '100%' },
+    dataset: { role: isWill ? 'will' : organMessage ? 'organ' : 'elora', proactive: String(isProactive) },
   },
     h('div', { class: 'turn__role', text: label },
+      legacyClaim ? h('span', { class: 'proactive-badge', text: 'UNVERIFIED HISTORY' })
+        : isProactive ? h('span', { class: 'proactive-badge', text: '✨ PROACTIVE' }) : null,
       msg.ts ? h('span', {
         class: 'turn__meta',
         style: { marginLeft: 'var(--el-space-3)' },
@@ -1180,35 +1855,525 @@ function appendResidentMessage(msg) {
     h('div', {
       class: 'turn__body',
       title: bodyText,
-      style: { padding: '0', border: '0', background: 'transparent' },
     }, h('span', { text: displayText })));
+
+  if (Array.isArray(msg.attachments) && msg.attachments.length) {
+    const attContainer = h('div', { class: 'turn__attachments' });
+    for (const att of msg.attachments) {
+      const type = String(att.type || '');
+      const name = att.name || att.filename || 'attachment';
+      const url = att.url || att.path || '';
+      if (type.startsWith('image/') || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(name)) {
+        const wrap = h('div', { class: 'turn-attachment-image-wrap' },
+          h('img', { class: 'turn-attachment-image', src: url, alt: name, title: name }));
+        attContainer.append(wrap);
+      } else if (type.startsWith('video/') || /\.(mp4|webm|mov|mkv)$/i.test(name)) {
+        const wrap = h('div', { class: 'turn-attachment-video-wrap' });
+        const video = document.createElement('video');
+        video.className = 'turn-attachment-video';
+        video.controls = true;
+        video.src = url;
+        wrap.append(video);
+        attContainer.append(wrap);
+      } else {
+        const fileCard = h('a', {
+          class: 'turn-attachment-file',
+          href: url,
+          target: '_blank',
+          rel: 'noopener noreferrer',
+          title: `Download ${name}`,
+        },
+          icon('file'),
+          h('span', { text: name }),
+          att.size ? h('span', { style: { color: 'var(--el-ink-faint)', fontSize: '0.7rem' }, text: `${Math.round(att.size / 1024)} KB` }) : null);
+        attContainer.append(fileCard);
+      }
+    }
+    row.append(attContainer);
+  }
+
+  if (!isWill) {
+    if (Array.isArray(msg.sources) && msg.sources.length) {
+      const srcToggle = h('div', {
+        class: 'source-card',
+        style: { cursor: 'pointer', marginTop: 'var(--el-space-1)', display: 'flex', justifyContent: 'space-between' },
+        text: `Sources & Vault Context (${msg.sources.length})`,
+      });
+      const sPanel = h('div', { class: 'sources-panel', hidden: true });
+      srcToggle.onclick = () => { sPanel.hidden = !sPanel.hidden; };
+      for (const src of msg.sources) {
+        sPanel.append(h('div', { class: 'source-card' },
+          h('strong', { text: src.title || src.source }),
+          h('div', { style: { fontSize: '0.72rem', color: 'var(--el-ink-muted)' }, text: src.snippet || '' })));
+      }
+      row.append(srcToggle, sPanel);
+    }
+    if (msg.action_proposal) {
+      const prop = msg.action_proposal;
+      const propChip = h('div', { class: 'action-proposal-chip' },
+        h('span', { style: { fontSize: '0.78rem', color: 'var(--el-ink-strong)' }, text: `Suggested Will: ${prop.label}` }),
+        h('button', {
+          type: 'button',
+          class: 'btn btn--primary',
+          style: { fontSize: '0.72rem', padding: '2px 8px' },
+          text: 'Dispatch',
+          onclick: () => dispatchTask(prop.command.replace(/^\/task\s*/, '')),
+        }));
+      row.append(propChip);
+    }
+  }
 
   chatLog.append(row);
   state.chatRendered.add(key);
-  if (msg.sender === 'organ' && msg.recorded === true && state.organism) state.organism.ripple();
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-function renderResident(root) {
-  // Polling updates the existing room in place: the Blender canvas is never remounted.
-  const existingLayout = root.querySelector('.resident-layout');
-  if (existingLayout) {
-    sizeResidentRoom();
-    const stateLine = document.getElementById('resident-state-line');
-    if (stateLine) stateLine.textContent = residentStateSummary();
 
-    const chatLog = document.getElementById('resident-chat-log');
-    if (chatLog) {
-      if (!state.chatHistory.length) {
-        if (!chatLog.querySelector('.empty')) {
-          chatLog.append(h('div', { class: 'empty', text: 'nothing spoken yet' }));
-        }
-      } else {
-        for (const msg of state.chatHistory) appendResidentMessage(msg);
+async function syncTasks() {
+  try {
+    const res = await api('/api/tasks');
+    if (res && res.available && Array.isArray(res.tasks)) {
+      state.tasks = res.tasks;
+      if (state.deckTab === 'tasks') {
+        renderDeckContent();
       }
     }
-    const stillCap = document.getElementById('house-still-caption');
-    if (stillCap && !stillCap.textContent) stillCap.textContent = 'no still yet';
+  } catch (err) {
+    // quiet fallback
+  }
+}
+
+async function syncVault(query) {
+  try {
+    state.vaultQuery = query || '';
+    const res = await api('/api/vault/search?q=' + encodeURIComponent(query || ''));
+    if (res && res.available && Array.isArray(res.results)) {
+      state.vaultResults = res.results;
+      if (state.deckTab === 'memory') {
+        renderDeckContent();
+      }
+    }
+  } catch (err) {
+    // quiet fallback
+  }
+}
+
+async function approveConsent(token, approved) {
+  try {
+    await api('/api/tasks/consent', {
+      method: 'POST',
+      body: { token, approved },
+    });
+    toast(approved ? 'Consent granted' : 'Consent refused', approved ? 'ok' : 'danger', 'Token ' + token);
+    await syncTasks();
+  } catch (err) {
+    toast('Consent update failed', 'danger', err.message);
+  }
+}
+
+function switchDeckTab(tabName) {
+  state.deckTab = tabName;
+  for (const btn of document.querySelectorAll('.deck-tab')) {
+    btn.setAttribute('aria-selected', btn.dataset.tab === tabName ? 'true' : 'false');
+  }
+  renderDeckContent();
+}
+
+function openTaskInspector(task) {
+  const existing = document.getElementById('task-inspector-overlay');
+  if (existing) existing.remove();
+
+  const overlay = h('div', { class: 'task-inspector-overlay', id: 'task-inspector-overlay' });
+  const panel = h('div', { class: 'task-inspector-panel' });
+
+  // Header
+  const header = h('div', { class: 'inspector-header' },
+    h('div', { class: 'inspector-title-wrap' },
+      h('div', { class: 'inspector-title', text: task.goal || task.id }),
+      h('div', { style: { display: 'flex', gap: 'var(--el-space-2)', alignItems: 'center', marginTop: 'var(--el-space-1)' } },
+        h('span', { class: 'status-pill', dataset: { status: task.status }, text: task.status === 'done_no_work' ? 'No work' : task.status }),
+        h('span', { class: 'persona-chip', text: task.suggested_specialist ? `Suggested · ${task.suggested_specialist}` : 'No specialist record' }),
+        h('span', { class: 'status-pill', dataset: { status: task.risk_tier || 'unknown' }, text: task.risk_tier ? `Suggested · ${task.risk_tier}` : 'Risk not recorded' }))),
+    h('button', {
+      type: 'button',
+      style: { background: 'transparent', border: 'none', color: 'var(--el-ink-muted)', fontSize: '1.4rem', cursor: 'pointer' },
+      text: 'x',
+      onclick: () => overlay.remove(),
+    }));
+  panel.append(header);
+
+  const body = h('div', { class: 'inspector-body' });
+
+  // Show only lifecycle stages supported by task evidence.
+  body.append(h('div', { class: 'inspector-section-title' }, icon('chip'), h('span', { text: 'Recorded Execution Stages' })));
+  const stepper = h('div', { class: 'inspector-stepper' });
+  const stages = Array.isArray(task.stages) ? task.stages : [];
+  for (const st of stages) {
+    stepper.append(h('div', { class: 'stepper-item', dataset: { state: st.state } },
+      h('span', { class: 'step-dot' }),
+      h('span', { text: st.name })));
+  }
+  if (!stages.length) {
+    stepper.append(h('span', { class: 'term-line term-line--info', text: 'No task-linked stage events are recorded.' }));
+  }
+  body.append(stepper);
+
+  // Execution trace
+  body.append(h('div', { class: 'inspector-section-title' }, icon('terminal'), h('span', { text: 'Execution Console & Traces' })));
+  const term = h('div', { class: 'term-view' });
+  const trace = Array.isArray(task.trace) ? task.trace : [];
+  if (!trace.length) {
+    term.append(h('span', { class: 'term-line term-line--info', text: 'No execution trace is recorded for this task.' }));
+  }
+  for (const tr of trace) {
+    const payload = tr.payload && typeof tr.payload === 'object' ? tr.payload : {};
+    const hasRc = Number.isInteger(payload.rc);
+    const detail = hasRc ? `rc=${payload.rc}` : String(tr.message || '');
+    const ok = tr.kind === 'capability_result' && payload.rc === 0;
+    const line = `[${tr.seq || '?'}] ${tr.organ}.${tr.kind}: ${detail}${tr.hash ? ` (#${tr.hash})` : ''}`;
+    term.append(h('span', { class: 'term-line ' + (ok ? 'term-line--ok' : 'term-line--info'), text: line }));
+  }
+  body.append(term);
+
+  // Receipt evidence
+  body.append(h('div', { class: 'inspector-section-title' }, icon('shield'), h('span', { text: 'Invariant Verification & Proof' })));
+  const receipt = task.verification || {};
+  const receiptStatus = receipt.status || 'NOT RECORDED';
+  const receiptHash = receipt.hash ? `#${String(receipt.hash).slice(0, 16)}` : 'No task-linked receipt';
+  const proofBox = h('div', { class: 'deck-cap-card', style: { padding: 'var(--el-space-3)' } },
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+      h('span', { text: 'Broker result receipt' }),
+      h('span', { class: 'status-pill', dataset: { status: receipt.verified === true ? 'done' : 'unknown' }, text: receiptStatus })),
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--el-space-1)' } },
+      h('span', { text: 'Invariant audit' }),
+      h('span', { style: { color: 'var(--el-ink-muted)', fontFamily: 'var(--el-font-mono)', fontSize: '0.75rem' }, text: receipt.invariants_audited === true ? 'Broker receipt reports pass' : 'Not recorded' })),
+    h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--el-space-1)' } },
+      h('span', { text: 'Receipt hash' }),
+      h('span', { style: { color: 'var(--el-ink-muted)', fontFamily: 'var(--el-font-mono)', fontSize: '0.75rem' }, text: receiptHash })));
+  body.append(proofBox);
+
+  // Dual-Key Consent Action
+  if (task.status === 'blocked' || task.status === 'queued') {
+    const consentRow = h('div', { class: 'action-proposal-chip' },
+      h('span', { style: { fontSize: '0.8rem', color: 'var(--el-ink-strong)' }, text: 'Authorize Dual-Key Consent for Risk-5 Capability?' }),
+      h('div', { style: { display: 'flex', gap: 'var(--el-space-2)' } },
+        h('button', {
+          type: 'button',
+          class: 'btn btn--primary',
+          style: { fontSize: '0.75rem', padding: '3px 8px' },
+          text: 'Authorize',
+          onclick: async () => {
+            await approveConsent(task.id, true);
+            overlay.remove();
+          },
+        }),
+        h('button', {
+          type: 'button',
+          style: { fontSize: '0.75rem', padding: '3px 8px', background: 'transparent', border: 'var(--el-hairline) solid var(--el-border)', color: 'var(--el-fail)', cursor: 'pointer', borderRadius: 'var(--el-radius-sm)' },
+          text: 'Reject',
+          onclick: async () => {
+            await approveConsent(task.id, false);
+            overlay.remove();
+          },
+        })));
+    body.append(consentRow);
+  }
+
+  panel.append(body);
+  overlay.append(panel);
+  document.body.append(overlay);
+}
+
+function renderDeckContent() {
+  const host = document.getElementById('deck-body');
+  if (!host) return;
+  while (host.firstChild) host.firstChild.remove();
+
+  if (state.deckTab === 'tasks') {
+    renderTasksDeck(host);
+  } else if (state.deckTab === 'skills') {
+    renderSkillsDeck(host);
+  } else if (state.deckTab === 'memory') {
+    renderMemoryDeck(host);
+  } else if (state.deckTab === 'metabolism') {
+    renderMetabolismDeck(host);
+  }
+}
+
+function renderTasksDeck(host) {
+  const visibleTasks = state.showAllTasks ? state.tasks : state.tasks.slice(0, 12);
+  const header = h('div', { class: 'deck-header', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+    h('strong', { text: `Recent Wills (${visibleTasks.length}${visibleTasks.length < state.tasks.length ? ` of ${state.tasks.length}` : ''})` }),
+    h('button', {
+      type: 'button',
+      style: { background: 'transparent', border: 'none', color: 'var(--el-accent)', cursor: 'pointer', fontSize: 'var(--el-t-1)' },
+      text: 'Refresh',
+      onclick: () => syncTasks(),
+    }));
+  host.append(header);
+
+  if (!state.tasks.length) {
+    host.append(h('div', { class: 'empty', text: 'No active wills. Type a will below to initiate governed execution.' }));
+    return;
+  }
+
+  for (const t of visibleTasks) {
+    const card = h('div', { class: 'deck-task-card' });
+    const topRow = h('div', { class: 'deck-task-header', style: { cursor: 'pointer' }, onclick: () => openTaskInspector(t) },
+      h('div', { class: 'deck-task-title', text: t.goal || t.id }),
+      h('div', { style: { display: 'flex', gap: 'var(--el-space-1)', alignItems: 'center' } },
+        t.suggested_specialist ? h('span', { class: 'persona-chip', style: { fontSize: '0.68rem', padding: '1px 6px' }, text: `Suggested · ${t.suggested_specialist}` }) : null,
+        h('span', { class: 'status-pill', dataset: { status: t.status }, text: t.status === 'done_no_work' ? 'No work' : t.status })));
+    card.append(topRow);
+
+    if (Array.isArray(t.stages) && t.stages.length) {
+      const flow = h('div', { class: 'pipeline-flow', style: { cursor: 'pointer' }, onclick: () => openTaskInspector(t) });
+      for (const st of t.stages) {
+        flow.append(h('div', { class: 'pipeline-step', dataset: { state: st.state }, title: st.name },
+          h('span', { class: 'step-dot' }),
+          h('span', { class: 'step-name', text: st.name })));
+      }
+      card.append(flow);
+    }
+
+    if (Array.isArray(t.trace) && t.trace.length) {
+      const recentTrace = t.trace.slice(-3);
+      const tracesBox = h('div', {
+        class: 'task-traces',
+        title: `Showing the latest ${recentTrace.length} of ${t.trace.length} ledger events; inspect for the full timeline.`,
+        style: { marginTop: 'var(--el-space-1)', display: 'flex', flexDirection: 'column', gap: '3px' },
+      });
+      for (const tr of recentTrace) {
+        const isResult = tr.kind === 'capability_result';
+        const rcKnown = tr.payload && Number.isInteger(tr.payload.rc);
+        const resultOk = isResult && tr.payload.rc === 0;
+        const eventLabels = {
+          task_queued: 'queued',
+          task_started: 'start',
+          task_finished: 'done',
+          capability_intent: 'intent',
+          capability_result: rcKnown ? `rc=${tr.payload.rc}` : 'result',
+        };
+        tracesBox.append(h('div', { class: 'turn__organ-card', dataset: { ok: isResult ? String(resultOk) : 'unknown' } },
+          h('span', { class: 'organ-tag' }, icon('chip'), h('span', { text: tr.organ || 'broker' })),
+          h('span', { class: 'proof-tag', title: tr.hash || tr.message || tr.kind, text: tr.hash ? '#' + tr.hash.slice(0, 8) : tr.message }),
+          h('span', { class: 'rc-tag', dataset: { ok: isResult ? String(resultOk) : 'unknown' }, title: tr.kind, text: eventLabels[tr.kind] || tr.kind })));
+      }
+      card.append(tracesBox);
+    }
+
+    const inspectBtn = h('button', {
+      type: 'button',
+      style: { background: 'var(--el-surface)', border: 'var(--el-hairline) solid var(--el-border)', color: 'var(--el-ink-muted)', fontSize: '0.72rem', padding: '2px 8px', borderRadius: 'var(--el-radius-pill)', cursor: 'pointer', marginTop: 'var(--el-space-1)', width: 'fit-content' },
+      text: 'Inspect Pipeline & Logs',
+      onclick: () => openTaskInspector(t),
+    });
+    card.append(inspectBtn);
+
+    host.append(card);
+  }
+
+  if (state.tasks.length > 12) {
+    host.append(h('button', {
+      type: 'button',
+      class: 'task-list-toggle',
+      text: state.showAllTasks ? 'Show fewer wills' : `Show all ${state.tasks.length} wills`,
+      onclick: () => {
+        state.showAllTasks = !state.showAllTasks;
+        renderDeckContent();
+      },
+    }));
+  }
+}
+
+async function renderSkillsDeck(host) {
+  const absorbBar = h('div', { class: 'deck-absorb-bar' });
+  const urlInput = h('input', { type: 'text', placeholder: 'GitHub repo or MCP URL to adopt...' });
+  const absorbBtn = h('button', { type: 'button', text: 'Absorb' });
+  absorbBtn.addEventListener('click', () => {
+    const val = urlInput.value.trim();
+    if (val) {
+      dispatchTask('absorb ' + val);
+      urlInput.value = '';
+      toast('Absorption started', 'ok', val);
+    }
+  });
+  absorbBar.append(urlInput, absorbBtn);
+  host.append(absorbBar);
+
+  if (!state.specialists) {
+    try {
+      const sres = await api('/api/specialists');
+      if (sres && sres.specialists) state.specialists = sres.specialists;
+    } catch (e) {
+      state.specialists = [];
+    }
+  }
+
+  if (state.specialists && state.specialists.length) {
+    host.append(h('div', { style: { fontSize: 'var(--el-t-1)', color: 'var(--el-ink-muted)', marginTop: 'var(--el-space-2)' }, text: `Runtime Specialists & Organs (${state.specialists.length})` }));
+    const specGrid = h('div', { class: 'specialists-grid' });
+    for (const sp of state.specialists) {
+      specGrid.append(h('div', { class: 'specialist-card' },
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+          h('strong', { text: sp.name, style: { fontSize: '0.82rem', color: 'var(--el-ink-strong)' } }),
+          h('span', { class: 'status-pill', dataset: { status: sp.tier }, text: sp.tier })),
+        h('span', { style: { fontSize: '0.74rem', color: 'var(--el-ink-muted)' }, text: sp.role }),
+        h('span', { style: { fontSize: '0.7rem', color: 'var(--el-ink-faint)', fontFamily: 'var(--el-font-mono)' }, text: (sp.permission_scope || []).slice(0, 4).join(', ') })));
+    }
+    host.append(specGrid);
+  }
+
+  if (!state.capabilities) {
+    try {
+      state.capabilities = await api('/api/capabilities');
+    } catch (e) {
+      state.capabilities = null;
+    }
+  }
+
+  const caps = (state.capabilities && state.capabilities.capabilities) || [];
+  const list = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 'var(--el-space-2)', marginTop: 'var(--el-space-2)' } });
+  host.append(h('div', { style: { fontSize: 'var(--el-t-1)', color: 'var(--el-ink-muted)' }, text: `Kernel Techniques & Skills (${caps.length})` }));
+  for (const cap of caps) {
+    list.append(h('div', { class: 'deck-cap-card' },
+      h('span', { class: 'deck-cap-name', text: cap.name }),
+      h('span', { class: 'deck-cap-risk', dataset: { tier: cap.tier_required }, text: `${cap.tier_required} · Risk ${cap.risk}` })));
+  }
+  host.append(list);
+}
+
+function renderMemoryDeck(host) {
+  const searchBar = h('div', { class: 'memory-search-bar' });
+  const searchInput = h('input', { type: 'text', placeholder: 'Search Obsidian Vault & Episodes...', value: state.vaultQuery || '' });
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim();
+    syncVault(q);
+  });
+  searchBar.append(searchInput);
+  host.append(searchBar);
+
+  const briefingGrid = h('div', { class: 'briefing-metrics-row', style: { marginBottom: 'var(--el-space-2)' } });
+  briefingGrid.append(
+    h('div', { class: 'briefing-metric-card' },
+      h('span', { style: { fontSize: '0.78rem', color: 'var(--el-ink-muted)' }, text: 'Vault results' }),
+      h('strong', { style: { fontSize: '1.1rem', color: 'var(--el-accent)' }, text: state.vaultResults ? String(state.vaultResults.length) : '—' })),
+    h('div', { class: 'briefing-metric-card' },
+      h('span', { style: { fontSize: '0.78rem', color: 'var(--el-ink-muted)' }, text: 'Tasks observed' }),
+      h('strong', { style: { fontSize: '1.1rem', color: 'var(--el-ok)' }, text: state.tasks ? String(state.tasks.length) : '—' })),
+    h('div', { class: 'briefing-metric-card' },
+      h('span', { style: { fontSize: '0.78rem', color: 'var(--el-ink-muted)' }, text: 'Local models reported' }),
+      h('strong', { style: { fontSize: '1.1rem', color: 'var(--el-ink-strong)' }, text: state.routerStatus && state.routerStatus.reachable ? String((state.models || []).filter((m) => /ollama|local|bitnet/i.test(m)).length) : '—' })),
+    h('div', { class: 'briefing-metric-card' },
+      h('span', { style: { fontSize: '0.78rem', color: 'var(--el-ink-muted)' }, text: 'Vault query' }),
+      h('strong', { style: { fontSize: '1.1rem', color: 'var(--el-accent)' }, text: state.vaultQuery || 'Not queried' }))
+  );
+  host.append(briefingGrid);
+
+  if (state.briefing && state.briefing.summary) {
+    const briefCard = h('div', { class: 'deck-task-card', style: { borderLeft: '3px solid var(--el-accent)' } },
+      h('strong', { text: 'Daily Briefing (Akashic Ledger)' }),
+      h('span', { style: { fontSize: '0.8rem', color: 'var(--el-ink-muted)' }, text: state.briefing.summary }));
+    host.append(briefCard);
+  }
+
+  const results = state.vaultResults || [];
+  if (results.length) {
+    for (const r of results) {
+      host.append(h('div', { class: 'memory-result-card' },
+        h('span', { class: 'memory-filename', text: r.filename }),
+        h('span', { style: { fontSize: '0.72rem', color: 'var(--el-ink-faint)' }, text: r.path }),
+        h('span', { class: 'memory-snippet', text: r.snippet })));
+    }
+  } else if (state.vaultQuery) {
+    host.append(h('div', { class: 'empty', text: `No vault results matching "${state.vaultQuery}".` }));
+  } else {
+    host.append(h('div', { class: 'empty', text: 'Type a query above to search Obsidian vault markdown notes and skills.' }));
+  }
+}
+function renderMetabolismDeck(host) {
+  const wrap = h('div', { class: 'metabolism-ring-wrap' });
+  wrap.append(h('strong', { text: '6-State Lifecycle (Metabolism as Blood Sugar)' }));
+
+  const activeState = hudStateName();
+  const states = ['CRYPTOBIOSIS', 'ALIVE', 'AWAKE', 'ALERT', 'ARMED', 'DIGESTING'];
+  const grid = h('div', { class: 'metabolism-states-grid' });
+  for (const s of states) {
+    grid.append(h('div', { class: 'metabolism-badge', dataset: { active: String(s === activeState) }, text: s }));
+  }
+  wrap.append(grid);
+
+  const snapshot = state.metabolism || {};
+  const hr = snapshot.ram_metric_available && Number.isFinite(snapshot.ram_headroom)
+    ? snapshot.ram_headroom : null;
+  const pct = hr === null ? null : Math.round(hr * 100);
+  const available = Number.isFinite(snapshot.ram_available_mb) ? `${Math.round(snapshot.ram_available_mb)} MiB` : null;
+  const total = Number.isFinite(snapshot.ram_total_mb) ? `${Math.round(snapshot.ram_total_mb)} MiB` : null;
+  wrap.append(h('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: 'var(--el-t-1)', color: 'var(--el-ink-muted)', marginTop: 'var(--el-space-2)' } },
+    h('span', { text: 'RAM Headroom' }),
+    h('span', { text: hr === null ? 'not reported' : `${pct}% · ${available} of ${total}` })));
+  const sugarBar = h('div', { class: 'ram-blood-sugar' },
+    h('div', { class: 'ram-blood-sugar-fill', style: { width: `${pct ?? 0}%` } }));
+  wrap.append(sugarBar);
+
+  const ripples = Number.isFinite(snapshot.ripple_events) ? snapshot.ripple_events : null;
+  wrap.append(h('div', { style: { fontSize: '0.78rem', color: 'var(--el-ink-muted)', marginTop: 'var(--el-space-2)' },
+    text: `Shared-memory events: ${ripples === null ? 'not reported' : ripples}` }));
+
+  host.append(wrap);
+}
+
+function showSlashPalette(val, input) {
+  hideSlashPalette();
+  const compose = document.querySelector('.hud-compose');
+  if (!compose) return;
+  const cmds = [
+    { cmd: '/model', desc: 'Toggle model picker (Claude 3.7, GPT-4o, DeepSeek, Qwen) [Ctrl+M]' },
+    { cmd: '/task ', desc: 'Assign a will to household chore book' },
+    { cmd: '/see', desc: 'Capture and analyze desktop screen' },
+    { cmd: '/mic', desc: 'Voice dictation listen' },
+    { cmd: '/adopt ', desc: 'Absorb remote GitHub skill / MCP' },
+    { cmd: '/recall ', desc: 'Search persistent memory & vault' },
+    { cmd: '/briefing', desc: 'Generate daily briefing from Akashic ledger' },
+    { cmd: '/status', desc: 'System metabolism & broker state' },
+    { cmd: '/blender', desc: 'Connect to Blender 3D organ' },
+    { cmd: '/think ', desc: 'Deliberate architectural reasoning (@thinker)' },
+    { cmd: '/coder ', desc: 'High-precision code synthesis (@coder)' },
+    { cmd: '/verifier ', desc: 'Audit security invariants (@verifier)' },
+    { cmd: '/terminal ', desc: 'DevOps & test runner commands (@terminal)' },
+  ].filter(c => c.cmd.startsWith(val.toLowerCase()));
+  if (!cmds.length) return;
+
+  const palette = h('div', { class: 'slash-palette', id: 'slash-palette' });
+  for (const c of cmds) {
+    const item = h('div', { class: 'slash-item' },
+      h('span', { class: 'slash-item__cmd', text: c.cmd }),
+      h('span', { class: 'slash-item__desc', text: c.desc }));
+    item.addEventListener('click', () => {
+      hideSlashPalette();
+      if (c.cmd === '/model') {
+        input.value = '';
+        const toggleBtn = document.getElementById('composer-model-toggle');
+        toggleComposerModelDropdown(toggleBtn);
+        return;
+      }
+      input.value = c.cmd;
+      input.focus();
+    });
+    palette.append(item);
+  }
+  compose.append(palette);
+}
+
+function hideSlashPalette() {
+  const p = document.getElementById('slash-palette');
+  if (p) p.remove();
+}
+
+function renderResident(root) {
+  const existingLayout = root.querySelector('.resident-layout');
+  if (existingLayout) {
+    updateResidentHud();
     return;
   }
 
@@ -1217,60 +2382,35 @@ function renderResident(root) {
   const canvas = h('canvas', {
     id: 'organism-canvas',
     class: 'organism',
-    width: 520,
-    height: 520,
-    style: { width: 'min(100%, 520px)', height: 'auto', aspectRatio: '1 / 1', boxShadow: 'none' },
-    title: 'ELORA body — Blender-authored brutalist megastructure mesh',
+    title: 'ELORA body — Blender-authored megastructure mesh',
   });
-  const legend = h('div', { class: 'organism-legend' },
-    h('span', { class: 'dot', dataset: { state: 'ALIVE' } }), ' ALIVE ',
-    h('span', { class: 'dot', dataset: { state: 'AWAKE' } }), ' AWAKE ',
-    h('span', { class: 'dot', dataset: { state: 'ARMED' } }), ' ARMED ');
-  const fallback = h('div', { class: 'organism-fallback',
-    style: { width: 'min(100%, 520px)', height: 'auto', aspectRatio: '1 / 1', top: '0', left: '0' } },
+  const fallback = h('div', { class: 'organism-fallback' },
     icon('chip'),
     h('span', { text: 'City body unavailable' }),
-    h('span', {
-      class: 'mono',
-      style: { fontSize: '0.72rem', color: 'var(--el-ink-faint)' },
-      text: 'Blender mesh unavailable',
-    }));
-  const stateLine = h('div', {
-    id: 'resident-state-line',
-    class: 'briefing-title',
-    text: residentStateSummary(),
-  });
-  const heading = h('div', { class: 'briefing-title' }, icon('terminal'), 'ELORA / MEGASTRUCTURE');
-  const organismFrame = h('div', { class: 'organism-frame', dataset: { status: 'offline' },
-    style: { width: '100%', alignItems: 'stretch', background: 'transparent', border: '0', padding: '0' } },
-    heading, canvas, fallback, legend, stateLine);
-  const houseStill = h('figure', { class: 'house-still', style: { background: 'transparent', border: '0', padding: '0' } },
-    h('img', { id: 'house-still', alt: 'Last house still', hidden: true }),
-    h('figcaption', { id: 'house-still-caption', class: 'mono', text: 'no still yet' }));
+    h('span', { class: 'mono', text: 'Blender mesh unavailable' }));
+  const organismFrame = h('div', { class: 'organism-frame', dataset: { status: 'offline' } },
+    canvas, fallback);
 
   if (!state.organism) {
     state.organism = new Organism(canvas);
     state.organism.init();
   }
 
-  const chatLog = h('div', { class: 'chat__log', id: 'resident-chat-log' });
+  const chatLog = h('div', { class: 'hud-will', id: 'resident-chat-log' });
   state.chatRendered = new Set();
   if (!state.chatHistory.length) {
     chatLog.append(h('div', { class: 'empty', text: 'nothing spoken yet' }));
-  } else {
-    for (const msg of state.chatHistory) appendResidentMessage(msg);
   }
 
   const input = h('textarea', {
     id: 'chat-input',
-    class: 'input',
-    rows: '2',
-    style: { flex: '1', fontFamily: 'var(--el-font-sans)' },
-    placeholder: 'Speak will...',
+    rows: '1',
+    placeholder: 'Type a will',
+    'aria-label': 'Will',
   });
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       const value = input.value.trim();
       if (value) {
         input.value = '';
@@ -1278,27 +2418,140 @@ function renderResident(root) {
       }
     }
   });
+  const send = h('button', { type: 'button', text: 'Send' });
+  send.addEventListener('click', () => {
+    const value = input.value.trim();
+    if (value) {
+      input.value = '';
+      dispatchTask(value);
+    }
+  });
+  const mic = h('button', { type: 'button', id: 'hud-mic', text: 'Voice', 'aria-label': 'Voice listen', 'aria-pressed': 'false' });
+  mic.addEventListener('click', () => listenWill(mic));
+  const see = h('button', { type: 'button', id: 'hud-see', text: 'Screen', 'aria-label': 'Capture screen' });
+  see.addEventListener('click', () => seeScreen());
 
-  const compose = h('div', { class: 'chat__compose' }, input);
-  const chatCard = card('Will → organs → voice', 'terminal',
-    h('div', { class: 'chat' }, chatLog),
-    compose,
-    h('div', { class: 'card__note', style: { padding: '0 var(--el-space-5) var(--el-space-4)' },
-      text: 'Instructions enter through the Resident inbox. Organ activity appears here with its evidence status.' }));
+  const util = (name, view) => {
+    const btn = h('button', { type: 'button', class: 'hud-util-btn', text: name });
+    btn.addEventListener('click', () => showView(view));
+    return btn;
+  };
 
-  const aside = h('div', { class: 'resident-aside' }, organismFrame, houseStill);
-  const main = h('div', { class: 'resident-main' }, chatCard);
-  root.append(h('div', { class: 'resident-layout' }, aside, main));
-  if (!state.residentLayoutResizeBound) {
-    window.addEventListener('resize', sizeResidentRoom, { passive: true });
-    state.residentLayoutResizeBound = true;
-  }
-  sizeResidentRoom();
+  const hud = h('div', { class: 'resident-hud' },
+    h('aside', { class: 'hud-sys', 'aria-label': 'System' },
+      h('div', { class: 'hud-sys-header' },
+        h('span', { class: 'hud-dot' }),
+        h('span', { class: 'hud-sys-title', text: 'ELORA OMNI' }),
+        h('div', { class: 'hud-state', id: 'hud-state', text: hudStateName() })),
+      h('div', { class: 'hud-stats-row' },
+      h('div', { class: 'hud-stat', style: { cursor: 'pointer' }, title: 'Select model for Router chat; task brain is shown in the status line', onclick: () => openModelSelector() }, h('span', { text: 'router chat' }), h('b', { id: 'hud-mind', text: 'unqueried' })),
+        h('div', { class: 'hud-stat' }, h('span', { text: 'organ' }), h('b', { id: 'hud-organ', text: 'none' })),
+        h('div', { class: 'hud-stat' }, h('span', { text: 'load' }), h('b', { id: 'hud-load', text: '—' }))),
+      h('div', { id: 'resident-state-line', class: 'hud-stat', text: residentStateSummary() }),
+      h('div', { class: 'hud-utils' },
+        util('Ledger', 'ledger'), util('Genome', 'genome'), util('Router', 'router'))),
+    h('figure', { class: 'hud-eyes house-still' },
+      h('img', { id: 'house-still', alt: 'Last house still', hidden: true }),
+      h('figcaption', { id: 'house-still-caption', class: 'mono', text: 'no still yet' })),
+    chatLog,
+    (() => {
+      const chip = (name, iconName, action) => {
+        const c = h('button', { type: 'button', class: 'studio-chip', title: name },
+          icon(iconName),
+          h('span', { text: name }));
+        c.addEventListener('click', action);
+        return c;
+      };
+      const pchip = (tag) => {
+        const c = h('button', { type: 'button', class: 'persona-chip', title: 'Persona: ' + tag },
+          h('span', { text: tag }));
+        c.addEventListener('click', () => {
+          const cur = input.value.replace(/^@[a-z]+\s*/, '');
+          input.value = tag + ' ' + cur;
+          input.focus();
+        });
+        return c;
+      };
+      const attsBar = h('div', { class: 'composer-attachments-bar', id: 'composer-attachments-bar' });
+      const filePicker = h('input', { type: 'file', multiple: true, style: { display: 'none' }, id: 'elora-file-picker' });
+      filePicker.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length) {
+          toast(`Uploading ${files.length} file(s)...`, 'info');
+          for (const f of files) {
+            try {
+              const uploaded = await uploadFile(f);
+              state.pendingAttachments.push(uploaded);
+            } catch (err) {
+              toast(`Upload failed for ${f.name}`, 'danger', err.message);
+            }
+          }
+          renderComposerAttachments();
+          filePicker.value = '';
+        }
+      });
+      const attachBtn = h('button', { type: 'button', id: 'hud-attach', title: 'Attach image, video, or file', 'aria-label': 'Attach file' }, icon('file'), h('span', { text: 'Attach' }));
+      attachBtn.addEventListener('click', () => filePicker.click());
+      const modelToggleBtn = h('button', {
+        type: 'button',
+        id: 'composer-model-toggle',
+        class: 'composer-model-toggle',
+        title: 'Change Router chat model · Ctrl+M or /model',
+        'aria-label': 'Select AI Model',
+        onclick: (e) => {
+          e.stopPropagation();
+          toggleComposerModelDropdown(modelToggleBtn);
+        },
+      },
+        icon('chip'),
+        h('span', { id: 'composer-model-name', text: formatModelDisplayName(state.selectedModel) }),
+        h('span', { class: 'composer-model-caret', text: '▼' }));
+      const compose = h('div', { class: 'hud-compose' }, attsBar, filePicker, modelToggleBtn, input, attachBtn, mic, see, send);
+      return h('div', { class: 'hud-dock-wrapper' },
+        h('div', { class: 'hud-hands', id: 'hud-hands', hidden: true, text: '' }),
+        h('div', { class: 'hud-dock-pills' },
+          h('div', { class: 'persona-pills' },
+            pchip('@maid'), pchip('@thinker'), pchip('@coder'), pchip('@verifier'), pchip('@terminal')),
+          h('div', { class: 'studio-chips' },
+            chip('Wake ELORA', 'brain', () => wakeElora(true)),
+            chip('Daily Briefing', 'file', () => openDailyBriefing()))),
+        compose);
+    })(),
+    (() => {
+      const makeDeckTab = (tab, label, iconName) => {
+        const btn = h('button', {
+          type: 'button',
+          class: 'deck-tab',
+          dataset: { tab },
+          'aria-selected': state.deckTab === tab ? 'true' : 'false',
+        }, icon(iconName), h('span', { text: label }));
+        btn.addEventListener('click', () => switchDeckTab(tab));
+        return btn;
+      };
+      const deckTabs = h('div', { class: 'deck-tabs' },
+        makeDeckTab('tasks', 'Tasks', 'ledger'),
+        makeDeckTab('skills', 'Skills', 'registry'),
+        makeDeckTab('memory', 'Memory', 'file'),
+        makeDeckTab('metabolism', 'Metabolism', 'chip'));
+      const deckBody = h('div', { class: 'deck-body', id: 'deck-body' });
+      return h('aside', { class: 'hud-deck', 'aria-label': 'Studio Deck' }, deckTabs, deckBody);
+    })());
+
+  input.addEventListener('input', () => {
+    const val = input.value;
+    if (val.startsWith('/')) {
+      showSlashPalette(val, input);
+    } else {
+      hideSlashPalette();
+    }
+  });
+
+  root.append(h('div', { class: 'resident-layout' }, organismFrame, hud));
+  updateResidentHud();
+  renderDeckContent();
   chatLog.scrollTop = chatLog.scrollHeight;
 }
-/* The desktop window points at this server and the server is a sidecar, so the
-   first request can beat the socket. A bounded retry is not the same as
-   pretending it worked: after the last attempt the real error is reported. */
+
 async function waitForServer(attempts = 12, delayMs = 400) {
   let lastError = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -1373,8 +2626,22 @@ async function boot() {
   }
   renderGenome(document.getElementById('genome-root'));
 
+  void api('/api/router/models').then((modelRes) => {
+    if (modelRes) {
+      if (Array.isArray(modelRes.models)) state.models = modelRes.models;
+      if (modelRes.configured_model && modelRes.configured_model !== '(unset)') {
+        state.selectedModel = modelRes.configured_model;
+      }
+    }
+    updateAllModelDisplays(state.selectedModel);
+  }).catch(() => { state.models = []; });
+
   renderResident(document.getElementById('resident-root'));
-  residentRedraw = () => { if (state.view === 'resident') renderResident(document.getElementById('resident-root')); };
+  wakeElora(false);
+  setupDragAndDrop();
+  residentRedraw = () => { if (state.view === 'resident') renderResident(document.getElementById('resident-root'));
+  wakeElora(false);
+  setupDragAndDrop(); };
   renderRouter(document.getElementById('router-root'));
   renderLedger(document.getElementById('ledger-root'));
   renderUnwired(document.getElementById('unwired-root'));
@@ -1390,6 +2657,10 @@ async function boot() {
     setInterval(syncBriefing, 15000);
     syncChat();
     setInterval(syncChat, 2000);
+    syncTasks();
+    setInterval(syncTasks, 3000);
+    syncRouterStatus();
+    setInterval(syncRouterStatus, 15000);
   }
 
   /* Registry end-to-end. The scan is genuinely slow (walks real directories), so
@@ -1424,6 +2695,15 @@ window.addEventListener('hashchange', () => {
   const name = (location.hash || '#resident').slice(1);
   if (Object.prototype.hasOwnProperty.call(VIEW_TITLES, name) && name !== state.view) {
     showView(name);
+  }
+});
+
+/* Global shortcut: Ctrl+M / Cmd+M opens the model changing toggle dropdown */
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'm') {
+    e.preventDefault();
+    const toggleBtn = document.getElementById('composer-model-toggle');
+    toggleComposerModelDropdown(toggleBtn);
   }
 });
 

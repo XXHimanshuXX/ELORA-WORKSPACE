@@ -106,11 +106,9 @@ def code_read(path: str, start: int = 1, limit: int = 400, root: str | None = No
     except ValueError as e:
         return {"ok": False, "error": str(e)}
     if _is_secret(resolved):
-        return {"ok": False, "error": "refused: secrets are unreadable by hands"}
+        return {"ok": False, "error": "refused: secrets are not readable"}
     if not os.path.isfile(resolved):
         return {"ok": False, "error": f"not a file: {_rel(resolved)}"}
-    if _is_secret(resolved):
-        return {"ok": False, "error": "refused: secrets are not readable"}
     if os.path.getsize(resolved) > MAX_READ_BYTES:
         return {"ok": False, "error": f"file too large (>{MAX_READ_BYTES} bytes)"}
     try:

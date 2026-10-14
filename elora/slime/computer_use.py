@@ -48,7 +48,7 @@ def capture(out_path: str | None = None) -> dict:
     """
     Capture a screenshot for perception (no control).
     Writes PNG to .elora/screenshots/ and returns path + SHA-256.
-    synthetic=True means ImageGrab failed and a placeholder was written.
+    Fails closed when ImageGrab cannot access a real display; no placeholder is saved.
     """
     os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
     if not out_path:
@@ -60,19 +60,11 @@ def capture(out_path: str | None = None) -> dict:
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
 
     img = None
-    synthetic = False
     try:
         from PIL import ImageGrab
         img = ImageGrab.grab()
-    except Exception:
-        pass
-
-    if img is None:
-        synthetic = True
-        from PIL import Image, ImageDraw
-        img = Image.new("RGB", (1920, 1080), color=(18, 18, 24))
-        draw = ImageDraw.Draw(img)
-        draw.text((20, 20), "ELORA Headless Perception Canvas", fill=(200, 200, 200))
+    except Exception as exc:
+        raise RuntimeError(f"screen capture unavailable: {exc}") from exc
 
     img.save(out_path, format="PNG")
 
@@ -86,7 +78,8 @@ def capture(out_path: str | None = None) -> dict:
         "width": img.width,
         "height": img.height,
         "bytes": len(data),
-        "synthetic": synthetic,
+        "available": True,
+        "synthetic": False,
     }
 
 

@@ -1,0 +1,16 @@
+# Skill skl_0878dfd16e
+
+**Born:** 2026-10-04 21:18 from 3 observed executions.
+
+**Trigger pattern:** `task task chat accept txt 1791128267071`
+
+**Capability sequence:**
+1. `blender.run` — Run one workspace-jailed Blender Python script. Not an arbitrary path, not shell.
+
+**Example args (last observed):**
+```json
+{}
+```
+
+---
+Specs survive decay. Bindings do not. If this skill was archived, it can be rebuilt from this file.

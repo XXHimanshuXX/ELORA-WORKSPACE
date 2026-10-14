@@ -1,18 +1,28 @@
-"""Acceptance checks for ELORA's Resident → organs → ledger control loop."""
+"""Acceptance checks for ELORA's Resident -> organs -> ledger control loop."""
+
+from __future__ import annotations
 
 import ast
+import http.client
 import json
 import os
+import threading
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from conftest import FakeLedger, FakeVault
+from elora.brain import ScriptedBrain
+from elora.core.broker import Broker, Rejected, Result
 from elora.core.capabilities import SkillToken, Tier
-from elora.core.broker import Result
-from elora.core.owner_will import infer_owner_organs
+from elora.core.metabolism import Metabolism
+from elora.core.owner_will import WORKSPACE_ROOT, infer_owner_organs
+from elora.daemon import Daemon, Event, Task, TaskState
 from elora.dashboard import server
-from elora.daemon import Daemon, Event, Task
+from elora.dashboard import server as dashboard
 from elora.organs.akashic import AkashicLedger
+from elora.slime import browser as browser_module
 from elora.slime import control_plane, hands, sandbox
 
 
@@ -126,11 +136,11 @@ def test_resident_stream_orders_will_organs_voice_and_reports_rc(tmp_path):
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     app_js = open(os.path.join(root, "overlay", "app.js"), encoding="utf-8").read()
     assert "'X-ELORA-Client': 'resident-overlay'" in app_js
-    assert "placeholder: 'Speak will...'" in app_js
+    assert "placeholder: 'Type a will'" in app_js
     assert "tab is uncontrolled - no real session" in app_js
-    assert "const stream = h('div', { class: 'chat' }," in app_js
-    assert "label = '[SYSTEM QUEST]';" in app_js
-    assert "label = '[ORGAN: '" in app_js
+    assert "class: 'hud-will'" in app_js
+    assert "label = isWill ? 'Master' : 'ELORA';" in app_js
+    assert "Last organ: " in app_js
     assert "clear(chatLog)" not in app_js
     daemon_py = open(os.path.join(root, "elora", "daemon.py"), encoding="utf-8").read()
     tick_start = daemon_py.index("    def tick(self)")
@@ -180,31 +190,6 @@ def test_inbox_record_flows_to_core_daemon(tmp_path, monkeypatch):
     assert len(tasks) == 1
     assert daemon._is_owner_will(tasks[0]) is True
     assert daemon._token_for(tasks[0]).tier == Tier.CORE
-"""Acceptance coverage for the Resident will → CORE → broker → evidence loop."""
-
-from __future__ import annotations
-
-import http.client
-import json
-import os
-import threading
-from pathlib import Path
-
-import pytest
-
-from elora.brain import ScriptedBrain
-from elora.core.broker import Broker, Rejected, Result
-from elora.core.capabilities import SkillToken, Tier
-from elora.core.metabolism import Metabolism
-from elora.core.owner_will import WORKSPACE_ROOT, infer_owner_organs
-from elora.daemon import Daemon, Event, Task, TaskState
-from elora.dashboard import server as dashboard
-from elora.organs.akashic import AkashicLedger
-from elora.slime import browser as browser_module
-from elora.slime import sandbox
-from conftest import FakeLedger, FakeVault
-
-
 @pytest.fixture
 def runtime(tmp_path):
     inbox = tmp_path / "inbox"
@@ -269,6 +254,26 @@ def test_implementation_will_maps_before_model_and_defers_tests():
     assert calls[0][0] == "sandbox.repo_map"
     assert all(name != "sandbox.test" for name, _ in calls)
     assert infer_owner_organs("run tests") == [("sandbox.test", {})]
+
+
+def test_static_responses_finish_on_http11_keep_alive(monkeypatch):
+    monkeypatch.setattr(dashboard, "_start_autonomous_presence_thread", lambda: None)
+    httpd = dashboard.serve("127.0.0.1", 0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    connection = http.client.HTTPConnection("127.0.0.1", httpd.server_port, timeout=3)
+    try:
+        for path in ("/", "/styles.css", "/app.js?v=omni_v6", "/tauri_bridge.js", "/organism.js?v=omni_v5"):
+            connection.request("GET", path)
+            response = connection.getresponse()
+            assert response.status == 200
+            body = response.read()
+            assert int(response.getheader("Content-Length")) == len(body)
+    finally:
+        connection.close()
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=3)
 
 
 def test_resident_inbox_requires_identity_and_records_queued_akashic_evidence(tmp_path, monkeypatch):
@@ -459,6 +464,9 @@ def test_public_chat_endpoint_is_talk_only_even_if_reply_contains_tool_markup(mo
     assert requests[0][0] == "/v1/chat/completions"
     assert requests[0][2] == "POST"
     assert requests[0][3]["messages"][-1] == {"role": "user", "content": "talk only"}
+    system_message = requests[0][3]["messages"][0]["content"]
+    assert "BitNet ternary inference" not in system_message
+    assert "Do not claim that you inspected files" in system_message
 
     catalogue = dashboard.payload_mcp_servers(refresh=True)
     assert catalogue["allowed"] == ["git", "sandbox", "ledger", "core"]
@@ -553,8 +561,8 @@ def test_resident_tauri_and_single_timeline_contract():
     rust = (root / "src-tauri" / "src" / "main.rs").read_text(encoding="utf-8")
     live_smoke = (root / "tools" / "_test_live_resident.py").read_text(encoding="utf-8")
 
-    assert "placeholder: 'Speak will...'" in app
-    assert "placeholder: 'Speak will…'" not in app
+    assert "placeholder: 'Type a will'" in app
+    assert "placeholder: 'Speak will...'" not in app
     assert "e.key === 'Enter' && !e.shiftKey" in app
     assert "client: 'resident-overlay'" in app
     assert "api('/api/inbox/task'" in app

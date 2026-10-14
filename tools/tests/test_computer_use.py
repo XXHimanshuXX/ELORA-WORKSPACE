@@ -36,10 +36,15 @@ def quarantine_token(tmp_path):
 # ----------------------------------------------------------------------
 
 class TestRung1ScreenCapture:
-    def test_capture_direct_writes_file_and_sha(self, tmp_path):
+    def test_capture_direct_writes_real_frame_and_sha(self, tmp_path, monkeypatch):
+        from PIL import Image, ImageGrab
+
+        monkeypatch.setattr(ImageGrab, "grab", lambda: Image.new("RGB", (32, 24), "navy"))
         out_file = str(tmp_path / "screen_test.png")
         res = computer_use.capture(out_path=out_file)
 
+        assert res["available"] is True
+        assert res["synthetic"] is False
         assert os.path.exists(out_file)
         assert res["path"] == os.path.abspath(out_file)
         assert len(res["sha256"]) == 64
@@ -52,7 +57,10 @@ class TestRung1ScreenCapture:
         assert res["width"] > 0
         assert res["height"] > 0
 
-    def test_capture_via_broker_quarantine_allowed(self, broker, quarantine_token, tmp_path):
+    def test_capture_via_broker_quarantine_allowed(self, broker, quarantine_token, tmp_path, monkeypatch):
+        from PIL import Image, ImageGrab
+
+        monkeypatch.setattr(ImageGrab, "grab", lambda: Image.new("RGB", (32, 24), "navy"))
         # screen.capture is Risk.TRIVIAL, so QUARANTINE tier is permitted
         out_file = os.path.join(quarantine_token.workspace, "perception.png")
         result = broker.request(quarantine_token, "screen.capture", {"out_path": out_file})
@@ -62,6 +70,22 @@ class TestRung1ScreenCapture:
         payload = json.loads(result.stdout)
         assert os.path.exists(payload["path"])
         assert payload["sha256"] == result.execution.stdout_sha256
+
+    def test_capture_without_display_fails_without_synthetic_file(self, broker, quarantine_token, tmp_path, monkeypatch):
+        from PIL import ImageGrab
+
+        def no_display():
+            raise OSError("screen grab failed")
+
+        monkeypatch.setattr(ImageGrab, "grab", no_display)
+        out_file = os.path.join(quarantine_token.workspace, "unavailable.png")
+        result = broker.request(quarantine_token, "screen.capture", {"out_path": out_file})
+
+        assert isinstance(result, Result)
+        assert not result.ok
+        assert result.execution.returncode == 1
+        assert "screen capture unavailable" in result.execution.stderr
+        assert not os.path.exists(out_file)
 
     def test_capture_path_jail_holds(self, broker, quarantine_token):
         # Attempts to write outside approved roots are rejected at schema step

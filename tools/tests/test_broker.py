@@ -127,6 +127,8 @@ class TestSteps5and6PreMortem:
         result_event = next(e for e in ledger.events
                             if e["kind"] == "capability_result")
         assert len(result_event["payload"]["stdout_sha256"]) == 64
+        assert result_event["payload"]["verification_basis"] == "capability_returncode"
+        assert "receipt" not in result_event["payload"]
 
     def test_rejections_are_not_logged_as_executions(self, broker,
                                                      quarantine_token,

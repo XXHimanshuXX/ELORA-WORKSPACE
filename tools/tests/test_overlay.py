@@ -12,6 +12,20 @@ import pytest
 from elora import overlay_bridge
 
 
+def test_resident_ui_preserves_truthful_status_and_paged_inventory():
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    app_js = open(os.path.join(root, "overlay", "app.js"), encoding="utf-8").read()
+
+    assert "'auto/best-coding': 'Auto · best coding'" in app_js
+    assert "OmniRoute offline" in app_js
+    assert "void api('/api/router/models')" in app_js
+    assert "matched.slice(0, shownLimit)" in app_js
+    assert "matched.slice(0, 400)" not in app_js
+    assert "data.oldest_seq" in app_js
+    assert "Load older events" in app_js
+    assert "not reported" in app_js
+
+
 class TestOverlayWgsl:
 
     def test_wgsl_shader_structural_validity(self):
@@ -90,7 +104,7 @@ class TestOverlayWgsl:
         # and the whole generated-aesthetic system silently does nothing.
         assert 'id="genome-style"' in html
         assert 'href="styles.css"' in html
-        assert 'type="module" src="app.js"' in html
+        assert 'type="module" src="app.js?v=omni_v6"' in html
 
         # Glyphs are SVG symbols so they do not depend on a font the machine may
         # not have. Nothing above U+2500 in this file means no emoji crept in.
@@ -104,4 +118,33 @@ class TestOverlayWgsl:
         assert "id: 'organism-canvas'" in app
         assert "new Organism(canvas)" in app
         assert "state.organism.init()" in app
-        assert "WebGPU adapter required" in app
+        assert "Blender mesh unavailable" in app or "WebGL2 is unavailable" in app
+
+    def test_resident_does_not_present_legacy_proactive_claims_as_current_measurements(self):
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(root, "overlay", "app.js"), "r", encoding="utf-8") as f:
+            app = f.read()
+
+        assert "Historical claim — not verified by ELORA's current sensors" in app
+        assert "UNVERIFIED HISTORY" in app
+        assert "900}+ Models Available" not in app
+        assert "Verified 0 Unbounded Writes" not in app
+        assert "elora online\\. workspace root:" in app.lower()
+        assert "the original history remains saved" in app
+        assert "placeholderTaskFiles" in app
+        assert "placeholderPromptCount" in app
+        assert "state.tasks.slice(0, 12)" in app
+        assert "Show all ${state.tasks.length} wills" in app
+        assert "task_queued: 'queued'" in app
+        assert "tr.hash.slice(0, 8)" in app
+        assert "const recentTrace = t.trace.slice(-3)" in app
+
+    def test_task_trace_rows_have_reserved_readable_columns(self):
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        with open(os.path.join(root, "overlay", "styles.css"), "r", encoding="utf-8") as f:
+            styles = f.read()
+
+        assert "grid-template-columns: 76px minmax(0, 1fr) 68px" in styles
+        assert ".task-traces .organ-tag" in styles
+        assert ".task-traces .organ-tag svg" in styles
+        assert ".task-traces .proof-tag" in styles

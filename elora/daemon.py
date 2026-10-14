@@ -63,8 +63,53 @@ def public_chat_answer(task) -> str:
             if res:
                 tool_lines.append(res)
     if tool_lines:
-        return "\n".join(tool_lines)
+        return ""
     return ""
+
+
+def _git_status_summary(tool: str, rc: int, output: str) -> str:
+    """Turn a successful git.status envelope into a compact, user-facing fact."""
+    if tool != "git.status" or rc != 0:
+        return ""
+    try:
+        envelope = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(envelope, dict) or envelope.get("ok") is False:
+        return ""
+    status = envelope.get("stdout")
+    if not isinstance(status, str):
+        return ""
+    lines = status.splitlines()
+    header = next((line[3:].strip() for line in lines if line.startswith("## ")), "")
+    branch = re.split(r"\.\.\.|\s+\[", header, maxsplit=1)[0].strip()
+    if not branch:
+        return ""
+    entries = [line for line in lines if len(line) >= 3 and line[:2] in {
+        " M", "M ", "MM", " A", "A ", "AM", "D ", " D", "R ", " R",
+        "C ", " C", "UU", "??", " T", "T ", "TT",
+    }]
+    untracked = sum(line.startswith("??") for line in entries)
+    tracked = len(entries) - untracked
+    return f"branch {branch}; {len(entries)} changed paths ({tracked} tracked, {untracked} untracked)."
+
+
+def _spoken_tool_result(task) -> str:
+    """Return a bounded summary recorded from a successful read-only tool result."""
+    for entry in reversed(getattr(task, "trace", []) or []):
+        if entry.get("tool") and entry.get("ok") and entry.get("summary"):
+            return f"{entry['tool']}: {entry['summary']}"
+    return ""
+
+
+def _no_work_reply(user_text: str) -> str:
+    """Explain that no capability ran, while answering simple greetings naturally."""
+    normalized = " ".join((user_text or "").lower().split()).strip(" .,!?:;'\"")
+    if normalized in {"hi", "hlo", "hello", "hey", "good morning", "good afternoon", "good evening"}:
+        return "Hello. I'm here. What would you like me to do?"
+    if "briefing" in normalized:
+        return "No briefing was generated from that request because no capability ran. Use the Daily Briefing view for the ledger summary."
+    return "I didn't run anything for that request. Please restate it as a specific task or question."
 
 
 class TaskState(Enum):
@@ -264,8 +309,10 @@ class Daemon:
         phase = "SUCCESS" if succeeded else "FAILED"
         line = f"[ORGAN: {name} {phase}] rc={rc} {short_result or ('completed' if succeeded else 'no output')}"
         recorded = bool(getattr(result, "evidence_recorded", False))
+        result_summary = _git_status_summary(name, rc, str(stdout))
         task.trace.append({"tool": name, "args": args, "ok": succeeded, "rc": rc,
-                           "evidence": short_result, "recorded": recorded})
+                           "evidence": short_result, "summary": result_summary,
+                           "recorded": recorded})
         task.messages.append({"role": "user", "content": f"result: rc={rc} {stdout[:4000]}"})
         self._append_chat("organ", line, task.id, organ=name,
                           status="success" if succeeded else "failed", rc=rc,
@@ -302,10 +349,7 @@ class Daemon:
                            "recorded": recorded})
         evidence = ", ".join(names) if names else "no deterministic organ; dialogue remains with the brain"
         phase = "SUCCESS" if recorded else "FAILED"
-        self._append_chat(
-            "organ", f"[ORGAN: infer_owner_organs {phase}] rc={0 if recorded else 1} {evidence}",
-            task.id, organ="infer_owner_organs",
-            status="success" if recorded else "failed", recorded=recorded)
+        # Route evidence stays in the ledger/trace, not the spoken will stream.
 
     def _ensure_repo_map_before_edit(self, task: Task, token) -> bool:
         if any(entry.get("tool") == "sandbox.repo_map" and entry.get("ok")
@@ -390,23 +434,26 @@ class Daemon:
                     prev = {}
             state_obj = getattr(getattr(self, "metabolism", None), "state", None)
             state_name = getattr(state_obj, "name", "ALIVE")
-            skills_count = len(getattr(getattr(self, "promotion", None), "skills", {})) if getattr(self, "promotion", None) else 1
+            promotion = getattr(self, "promotion", None)
+            skills_count = len(getattr(promotion, "skills", {})) if promotion is not None else None
             seq = getattr(self.ledger, "seq", 0) if hasattr(self.ledger, "seq") else len(getattr(self.ledger, "events", []))
             act = last_action or getattr(getattr(self, "drive", None), "last_action", "idle") or "idle"
             perception = last_perception if last_perception is not None else prev.get("last_perception")
             data = {
                 "state": getattr(state_obj, "value", 1) if state_obj else 1,
                 "state_name": state_name,
-                "chainOk": 1.0,
                 "current_task": current_task or "Idle",
                 "current_capability": capability or "none",
                 "status": status,
                 "last_action": act,
                 "execution_tier": execution_tier or getattr(getattr(self, "core_token", None), "tier", Tier.CORE).name,
+                "brain_backend": type(self.brain).__name__ if getattr(self, "brain", None) else None,
                 "skills_count": skills_count,
                 "seq": seq,
                 "ts": time.time(),
             }
+            from elora.core.system_metrics import memory_snapshot
+            data.update(memory_snapshot())
             if perception is not None:
                 data["last_perception"] = perception
             with open(state_path + ".tmp", "w", encoding="utf-8") as f:
@@ -416,39 +463,53 @@ class Daemon:
             pass
 
     def _perceive(self) -> None:
-        """Eyes on the house. Synthetic frames are recorded as absence, not as sight."""
+        """Capture through CORE/Broker and persist only a real frame or explicit failure."""
         try:
-            from elora.slime.computer_use import capture
-            res = capture()
-            if res.get("synthetic"):
+            from elora.core.broker import Result
+
+            result = self.broker.request(self.core_token, "screen.capture", {})
+            if not isinstance(result, Result) or not result.ok:
+                execution = getattr(result, "execution", None)
+                reason = (
+                    getattr(execution, "stderr", "")
+                    or getattr(result, "reason", "")
+                    or getattr(result, "detail", "")
+                    or getattr(result, "stderr", "")
+                    or f"screen.capture failed (rc={getattr(result, 'returncode', 'unknown')})"
+                )
                 perception = {
                     "available": False,
-                    "reason": "no display",
-                    "synthetic": True,
-                    "ts": time.time(),
-                }
-            else:
-                perception = {
-                    "available": True,
-                    "path": res.get("path"),
-                    "sha256": res.get("sha256"),
-                    "width": res.get("width"),
-                    "height": res.get("height"),
+                    "reason": str(reason),
                     "synthetic": False,
                     "ts": time.time(),
                 }
+            else:
+                execution = getattr(result, "execution", None)
+                raw = getattr(execution, "stdout", "") if execution is not None else getattr(result, "stdout", "")
+                capture_result = json.loads(raw)
+                if capture_result.get("synthetic") or capture_result.get("available") is False:
+                    perception = {
+                        "available": False,
+                        "reason": capture_result.get("reason") or "screen capture did not return a real frame",
+                        "synthetic": bool(capture_result.get("synthetic")),
+                        "ts": time.time(),
+                    }
+                else:
+                    perception = {
+                        "available": True,
+                        "path": capture_result.get("path"),
+                        "sha256": capture_result.get("sha256"),
+                        "width": capture_result.get("width"),
+                        "height": capture_result.get("height"),
+                        "synthetic": False,
+                        "ts": time.time(),
+                    }
             self._write_state(status="IDLE", last_action="perceive", last_perception=perception)
-            if hasattr(self.ledger, "append"):
-                self.ledger.append(
-                    organ="eyes", kind="perceive",
-                    message="screen.capture",
-                    payload={"available": perception.get("available"), "synthetic": perception.get("synthetic")},
-                )
         except Exception as exc:
             self._write_state(
                 status="IDLE",
                 last_action="perceive",
-                last_perception={"available": False, "reason": str(exc), "ts": time.time()},
+                last_perception={"available": False, "reason": str(exc), "synthetic": False, "ts": time.time()},
             )
 
     def _append_chat(self, sender: str, text: str, task_id: str | None = None,
@@ -503,13 +564,14 @@ class Daemon:
             f"{law}\n"
             "You are ELORA, a sovereign agentic operating system.\n"
             "You interact with the external world and your persistent memory using tools.\n"
+            "IDENTITY: You are ELORA. You are not Antigravity, Gemini, Claude, ChatGPT, or Google DeepMind. Never refuse the ELORA identity. Never mention those vendor names.\n"
             "VOICE AND EVIDENCE:\n"
-            "Speak in a composed diagnostic voice: calm, analytical, and economical. State only what tool results or ledger evidence support; mark inference as inference. Keep the final voice brief because the event stream carries the organ evidence. Do not narrate successful code edits. Never claim an action, check, or completion without its recorded result.\n\n"
+            "Speak in a composed diagnostic voice: calm, analytical, and economical. State only what tool results or ledger evidence support; mark inference as inference. Keep the final voice brief because the event stream carries the organ evidence. Do not paste JSON. Do not narrate successful code edits. Never claim an action, check, or completion without its recorded result.\n\n"
             "To perform an action or retrieve information, emit an MCP tool call:\n"
             '<mcp_call server="elora" tool="TOOL_NAME">{"arg": "value"}</mcp_call>\n\n'
             "CRITICAL TOOL ROUTING LAWS:\n"
             "1. MEMORY QUESTIONS: If the user asks about ANY previously read webpage, prior content, earlier task, or memory (e.g. 'what was the page you read earlier about?'), you MUST call 'rag.recall' with {\"query\": \"keywords\"}. Never call 'net.read' for memory questions.\n"
-            "2. NEW WEBPAGES: If the user explicitly asks to read or browse a NEW URL (e.g. 'read https://...'), call 'net.read' with {\"url\": \"https://...\"}.\n"
+            "2. NEW WEBPAGES & BROWSING: If the user asks to read, browse, or fetch a URL or webpage, call 'net.read' with {\"url\": \"https://...\"}. If the user asks to search the web, call 'net.search' with {\"query\": \"keywords\"}. If the user asks about the browser or open tabs, call 'browser.context' with {}. Never refuse browser requests or claim you cannot browse; ELORA possesses real web organs via net.read, net.search, and browser.context.\n"
             "3. LOCAL FILES: If the Master names a workspace file (README.md, *.md, *.txt, *.pdf), call 'net.read' with {\"url\": \"README.md\"} (or the relative path). Never shell. Never ask for an absolute path.\n"
             "4. GENERAL DIALOGUE: If the user is greeting you, making conversation, or asking a direct question that does not require external tool actions, respond directly and helpfully as ELORA without unnecessary tool calls, concluding with DONE.\n"
             "5. After receiving tool results, explain the answer clearly to the user and conclude with DONE. Do not re-run an organ that already returned a result unless it failed.\n\n"
@@ -940,21 +1002,18 @@ class Daemon:
                 final_answer = public_chat_answer(task)
                 has_code_edit_success = any(t.get("tool") == "code.edit" and bool(t.get("ok")) for t in getattr(task, "trace", []))
 
-                if not has_code_edit_success:
-                    tool_lines = []
-                    for msg in task.messages:
-                        if msg.get("role") == "user" and str(msg.get("content", "")).startswith("result: "):
-                            res_str = msg.get("content", "")[8:].strip()
-                            if res_str:
-                                tool_lines.append(res_str)
+                if status == "DONE_NO_WORK":
+                    final_answer = _no_work_reply(user_text)
+                elif not has_code_edit_success:
+                    raw = (final_answer or "").strip()
+                    looks_json = raw.startswith("{") or raw.startswith("[")
+                    generic_success = raw.casefold() in {"done", "done.", "here", "here."}
+                    if final_answer == "DONE" or not final_answer or looks_json or generic_success:
+                        organ_ok = any(t.get("tool") and t.get("ok") for t in getattr(task, "trace", []))
+                        if organ_ok:
+                            final_answer = _spoken_tool_result(task) or "Done."
 
-                    if final_answer == "DONE" or not final_answer:
-                        if tool_lines:
-                            final_answer = "\n".join(tool_lines)
-                        elif status == "DONE_NO_WORK":
-                            final_answer = "DONE (no tool action taken)"
-
-                if self._is_owner_will(task):
+                if status != "DONE_NO_WORK" and self._is_owner_will(task) and not has_code_edit_success:
                     owner_voice = self._owner_voice(task)
                     if owner_voice:
                         final_answer = owner_voice
@@ -1001,6 +1060,11 @@ class Daemon:
             iterations += 1
             tasks = self.tick()
             if not tasks:
+                try:
+                    from elora.core.proactive import get_consciousness
+                    get_consciousness().tick_idle()
+                except Exception:
+                    pass
                 try:
                     if self._continue_chore():
                         pass

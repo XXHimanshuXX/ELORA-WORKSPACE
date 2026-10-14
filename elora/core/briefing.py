@@ -49,9 +49,8 @@ def generate_daily_briefing(ledger: Any, vault: Optional[Any] = None, hours: int
         elif kind in ("task_finished", "task_done"):
             tasks_completed += 1
 
-    time_str = "19:00 yesterday"
     summary = (
-        f"Since {time_str}: read {pages_read} pages, "
+        f"In the last {hours} hours: read {pages_read} pages, "
         f"ingested {docs_ingested} docs, crystallized {skills_crystallized} skills."
     )
 

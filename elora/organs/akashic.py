@@ -15,11 +15,12 @@ import sqlite3
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 
 class AkashicLedger:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, *, load_history: bool = True):
         self.db_path = db_path
         parent = os.path.dirname(os.path.abspath(db_path))
         if parent:
@@ -43,7 +44,48 @@ class AkashicLedger:
             """
         )
         self.conn.commit()
-        self._events: list[dict] = self._load_events()
+        self._events: list[dict] = self._load_events() if load_history else []
+
+    @staticmethod
+    def read_recent_events(db_path: str, kind: Optional[str] = None, n: int = 50,
+                           before_seq: Optional[int] = None) -> list[dict]:
+        """Read a bounded page without initializing or loading the full ledger."""
+        count = max(1, min(int(n), 1000))
+        uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=2.0)
+        try:
+            clauses = []
+            params: list[Any] = []
+            if kind is not None:
+                clauses.append("kind = ?")
+                params.append(kind)
+            if before_seq is not None:
+                clauses.append("seq < ?")
+                params.append(int(before_seq))
+            query = (
+                "SELECT seq, ts, organ, kind, message, payload, prev_hash, hash "
+                "FROM events "
+            )
+            if clauses:
+                query += "WHERE " + " AND ".join(clauses) + " "
+            query += "ORDER BY seq DESC LIMIT ?"
+            params.append(count)
+            rows = conn.execute(query, tuple(params)).fetchall()
+        finally:
+            conn.close()
+
+        events = []
+        for seq, ts, organ, event_kind, message, payload, prev_hash, digest in rows:
+            try:
+                payload_obj = json.loads(payload)
+            except (json.JSONDecodeError, TypeError):
+                payload_obj = payload
+            events.append({
+                "seq": seq, "ts": ts, "organ": organ, "kind": event_kind,
+                "message": message, "payload": payload_obj,
+                "prev_hash": prev_hash, "hash": digest,
+            })
+        return events[::-1]
 
     @property
     def events(self) -> list[dict]:

@@ -154,8 +154,10 @@ def infer_owner_organs(text: str) -> list[tuple[str, dict]]:
         calls.append(("ledger.read", {}))
 
     browser_context_will = bool(re.search(
-        r"\b(?:current\s+(?:browser\s+)?(?:page|tab)|bookmarks?|quick\s+links?|"
-        r"browser\s+session|what\s+(?:is|\'s)\s+(?:on\s+)?(?:the\s+)?(?:current\s+)?tab)\b",
+        r"\b(?:(?:can\s+you\s+)?(?:use|open|check|inspect)\s+(?:the\s+)?browser|"
+        r"browser\s+(?:organ|capability|context|session)|"
+        r"current\s+(?:browser\s+)?(?:page|tab)|bookmarks?|quick\s+links?|"
+        r"what\s+(?:is|\'s)\s+(?:on\s+)?(?:the\s+)?(?:current\s+)?tab)\b",
         lower,
     ))
     if browser_context_will:

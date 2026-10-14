@@ -54,12 +54,12 @@ def test_resident_will_dispatches_to_inbox(tmp_path, monkeypatch):
     assert "quick-btn" not in app_js
     assert "clear(chatLog)" not in app_js
     assert "nothing spoken yet" in app_js
-    assert "SYSTEM QUEST" in app_js
-    assert "[ORGAN: " in app_js
+    assert "Master" in app_js
+    assert "Last organ: " in app_js
     assert "text: 'nothing spoken yet'" in app_js
     assert "msg.sender === 'organ' && msg.recorded === true && state.organism) state.organism.ripple()" in app_js
     assert "recorded: false" in app_js
-    assert "Will → organs → voice" in app_js
+    assert "Type a will" in app_js
 
     # Test server inbox task dispatching
     state_dir = tmp_path / ".elora"

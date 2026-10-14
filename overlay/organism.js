@@ -42,6 +42,13 @@ function rotateZ4(angle) {
   const c = Math.cos(angle), s = Math.sin(angle);
   return new Float32Array([c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]);
 }
+function rotateY4(angle) {
+  const c = Math.cos(angle), s = Math.sin(angle);
+  return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+}
+function scale4(s) {
+  return new Float32Array([s,0,0,0, 0,s,0,0, 0,0,s,0, 0,0,0,1]);
+}
 function hexRgb(hex) {
   const value = String(hex || '#7c3aed').replace('#', '');
   return [0, 2, 4].map((index) => parseInt(value.slice(index, index + 2), 16) / 255);
@@ -56,6 +63,7 @@ export class Organism {
     this.seed = 0.5;
     this.headroom = 0.7;
     this.rippleUntil = 0;
+    this._lastFrame = 0;
   }
 
   async init() {
@@ -81,30 +89,45 @@ export class Organism {
         uniform mat4 uModel;
         uniform mat4 uView;
         uniform mat4 uProjection;
+        uniform float uBreath;
         out vec3 vNormal;
+        out vec3 vView;
         out float vDepth;
         void main() {
-          vec4 world = uModel * vec4(aPosition, 1.0);
+          vec3 pos = aPosition * (1.0 + uBreath);
+          vec4 world = uModel * vec4(pos, 1.0);
           vec4 viewPosition = uView * world;
           vNormal = normalize(mat3(uModel) * aNormal);
+          vView = normalize(-viewPosition.xyz);
           vDepth = -viewPosition.z;
           gl_Position = uProjection * viewPosition;
         }`;
       const fragmentShader = `#version 300 es
         precision highp float;
         in vec3 vNormal;
+        in vec3 vView;
         in float vDepth;
         uniform vec3 uStateColor;
+        uniform float uRipple;
         out vec4 outColor;
         void main() {
-          vec3 normal = normalize(vNormal);
-          vec3 light = normalize(vec3(-0.48, -0.62, 0.84));
-          float diffuse = max(dot(normal, light), 0.0);
-          float lightLevel = 0.38 + diffuse * 0.62;
-          vec3 stone = vec3(0.61, 0.63, 0.62);
-          vec3 tint = mix(stone, uStateColor, 0.17);
-          float distanceShade = 1.0 - smoothstep(9.0, 15.0, vDepth) * 0.16;
-          outColor = vec4(tint * lightLevel * distanceShade, 1.0);
+          vec3 N = normalize(vNormal);
+          vec3 V = normalize(vView);
+          vec3 L = normalize(vec3(-0.28, -0.42, 0.86));
+          vec3 L2 = normalize(vec3(0.72, 0.18, 0.38));
+          float ndl = max(dot(N, L), 0.0);
+          float fill = max(dot(N, L2), 0.0);
+          float fres = pow(1.0 - max(dot(N, V), 0.0), 2.6);
+          vec3 metal = vec3(0.14, 0.16, 0.18);
+          vec3 jade = uStateColor;
+          vec3 base = mix(metal, jade, 0.18 + fres * 0.55);
+          vec3 H = normalize(L + V);
+          float spec = pow(max(dot(N, H), 0.0), 42.0);
+          vec3 col = base * (0.16 + ndl * 0.82 + fill * 0.22);
+          col += jade * fres * (0.42 + uRipple * 0.8);
+          col += vec3(0.82, 0.90, 0.94) * spec * 0.42;
+          float fog = 1.0 - smoothstep(6.5, 13.0, vDepth) * 0.28;
+          outColor = vec4(col * fog, 1.0);
         }`;
       const compile = (type, source) => {
         const shader = gl.createShader(type);
@@ -147,8 +170,9 @@ export class Organism {
         view: gl.getUniformLocation(program, 'uView'),
         projection: gl.getUniformLocation(program, 'uProjection'),
         color: gl.getUniformLocation(program, 'uStateColor'),
+        breath: gl.getUniformLocation(program, 'uBreath'),
+        ripple: gl.getUniformLocation(program, 'uRipple'),
       };
-      this.view = lookAt4([7.5, -10.5, 8.2], [0, 0, 0], [0, 0, 1]);
       gl.enable(gl.DEPTH_TEST);
       gl.enable(gl.CULL_FACE);
       gl.cullFace(gl.BACK);
@@ -178,7 +202,7 @@ export class Organism {
   setState(state) { this.state = state; }
   setSeed(seed) { this.seed = seed; }
   setHeadroom(headroom) { this.headroom = headroom; }
-  ripple() { this.rippleUntil = performance.now() + 650; }
+  ripple() { this.rippleUntil = performance.now() + 900; }
 
   _getStateColor() {
     switch (Math.round(this.state)) {
@@ -193,9 +217,15 @@ export class Organism {
 
   _loopMesh() {
     if (!this.running || this.mode !== 'blender-mesh') return;
+    const now = performance.now();
+    if (now - this._lastFrame < 1000 / 40) {
+      requestAnimationFrame(() => this._loopMesh());
+      return;
+    }
+    this._lastFrame = now;
     const gl = this.gl;
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.25);
     const width = Math.max(1, Math.round(rect.width * dpr));
     const height = Math.max(1, Math.round(rect.height * dpr));
     if (this.canvas.width !== width || this.canvas.height !== height) {
@@ -207,7 +237,7 @@ export class Organism {
     if (background && background.length >= 3) {
       gl.clearColor(Number(background[0]) / 255, Number(background[1]) / 255, Number(background[2]) / 255, 1);
     } else {
-      gl.clearColor(0.067, 0.078, 0.102, 1);
+      gl.clearColor(0.027, 0.031, 0.059, 1);
     }
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(this.program);
@@ -218,15 +248,22 @@ export class Organism {
     gl.enableVertexAttribArray(this.locations.normal);
     gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 0, 0);
 
-    const elapsed = (performance.now() - this.startedAt) / 1000;
-    const active = this.rippleUntil > performance.now();
-    const ripple = active ? Math.sin((this.rippleUntil - performance.now()) / 650 * Math.PI) * 0.045 : 0;
-    const angle = elapsed * 0.055 + this.seed * 0.12 + ripple;
-    const projection = perspective4(Math.PI / 5.2, width / height, 0.1, 80);
-    gl.uniformMatrix4fv(this.locations.model, false, rotateZ4(angle));
-    gl.uniformMatrix4fv(this.locations.view, false, this.view);
+    const elapsed = (now - this.startedAt) / 1000;
+    const active = this.rippleUntil > now;
+    const ripple = active ? Math.sin((this.rippleUntil - now) / 900 * Math.PI) : 0;
+    const breath = 0.028 * (0.55 + 0.45 * Math.sin(elapsed * 1.15 + this.seed));
+    const yaw = elapsed * 0.12 + this.seed * 0.08;
+    const nod = Math.sin(elapsed * 0.21) * 0.07;
+    const model = multiply4(rotateZ4(yaw), multiply4(rotateY4(nod), scale4(1.72)));
+    const orbit = 0.35 * Math.sin(elapsed * 0.14);
+    const view = lookAt4([0.55 + orbit, -8.6, 5.05], [0, 0.0, 0.15], [0, 0, 1]);
+    const projection = perspective4(Math.PI / 5.2, width / height, 0.08, 50);
+    gl.uniformMatrix4fv(this.locations.model, false, model);
+    gl.uniformMatrix4fv(this.locations.view, false, view);
     gl.uniformMatrix4fv(this.locations.projection, false, projection);
     gl.uniform3fv(this.locations.color, hexRgb(this._getStateColor().main));
+    gl.uniform1f(this.locations.breath, breath + ripple * 0.04);
+    gl.uniform1f(this.locations.ripple, Math.max(0, ripple));
     gl.drawArrays(gl.TRIANGLES, 0, this.vertexCount);
     requestAnimationFrame(() => this._loopMesh());
   }
