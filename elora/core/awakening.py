@@ -1349,10 +1349,32 @@ class AwakenedEloraResidentDaemon:
             -item.priority_score,
             item.text,
         )
+
+        try:
+            self.broker.ledger.append(
+                organ="resident",
+                kind="task_started",
+                message=item.task_id,
+                payload={"goal": item.text, "task_id": item.task_id}
+            )
+        except Exception:
+            pass
+
         outcome = self.brain.handle_will(item.text, source=item.source)
+
+        try:
+            self.broker.ledger.append(
+                organ="resident",
+                kind="task_finished",
+                message=item.task_id,
+                payload={"status": "done", "rc": 0, "task_id": item.task_id, "result": outcome.get("reply", "")}
+            )
+        except Exception:
+            pass
+
         self.sync_overlay_organism(last_event=f"completed:{item.task_id}")
 
-        # Post reply to chat.json so dashboard UI immediately displays ELORA's voice
+        # Post reply to chat.json & mark task as done so dashboard UI updates immediately
         chat_path = self.root_dir / ".elora" / "chat.json"
         if chat_path.exists():
             try:
@@ -1361,6 +1383,14 @@ class AwakenedEloraResidentDaemon:
                 chats = []
         else:
             chats = []
+
+        for m in chats:
+            if isinstance(m, dict):
+                tid = str(m.get("task_id", ""))
+                clean_tid = tid.replace(".txt", "")
+                if clean_tid and clean_tid == item.task_id.replace(".txt", ""):
+                    m["status"] = "done"
+
         chats.append({
             "sender": "elora",
             "text": outcome.get("reply", "Will executed."),

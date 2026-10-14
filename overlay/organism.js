@@ -64,6 +64,30 @@ export class Organism {
     this.headroom = 0.7;
     this.rippleUntil = 0;
     this._lastFrame = 0;
+    this.orbitYaw = 0;
+    this.orbitPitch = 0;
+    this._bindControls();
+  }
+
+  _bindControls() {
+    let down = false, lastX = 0, lastY = 0;
+    window.addEventListener('mousedown', (e) => {
+      if (e.target === this.canvas) {
+        down = true;
+        lastX = e.clientX;
+        lastY = e.clientY;
+      }
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!down) return;
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      this.orbitYaw += dx * 0.008;
+      this.orbitPitch = Math.max(-0.8, Math.min(0.8, this.orbitPitch + dy * 0.008));
+    });
+    window.addEventListener('mouseup', () => { down = false; });
   }
 
   async init() {
@@ -117,16 +141,16 @@ export class Organism {
           vec3 L2 = normalize(vec3(0.72, 0.18, 0.38));
           float ndl = max(dot(N, L), 0.0);
           float fill = max(dot(N, L2), 0.0);
-          float fres = pow(1.0 - max(dot(N, V), 0.0), 2.6);
-          vec3 metal = vec3(0.14, 0.16, 0.18);
+          float fres = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+          vec3 metal = vec3(0.09, 0.11, 0.15);
           vec3 jade = uStateColor;
-          vec3 base = mix(metal, jade, 0.18 + fres * 0.55);
+          vec3 base = mix(metal, jade, 0.28 + fres * 0.45);
           vec3 H = normalize(L + V);
-          float spec = pow(max(dot(N, H), 0.0), 42.0);
-          vec3 col = base * (0.16 + ndl * 0.82 + fill * 0.22);
-          col += jade * fres * (0.42 + uRipple * 0.8);
-          col += vec3(0.82, 0.90, 0.94) * spec * 0.42;
-          float fog = 1.0 - smoothstep(6.5, 13.0, vDepth) * 0.28;
+          float spec = pow(max(dot(N, H), 0.0), 32.0);
+          vec3 col = base * (0.24 + ndl * 0.78 + fill * 0.32);
+          col += jade * (fres * (0.85 + uRipple * 1.4) + 0.14);
+          col += vec3(0.88, 0.94, 1.0) * spec * 0.55;
+          float fog = 1.0 - smoothstep(7.0, 15.0, vDepth) * 0.22;
           outColor = vec4(col * fog, 1.0);
         }`;
       const compile = (type, source) => {
@@ -252,8 +276,8 @@ export class Organism {
     const active = this.rippleUntil > now;
     const ripple = active ? Math.sin((this.rippleUntil - now) / 900 * Math.PI) : 0;
     const breath = 0.028 * (0.55 + 0.45 * Math.sin(elapsed * 1.15 + this.seed));
-    const yaw = elapsed * 0.12 + this.seed * 0.08;
-    const nod = Math.sin(elapsed * 0.21) * 0.07;
+    const yaw = elapsed * 0.12 + this.seed * 0.08 + this.orbitYaw;
+    const nod = Math.sin(elapsed * 0.21) * 0.07 + this.orbitPitch;
     const model = multiply4(rotateZ4(yaw), multiply4(rotateY4(nod), scale4(1.72)));
     const orbit = 0.35 * Math.sin(elapsed * 0.14);
     const view = lookAt4([0.55 + orbit, -8.6, 5.05], [0, 0.0, 0.15], [0, 0, 1]);

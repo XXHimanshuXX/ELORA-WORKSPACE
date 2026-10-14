@@ -1474,29 +1474,32 @@ details.disclosure > summary:hover { color: var(--el-ink); }
   background: color-mix(in srgb, var(--el-surface-raised) 90%, transparent);
   border-bottom: var(--el-hairline) solid var(--el-border);
   overflow-x: auto;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 4px 6px;
   flex: none;
 }
 
 .deck-tab {
   display: inline-flex;
   align-items: center;
-  gap: var(--el-space-1);
-  padding: var(--el-space-2) var(--el-space-3);
-  font-size: var(--el-t-1);
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
   font-family: var(--el-font-sans);
   font-weight: var(--el-weight-medium);
   color: var(--el-ink-muted);
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid transparent;
+  border-radius: var(--el-radius-control, 4px);
   cursor: pointer;
   white-space: nowrap;
   transition: all var(--el-dur-140) var(--el-ease-standard);
 }
 
 .deck-tab svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
   stroke: currentColor;
   stroke-width: 1.6;
   fill: none;
@@ -1509,7 +1512,7 @@ details.disclosure > summary:hover { color: var(--el-ink); }
 
 .deck-tab[aria-selected="true"] {
   color: var(--el-accent);
-  border-bottom-color: var(--el-accent);
+  border-color: color-mix(in srgb, var(--el-accent) 60%, transparent);
   background: color-mix(in srgb, var(--el-accent-soft) 80%, transparent);
 }
 
@@ -2705,6 +2708,9 @@ body.resident-stage .organism {
   width: min(1180px, calc(100vw - 48px));
   box-sizing: border-box;
   background: color-mix(in srgb, var(--el-surface-sunken) 94%, #020508);
+  gap: 5px;
+  padding: 6px 14px 8px;
+  margin-bottom: 10px;
 }
 
 .hud-compose {
@@ -2714,12 +2720,14 @@ body.resident-stage .organism {
 .hud-dock-pills {
   justify-content: center;
   flex-wrap: wrap;
+  gap: 4px;
   overflow: visible;
 }
 
 .persona-pills,
 .studio-chips {
   justify-content: center;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
@@ -2926,16 +2934,25 @@ body.resident-stage .organism {
   border-bottom-color: var(--el-ok, #5fd0b5);
 }
 
-/* Multi-World Selector Strip */
+/* Multi-World Selector Strip & Integrated Master Compass */
 .world-multiplexer-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  background: color-mix(in srgb, var(--el-surface-sunken, #05060c) 90%, transparent);
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 16px;
+  background: color-mix(in srgb, var(--el-surface-sunken, #05060c) 94%, #010204);
   border-bottom: 1px solid var(--el-border, #1a2236);
-  overflow-x: auto;
   font-family: var(--el-font-mono, monospace);
+  position: relative;
+  z-index: 100;
+  flex: none;
+}
+.world-pills-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
 }
 .world-portal-pill {
   display: inline-flex;
