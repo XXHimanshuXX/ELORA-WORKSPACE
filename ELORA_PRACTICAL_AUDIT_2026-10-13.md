@@ -114,7 +114,8 @@ Task median at 32 readers is about 23 ms, down from about 1.46 seconds before th
 
 ## Workspace and data state
 
-- The read-only Resident result reported branch `main`, 125 changed paths (18 tracked, 107 untracked). No commit or push was made.
+- During the October 13 live audit, the read-only Resident result reported branch `main`, 125 changed paths (18 tracked, 107 untracked); that was the pre-commit workspace state at the time of the check.
+- Git follow-up on October 14: the reviewed implementation, tests, audit, scratch helper scripts, and new skill artifacts were committed as `5a16f41` (`Improve ELORA runtime and Resident console`) and pushed to `origin/main`. The remote was verified at the same commit; GitHub reported that the direct push bypassed its pull-request-required rule.
 - Four October 2 files remain in `.elora/inbox/.processing/`. They were preserved and not executed or deleted. The top-level inbox was empty; the daemon polls top-level inbox files, not that hidden processing directory.
-- `.pytest-tmp-codex/`, `scratch/`, existing vault skill artifacts, and unrelated working-tree changes were preserved.
+- The local `.pytest-tmp-codex/` cache and 195 MB `scratch/stolen_repos/` checkout tree were preserved and excluded from the push. Scratch helper scripts and new vault skill artifacts were included.
 - This replaces the stale earlier scorecard with practical evidence, measured results, and explicit failures.

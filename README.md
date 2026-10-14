@@ -7,6 +7,8 @@
 
 ELORA is a sovereign agentic operating system designed to run continuously on commodity hardware (from 8GB consumer laptops upwards) without leaking RAM, faking outputs, or compromising security. Every subsystem is reachable from the task loop in one iteration, verified against strict metabolic budgets, and audited in a tamper-evident cryptographic ledger.
 
+> **Latest practical snapshot (2026-10-13):** The live dashboard rendered and Resident completed a read-only task in Brave. The full test suite passed **285 tests**. The desktop UI scored **9.0/10**; the overall practical score was **8.1/10**. Screen capture still failed in that run. See the [full practical audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md) for evidence, category scores, scaling results, and remaining work. These are measurements from one local Windows setup, not a general production guarantee.
+
 ---
 
 ## Key Architecture & Ring 0 Organs
@@ -51,7 +53,7 @@ ELORA is a sovereign agentic operating system designed to run continuously on co
 
 ### 7. Design Genome, Discovery & MCP (v7.2)
 - **Design genome (`elora/core/aesthetic.py`)**: ELORA derives its own visual identity instead of being handed one. A seeded genome builds colour in OKLCH and gamut-maps into sRGB by chroma reduction, alongside spacing, radius, typography, density, elevation and motion, carrying a WCAG contrast audit measured per token. Generations are persisted, versioned and re-adoptable, and the trend baseline is a dated offline snapshot by default — the console never needs the network to render, and refreshing from live signals is opt-in.
-- **Discovery scanner (`elora/core/discovery.py`)**: a real filesystem scan of the host, reporting 1,833 distinct skills, 1,530 duplicate files excluded and stated as a number, 263 agents, 39 plugin manifests and 17 MCP servers, behind two-layer credential redaction with a self-test that refuses to serve a leaking payload.
+- **Discovery scanner (`elora/core/discovery.py`)**: scans the host filesystem and reports skills, agents, plugin manifests, MCP servers, duplicates, and truncation state. Inventory counts vary by machine and scan; credential-shaped values are redacted, and a self-test refuses to serve a payload that still appears to leak credentials.
 - **MCP transport (`elora/core/mcp_client.py`)**: JSON-RPC 2.0 transport remains available for controlled internal use and tests. The owner-facing marketplace is closed to `git`, `sandbox`, `ledger`, and `core`; the browser cannot probe or launch MCP servers.
 - **Console server (`elora/dashboard/server.py`)**: binds `127.0.0.1` only and refuses any other host, requires an `X-ELORA-Client` header, checks an Origin allowlist, and refuses every CORS preflight. The front-end treats absent state as absent: truncated scans, excluded duplicates and missing credentials are all displayed as themselves rather than smoothed into a healthy zero.
 
@@ -84,9 +86,9 @@ The Tauri sidecar intentionally uses `python run.py --brain bitnet` without `--r
 
 ---
 
-## Pull Request Lineage & Audit Scoreboard
+## Release Lineage & Audit Scoreboard
 
-| PR | Milestone | Commit | Tests | Δ | Status |
+| Ref | Milestone | Commit | Tests | Δ | Status |
 |:---|:---|:---:|:---:|:---:|:---:|
 | **#1** | Windows Job Objects Containment & Leap Inspection Rungs | `d29f9b1` | 96 | Baseline | **FOUNDATION** |
 | **#2** | Phase B Live Absorption Pipeline (`net.fetch` → `digest` → `spec.md`) | `9af7098` | 99 | +3 | **HARDENED** |
@@ -99,25 +101,60 @@ The Tauri sidecar intentionally uses `python run.py --brain bitnet` without `--r
 | **#9** | v7.2 Design Genome, Discovery Scanner, MCP Client & Resident Console | `b5f0794` | 151 | +27 | **SELF-STYLED** |
 | **#10** | v7.3 Resident Front Door, 3D Organism Pet, Daily Briefing & historical capability buttons removed | `9eae5f7` | 158 | +7 | **RESIDENT MAID** |
 | **#11** | v7.4 Household chore book, coding hands, owner-will organs (previous baseline) | prior HEAD | 234 pass / 0 fail (historical) | +household | **HOUSEHOLD** |
-| **#12** | Resident inbox / owner-will loop; `/api/chat` talk-only | [current] | control-loop acceptance suite | +control-loop | **EVIDENCE FIRST** |
+| **#12** | Resident inbox / owner-will loop; `/api/chat` talk-only | prior baseline | control-loop acceptance suite | +control-loop | **EVIDENCE FIRST** |
+| **Runtime** | Runtime telemetry, proactive task support, Resident UI and practical verification | `5a16f41` | 285 passed / 13 warnings | +verified runtime and UI work | **PUSHED TO MAIN** |
 
 ---
 
 ## Project Structure
 
-[Project structure remains unchanged from previous version]
+```text
+elora/
+  core/       broker, metabolism, owner-will routing, proactive work, telemetry
+  dashboard/  localhost HTTP API and static console server
+  organs/     Akashic ledger and organ-facing interfaces
+  slime/      hands, sandbox, browser, computer use, voice, and generation
+  daemon.py   inbox polling and task execution loop
+overlay/      Resident console, styles, organism renderer, Tauri bridge
+src-tauri/    Tauri 1.6 desktop shell
+native/       Rust BitNet extension and WASM runtime components
+tools/tests/  Python unit and integration tests
+vault/        persisted skill specifications and compiled skill artifacts
+docs/         architecture blueprints
+prompts/      project design and implementation prompts
+.elora/       local runtime state, databases, inbox, and secrets (git-ignored)
+```
+
+The runtime data under `.elora/` belongs to the local installation and is not part of the source checkout.
 
 ---
 
 ## Tauri Desktop Packaging & The Resident Console
 
-[Content remains unchanged from previous version]
+The Tauri shell is configured in `src-tauri/` and loads the same local overlay served at `http://127.0.0.1:8765/`. Resident requests enter `/api/inbox/task`; the daemon and Broker execute them, and the Akashic ledger records lifecycle evidence. `/api/chat` is conversational only and does not execute tools.
+
+When the Tauri sidecar already starts the console server, do not start a second server with `--resident`. For an operator-started console outside Tauri, use:
+
+```bash
+python run.py --resident --brain bitnet
+```
+
+For the Tauri sidecar, the configured command omits `--resident` to avoid duplicate server startup.
 
 ---
 
 ## Development & Verification
 
-[Content remains unchanged from previous version]
+Use Python 3.11 or newer. The full dependency set includes PyTorch and Diffusers for local image generation and can require a large download. From the repository root:
+
+```bash
+python -m pip install -r requirements.txt
+python run.py --check
+python run.py --smoke
+pytest tools/tests
+```
+
+`--check` reports environment readiness and platform limits; `--smoke` exercises a hermetic task loop. The full test suite result in the latest practical audit was 285 passed with 13 warnings. Results and optional hardware checks can differ by machine. For a live, harmless Resident request against a running console, see `tools/_test_live_resident.py` and the [practical audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md).
 
 ---
 
@@ -129,7 +166,10 @@ Local-first. Preflight (`run.py --check`) and hermetic smoke (`run.py --smoke`) 
 ```bash
 git clone https://github.com/XXHimanshuXX/ELORA-WORKSPACE.git
 cd ELORA-WORKSPACE
+python -m pip install -r requirements.txt
 ```
+
+The dependency list includes optional heavyweight local-generation packages; see `requirements.txt` before installing on a metered connection.
 
 ### 2. Compile Native BitNet 1.58 Kernel
 Compiles the PyO3 0.22 native extension with ABI3 forward compatibility for Python 3.11+:
@@ -140,48 +180,11 @@ python tools/build_native.py
 ```
 
 ### 3. Verify Preflight & Smoke Test
-Run the audit check and hermetic smoke test. Honest warnings for uninstalled optional peripheral runtimes (`tauri`, `pywinauto`, `fastsdcpu`) and Windows platform constraints are expected and auditable:
+Run the audit check and hermetic smoke test. On the machine used for the October 13, 2026 audit, preflight completed with zero failures and four warnings; warnings reflected Windows limits and available memory. This is an environment-specific result, not a fixed expected output.
 
 ```bash
 python run.py --check
 ```
-
-```text
--- ELORA preflight --
-  [OK ] python  3.14 (need >=3.11)
-  [OK ] import metabolism
-  [OK ] import broker
-  [OK ] import capabilities
-  [OK ] import armored_subprocess
-  [OK ] import absorption_gate
-  [OK ] import promotion
-  [OK ] import crystallization
-  [OK ] import decay
-  [OK ] import drive
-  [OK ] import daemon
-  [OK ] import browser
-  [OK ] ingest
-  [OK ] generation_api
-  [WARN] psutil + RAM  8064MB total (need >=4096; 8192 comfortable; ARMED gated by metabolism)
-  [OK ] ollama  available
-  [OK ] tauri  v1.6 installed
-  [OK ] offline mode  offline is a mode, not a failure
-  [OK ] destructive gate  closed
-  [WARN] Platform: nt (Windows)
-  [BROKEN] RLIMIT_FSIZE — POSIX rlimits unavailable on Windows
-  [DEGRADED] Job Object limits active: PROCESS_TIME=10s, Memory=512MB, ACTIVE_PROCESS=1
-  [REFUSED] tier >= PROBATION blocked on Windows (AST-gated code only)
-  [OK ] leap: bitnet 1.58  kernel verified (-1.0==-1.0), native=True, AWAKE=380MB
-  [OK ] leap: wasm gastric  add(2,40)=42 verified, infinite loop fuel-trapped, 64KB
-  [OK ] leap: virtio shm  SPSC ring + checksum verified, tamper detected on flipped byte
-  [OK ] leap: tauri overlay bridge  verified, SHM ring exists (.elora/shm/overlay.ring)
-  [OK ] leap: webgpu overlay  shader + render pass verified (NVIDIA GeForce GTX 1050 (DiscreteGPU) via Vulkan (frame sha: adfb692e3540, non-zero: 168857))
-  [OK ] leap: computer_use  pywinauto available
-  [OK ] leap: generation  diffusers present -> ARMED reachable (sd-turbo CPU)
--- preflight: 0 fail, 4 warn --
-```
-
-*(Note: 4 warnings reflect honest Windows OS limits — Job Objects, POSIX rlimit absence, AST probation gate, and RAM headroom)*
 
 Run the hermetic zero-network smoke test:
 ```bash
@@ -211,6 +214,8 @@ pytest tools/tests
 # Record the output from this environment; hardware/platform gates may differ.
 ```
 
+Latest recorded result: **285 passed, 13 warnings** (2026-10-13). See the [audit report](ELORA_PRACTICAL_AUDIT_2026-10-13.md) for test duration and warning context.
+
 ### 5. Multi-Turn Live Demonstration
 ```bash
 python tools/live_demo.py
@@ -221,11 +226,9 @@ python tools/live_demo.py
 Start continuous polling on `.elora/inbox`:
 ```bash
 # Default: OmniRoute when .elora/secrets/omniroute_api_key exists, else local.
-# The bare model alias "auto" is deliberately NOT used — it is absent from the
-# gateway's advertised catalogue (931 models, 38 auto/* aliases, none named
-# "auto"), so the gateway resolves it to something different run to run and no
-# measurement taken against this brain is reproducible. "auto/best-coding" is in
-# the catalogue and resolves deterministically, so it is the default.
+# Router catalogs and aliases change over time. Check /api/router/models on the
+# active gateway before relying on a model ID; the latest practical audit is a
+# dated snapshot rather than a promise of current provider availability.
 python run.py --brain omniroute
 
 # Production Multi-Turn Planning (Ollama / LocalAI):
@@ -248,10 +251,23 @@ python run.py --brain bitnet --once
 
 ## What ELORA Does Not Yet Do (Honesty & Limits)
 
-[Content remains unchanged from previous version]
+The latest practical audit found these gaps on the tested Windows setup:
+
+- **Screen capture:** the real `screen.capture` request failed with `rc=1` because the screen grab failed. ELORA surfaced the failure and did not invent an image.
+- **Windows execution limits:** POSIX `RLIMIT_FSIZE` is unavailable; the active Job Object limits are 10 seconds, 512 MiB, and one process. Higher tiers are refused by the current Windows policy.
+- **Scaling:** a 32-reader sample returned HTTP 200s, but p95 latency reached roughly 0.5 seconds at concurrency 16–32. No soak test was run.
+- **Registry:** a live scan was truncated, and the plugin loader was unavailable in the audited run.
+- **Genome:** v14 was active; v15 and v16 were saved but not accepted based on a visual comparison.
+- **Accessibility and responsive behavior:** smaller viewports, keyboard-only use, and screen-reader output have not been validated. The 9.0/10 UI rating covers the reviewed desktop Brave view only.
+
+These are observed gaps, not a complete security or reliability certification. See the [practical audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md) for methods and evidence.
 
 ---
 
 ## Blueprint & Documentation
 
-[Content remains unchanged from previous version]
+- [Practical runtime, feature, and scaling audit](ELORA_PRACTICAL_AUDIT_2026-10-13.md) — live Brave checks, category scores, scaling sample, and open issues.
+- [ELORA handoff](ELORA_HANDOFF.md) — current execution invariants and implementation priorities.
+- [v7 upgrade blueprint](docs/ELORA-TRUE-BLUEPRINT-V7-UPGRADE.md) — system architecture and wiring goals.
+- [v7.1 metabolism blueprint](docs/ELORA-TRUE-BLUEPRINT-V7-1-METABOLISM.md) — metabolic state and resource-gating design.
+- [Sensory organs prompt](prompts/v8-sensory-organs-and-world-interaction.md) — planned perception and interaction surface.
