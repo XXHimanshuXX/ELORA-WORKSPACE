@@ -1,0 +1,1401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ELORA // ORIGIN OF UI — 3D SPATIAL GAME ENGINE [GREAT SAGE × SOLO LEVELING × BLAME!]</title>
+<style>
+  :root {
+    --void: #020308;
+    --cyan: #00f5ff;
+    --gold: #ffd166;
+    --violet: #9d4edd;
+    --crimson: #ff0a54;
+    --bone: #f8fafc;
+    --muted: #94a3b8;
+    --font-display: 'Orbitron', 'Rajdhani', 'Impact', 'Bank Gothic', 'Segoe UI Black', sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  body.arise-state {
+    --cyan: #e0aaff;
+    --gold: #ff0a54;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+  }
+
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--void);
+    color: var(--bone);
+    font-family: var(--font-mono);
+    cursor: crosshair;
+  }
+
+  /* ==========================================================================
+     1. FULL-VIEWPORT 3D GAME ENGINE CANVAS
+        Renders:
+        - Infinite 3D BLAME! Megastructure Cathedral & Subterranean Monoliths
+        - Fully Articulated 3D Sovereign Cyber-Maid ELORA (IK head/arm tracking,
+          breathing octahedron core, 8 physics skirt plates, 6 flapping energy wings)
+        - 3D World-Space Target Monoliths, Shattering Shards & GBE Laser Conduit
+     ========================================================================== */
+  #gl-backdrop {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0;
+    display: block;
+  }
+  #world-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 1;
+    display: block;
+    background: transparent;
+  }
+
+  /* ==========================================================================
+     2. DIEGETIC WORLD-ANCHORED KINETIC BLADE OVERLAY (NO CORNER BOXES!)
+        Every UI element is projected from 3D world joints (ELORA's outstretched
+        hand, halo crown, chest core, or 3D monolith anchors) with Persona 5 /
+        NieR: Automata / Solo Leveling kinetic slash geometry!
+     ========================================================================== */
+  #diegetic-layer {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 3;
+    pointer-events: none;
+  }
+
+  /* KINETIC CAMERA STANCE SELECTOR (ARCING RADIAL SLASH BLADES tethered to ELORA's Hand) */
+  #stance-wheel-anchor {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+    transition: transform 0.06s linear;
+  }
+
+  .slash-blade {
+    pointer-events: auto;
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 20px 8px 14px;
+    background: linear-gradient(90deg, rgba(2, 6, 18, 0.92) 0%, rgba(0, 245, 255, 0.18) 100%);
+    border-left: 4px solid var(--cyan);
+    border-bottom: 1px solid rgba(0, 245, 255, 0.45);
+    color: var(--bone);
+    transform-origin: left center;
+    clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%);
+    box-shadow: -8px 8px 24px rgba(0, 0, 0, 0.75), 0 0 18px rgba(0, 245, 255, 0.25);
+    cursor: pointer;
+    transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease, border-color 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .slash-blade:hover,
+  .slash-blade.active {
+    background: linear-gradient(90deg, var(--cyan) 0%, rgba(157, 78, 221, 0.85) 100%);
+    color: #020308;
+    border-left-color: var(--gold);
+    box-shadow: 0 0 30px var(--cyan);
+  }
+
+  .slash-blade .sb-key {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 900;
+    padding: 2px 6px;
+    background: rgba(0, 0, 0, 0.75);
+    color: var(--gold);
+    transform: skewX(-12deg);
+  }
+
+  .slash-blade.active .sb-key,
+  .slash-blade:hover .sb-key {
+    background: #020308;
+    color: var(--cyan);
+  }
+
+  .slash-blade .sb-label {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .slash-blade .sb-tau {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    opacity: 0.88;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* FLOATING GREAT SAGE TELEPATHIC CALLOUT TETHERED TO ELORA'S HALO */
+  #halo-speech-anchor {
+    position: fixed;
+    right: 28px;
+    top: 58px;
+    width: 395px;
+    pointer-events: auto;
+    transform: skewX(-8deg);
+    background: linear-gradient(135deg, rgba(3, 8, 22, 0.88) 0%, rgba(10, 22, 48, 0.68) 100%);
+    border-left: 4px solid var(--gold);
+    border-top: 1px solid rgba(255, 209, 102, 0.55);
+    padding: 10px 16px;
+    clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.8), 0 0 22px rgba(255, 209, 102, 0.2);
+  }
+
+  .telepathy-tag {
+    font-family: var(--font-display);
+    font-size: 10px;
+    white-space: nowrap;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: var(--gold);
+    text-shadow: 0 0 10px rgba(255, 209, 102, 0.6);
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .telepathy-body {
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--bone);
+    transform: skewX(8deg);
+  }
+
+  /* 3D WORLD-SPACE TARGET LABELS (PROJECTED OVER ORBITING MONOLITHS) */
+  .monolith-tag {
+    position: absolute;
+    pointer-events: auto;
+    transform: translate(-50%, -50%) skewX(-10deg);
+    padding: 5px 11px;
+    background: rgba(2, 6, 16, 0.86);
+    border: 1px solid rgba(0, 245, 255, 0.45);
+    border-left: 3px solid var(--cyan);
+    font-size: 10px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+    box-shadow: 0 0 16px rgba(0, 245, 255, 0.2);
+  }
+
+  .monolith-tag:hover,
+  .monolith-tag.locked {
+    background: rgba(0, 245, 255, 0.24);
+    border-color: var(--gold);
+    border-left-color: var(--crimson);
+    box-shadow: 0 0 24px var(--cyan);
+  }
+
+  .monolith-tag .mt-name {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--cyan);
+  }
+
+  .monolith-tag .mt-dt {
+    font-size: 9px;
+    color: var(--gold);
+    margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* DYNAMIC SUBSYSTEM HOLOGRAM BLADE (APPEARS WHEN CAMERA DOCKS INTO STANCE 2, 3, 4, 5) */
+  #docked-domain-blade {
+    position: fixed;
+    left: 28px;
+    top: 64px;
+    width: 385px;
+    pointer-events: auto;
+    transform: perspective(900px) rotateY(16deg) skewY(-2deg);
+    background: linear-gradient(160deg, rgba(2, 6, 18, 0.92) 0%, rgba(8, 16, 36, 0.78) 100%);
+    border-left: 5px solid var(--cyan);
+    border-bottom: 2px solid var(--gold);
+    padding: 14px 18px;
+    clip-path: polygon(0 0, calc(100% - 26px) 0, 100% 26px, 100% 100%, 0 100%);
+    box-shadow: 20px 20px 50px rgba(0, 0, 0, 0.85), 0 0 28px rgba(0, 245, 255, 0.25);
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .domain-header {
+    font-family: var(--font-display);
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 0.22em;
+    color: var(--cyan);
+    text-shadow: 0 0 12px var(--cyan);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(0, 245, 255, 0.3);
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+  }
+
+  .domain-sub {
+    font-size: 9.5px;
+    color: var(--gold);
+    letter-spacing: 0.16em;
+  }
+
+  /* TOP MINIMAL DIEGETIC COMPASS TAPE (SKYRIM / DEATH STRANDING / BLAME! TEMPORAL COMPASS) */
+  #compass-horizon {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(980px, 95vw);
+    height: 34px;
+    z-index: 9;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px;
+    background: linear-gradient(90deg, transparent 0%, rgba(2, 6, 18, 0.85) 15%, rgba(2, 6, 18, 0.85) 85%, transparent 100%);
+    border-bottom: 1px solid rgba(0, 245, 255, 0.35);
+  }
+
+  .compass-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 10px;
+  }
+  .compass-stat .cs-k { color: var(--muted); font-size: 8.5px; letter-spacing: 0.16em; }
+  .compass-stat .cs-v { color: var(--cyan); font-weight: 800; font-variant-numeric: tabular-nums; }
+
+  /* BOTTOM DIEGETIC SLASH COMMAND CONDUIT & 7-STEP COMBO METER */
+  #slash-command-bar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%) skewX(-10deg);
+    width: min(860px, 94vw);
+    z-index: 10;
+    pointer-events: auto;
+    background: linear-gradient(90deg, rgba(2, 5, 14, 0.94) 0%, rgba(8, 18, 40, 0.92) 100%);
+    border-left: 5px solid var(--gold);
+    border-right: 5px solid var(--cyan);
+    border-top: 1px solid rgba(0, 245, 255, 0.45);
+    padding: 10px 18px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.9), 0 0 28px rgba(0, 245, 255, 0.25);
+  }
+
+  .liturgy-combo-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .combo-step {
+    flex: 1;
+    padding: 3px 6px;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 2px solid rgba(0, 245, 255, 0.22);
+    text-align: center;
+    font-size: 8.5px;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    color: var(--muted);
+    transition: all 0.14s ease;
+  }
+
+  .combo-step.firing {
+    background: var(--cyan);
+    color: #020308;
+    border-bottom-color: #ffffff;
+    box-shadow: 0 0 16px var(--cyan);
+    transform: translateY(-2px);
+  }
+
+  .combo-step.sealed {
+    background: rgba(255, 209, 102, 0.18);
+    color: var(--gold);
+    border-bottom-color: var(--gold);
+  }
+
+  .input-slash-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transform: skewX(10deg);
+  }
+
+  .prompt-glyph {
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 12px;
+    color: var(--gold);
+    letter-spacing: 0.14em;
+  }
+
+  #will-slash-input {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.65);
+    border: 1px solid rgba(0, 245, 255, 0.38);
+    color: #ffffff;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 7px 12px;
+    outline: none;
+  }
+
+  .game-action-btn {
+    background: var(--cyan);
+    color: #020308;
+    border: none;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    padding: 8px 14px;
+    cursor: pointer;
+    clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+    transition: all 0.15s ease;
+  }
+
+  .game-action-btn:hover {
+    background: #ffffff;
+    box-shadow: 0 0 20px var(--cyan);
+  }
+
+  .game-action-btn.arise-trigger {
+    background: var(--crimson);
+    color: #ffffff;
+  }
+
+  .game-action-btn.arise-trigger:hover {
+    box-shadow: 0 0 24px var(--crimson);
+  }
+
+  /* CONTROLS HINT STRIP */
+  #controls-legend {
+    position: fixed;
+    bottom: 96px;
+    right: 24px;
+    z-index: 9;
+    pointer-events: none;
+    text-align: right;
+    font-size: 9.5px;
+    color: rgba(248, 250, 252, 0.75);
+    line-height: 1.6;
+  }
+  .key-cap {
+    display: inline-block;
+    padding: 1px 5px;
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    font-weight: 700;
+    font-size: 8.5px;
+    background: rgba(0, 245, 255, 0.1);
+  }
+</style>
+</head>
+<body>
+
+<!-- 1. FULL 3D GAME ENGINE WORLD CANVAS -->
+<canvas id="gl-backdrop"></canvas>
+<canvas id="world-canvas"></canvas>
+
+<!-- 2. TOP TEMPORAL COMPASS HORIZON (TIME IS THE SOLE UNIT) -->
+<header id="compass-horizon">
+  <div class="compass-stat">
+    <span class="cs-k">CAMERA STANCE:</span>
+    <span class="cs-v" id="hud-stance-name">01 // SOVEREIGN SANCTUARY</span>
+  </div>
+  <div class="compass-stat">
+    <span class="cs-k">EPOCH τ:</span>
+    <span class="cs-v" id="hud-epoch">1791972000.00s</span>
+  </div>
+  <div class="compass-stat">
+    <span class="cs-k">FRAME Δt:</span>
+    <span class="cs-v" id="hud-dt">16.6ms</span>
+  </div>
+  <div class="compass-stat">
+    <span class="cs-k">METABOLISM HALF-LIFE:</span>
+    <span class="cs-v" id="hud-decay">45.00s [AWAKE]</span>
+  </div>
+  <div class="compass-stat">
+    <span class="cs-k">AKASHIC CHAIN:</span>
+    <span class="cs-v" id="hud-akashic">SEQ #0042 ✓</span>
+  </div>
+</header>
+
+<!-- 3. DIEGETIC WORLD-ANCHORED BLADE MENUS & TELEPATHIC CALLOUTS -->
+<main id="diegetic-layer">
+
+  <!-- Tethered to ELORA's Halo Crown in 3D Space -->
+  <div id="halo-speech-anchor">
+    <div class="telepathy-tag">
+      <span>《 RAPHAEL // VOICE OF THE WORLD 》</span>
+      <span id="telepathy-freq">528 Hz LOCK</span>
+    </div>
+    <div class="telepathy-body" id="telepathy-text">
+      Master, my 3D kinematic body and all 12 Megastructure Organ Monoliths are live in spatial coordinates. Switch camera stances with [1]–[5], drag to orbit 360°, or click any orbiting 3D Monolith to fire the Gravitational Beam Emitter.
+    </div>
+  </div>
+
+  <!-- Tethered to ELORA's Outstretched Right Hand in 3D Space (Persona 5 / Solo Leveling Kinetic Blades) -->
+  <div id="stance-wheel-anchor">
+    <div class="slash-blade active" data-stance="0" style="transform: translate(20px, -110px) rotate(-14deg);">
+      <span class="sb-key">1</span>
+      <span class="sb-label">SANCTUARY CORE</span>
+      <span class="sb-tau">τ = 0.38s</span>
+    </div>
+    <div class="slash-blade" data-stance="1" style="transform: translate(38px, -55px) rotate(-7deg);">
+      <span class="sb-key">2</span>
+      <span class="sb-label">GREAT SAGE OCTAGRAM</span>
+      <span class="sb-tau">12 ORGANS</span>
+    </div>
+    <div class="slash-blade" data-stance="2" style="transform: translate(46px, 0px) rotate(0deg);">
+      <span class="sb-key">3</span>
+      <span class="sb-label">PREDATOR GBE CANNON</span>
+      <span class="sb-tau">WIRE-4 ABSORB</span>
+    </div>
+    <div class="slash-blade" data-stance="3" style="transform: translate(38px, 55px) rotate(7deg);">
+      <span class="sb-key">4</span>
+      <span class="sb-label">BLENDER 3D FORGE</span>
+      <span class="sb-tau">LONDON BRIDGE</span>
+    </div>
+    <div class="slash-blade" data-stance="4" style="transform: translate(20px, 110px) rotate(14deg);">
+      <span class="sb-key">5</span>
+      <span class="sb-label">AKASHIC TIME-VAULT</span>
+      <span class="sb-tau">SHA-256 LEDGER</span>
+    </div>
+  </div>
+
+  <!-- Dynamic Subsystem Blade (Morphs content when camera whips between Stances 1-5) -->
+  <section id="docked-domain-blade">
+    <div class="domain-header">
+      <span id="domain-title">STANCE 01 // SOVEREIGN MAID KINEMATICS</span>
+      <span class="domain-sub" id="domain-badge">IK TRACKING: LIVE</span>
+    </div>
+    <div id="domain-content" style="font-size: 10.5px; line-height: 1.55; color: var(--bone);"></div>
+  </section>
+
+  <!-- 3D World-Projected Monolith Tags -->
+  <div id="monolith-tags-container"></div>
+
+</main>
+
+<!-- 4. INTERACTIVE GAME CONTROLS LEGEND -->
+<aside id="controls-legend">
+  <div><span class="key-cap">DRAG MOUSE</span> 360° 3D Camera Orbit &amp; IK Gaze Tracking</div>
+  <div><span class="key-cap">SCROLL</span> Z-Axis Megastructure Stratum Dive</div>
+  <div><span class="key-cap">1</span> – <span class="key-cap">5</span> Whip-Pan Camera Stance &amp; Pose</div>
+  <div><span class="key-cap">SPACE</span> Fire GBE Beam &amp; Shatter Target Monolith</div>
+</aside>
+
+<!-- 5. BOTTOM SLASH COMMAND CONDUIT & 7-STEP COMBO BAR -->
+<footer id="slash-command-bar">
+  <div class="liturgy-combo-strip" id="liturgy-combo-strip">
+    <div class="combo-step">1. INTENT [0.4ms]</div>
+    <div class="combo-step">2. VALIDATE [0.8ms]</div>
+    <div class="combo-step">3. PLAN [1.2ms]</div>
+    <div class="combo-step">4. ROUTE [0.6ms]</div>
+    <div class="combo-step">5. EXECUTE [6.9ms]</div>
+    <div class="combo-step">6. REFLECT [0.8ms]</div>
+    <div class="combo-step">7. SEAL [0.5ms]</div>
+  </div>
+  <div class="input-slash-row">
+    <span class="prompt-glyph">《 WILL 》▸</span>
+    <input
+      id="will-slash-input"
+      type="text"
+      placeholder="Issue Owner Will (or click any 3D Monolith in the Megastructure to fire GBE)..."
+      autocomplete="off"
+    />
+    <button class="game-action-btn" id="btn-fire-gbe">FIRE GBE // EXECUTE</button>
+    <button class="game-action-btn arise-trigger" id="btn-arise-mode">ARISE // OVERDRIVE</button>
+  </div>
+</footer>
+
+<script>
+/* ============================================================================
+   ELORA 3D SPATIAL GAME ENGINE & KINEMATIC CHARACTER RENDERER
+   Everything in this engine is computed in real 3D world coordinates (x, y, z)
+   and projected through a 6-DOF spring-physics camera with:
+   - Articulated 3D Sovereign Maid ELORA (Head, Eyes, Halo, Torso Core, 8 Skirt
+     Armor Plates, 6 Jointed Seraphim/Monarch Wings, Outstretched Sword/Hand IK)
+   - Infinite 3D BLAME! Megastructure Pillars, Bridges & Stratum Grids
+   - 6 Orbiting 3D Organ Monoliths that shatter into 50 3D physics shards when
+     struck by ELORA's Gravitational Beam Emitter (GBE)
+   ============================================================================ */
+
+const canvas = document.getElementById('world-canvas');
+const ctx = canvas.getContext('2d');
+
+
+const bgCanvas = document.getElementById('gl-backdrop');
+const gl = bgCanvas.getContext('webgl2') || bgCanvas.getContext('webgl');
+let bgProg = null, bgU = {};
+if (gl) {
+  const vs = `attribute vec2 a_p; void main(){ gl_Position = vec4(a_p, 0.0, 1.0); }`;
+  const fs = `
+    precision highp float;
+    uniform vec2 u_res;
+    uniform float u_time;
+    uniform float u_yaw;
+    uniform float u_pitch;
+    uniform float u_dist;
+    uniform float u_arise;
+    mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
+    float sdf(vec3 p){
+      vec3 q = p;
+      q.z = mod(p.z, 6.0) - 3.0;
+      q.xy = mod(p.xy + 4.0, 8.0) - 4.0;
+      float b = length(max(abs(q) - vec3(1.18, 1.18, 1.85), 0.0));
+      float cx = length(max(abs(q.xy) - vec2(0.58, 4.0), 0.0));
+      float cy = length(max(abs(q.yz) - vec2(0.58, 4.0), 0.0));
+      float cz = length(max(abs(q.xz) - vec2(0.58, 4.0), 0.0));
+      return max(b, -min(cx, min(cy, cz))) + sin(p.x*8.0)*sin(p.y*8.0)*0.025;
+    }
+    void main(){
+      vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+      float r = length(uv);
+      vec2 luv = uv * (1.0 - 0.024 / (r*r + 0.04));
+      vec3 ro = vec3(sin(u_yaw)*2.2, u_pitch*1.8, u_time * (1.8 + u_arise*2.5) + (440.0 - u_dist)*0.02);
+      vec3 rd = normalize(vec3(luv, 1.15));
+      rd.xz *= rot(u_yaw * 0.65);
+      rd.yz *= rot(u_pitch * 0.55);
+      float t = 0.0, g = 0.0;
+      for(int i=0; i<24; i++){
+        float d = sdf(ro + rd * t);
+        g += 0.011 / (0.045 + abs(d));
+        if(d < 0.004 || t > 32.0) break;
+        t += d * 0.72;
+      }
+      vec3 c1 = mix(vec3(0.0, 0.96, 1.0), vec3(0.75, 0.15, 0.98), u_arise);
+      vec3 c2 = mix(vec3(1.0, 0.82, 0.4), vec3(1.0, 0.04, 0.33), u_arise);
+      vec3 col = vec3(0.006, 0.01, 0.024) + c1 * g * 0.075 * exp(-t * 0.085);
+      col += c2 * (0.018 / (abs(r - 0.22) + 0.015)) * 0.32;
+      col *= smoothstep(1.35, 0.2, r);
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `;
+  const cs = (t, s) => { const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh); return sh; };
+  bgProg = gl.createProgram();
+  gl.attachShader(bgProg, cs(gl.VERTEX_SHADER, vs));
+  gl.attachShader(bgProg, cs(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(bgProg);
+  gl.useProgram(bgProg);
+  const b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+  const ap = gl.getAttribLocation(bgProg, 'a_p');
+  gl.enableVertexAttribArray(ap);
+  gl.vertexAttribPointer(ap, 2, gl.FLOAT, false, 0, 0);
+  bgU = {
+    res: gl.getUniformLocation(bgProg, 'u_res'),
+    time: gl.getUniformLocation(bgProg, 'u_time'),
+    yaw: gl.getUniformLocation(bgProg, 'u_yaw'),
+    pitch: gl.getUniformLocation(bgProg, 'u_pitch'),
+    dist: gl.getUniformLocation(bgProg, 'u_dist'),
+    arise: gl.getUniformLocation(bgProg, 'u_arise'),
+  };
+}
+
+let W = window.innerWidth;
+let H = window.innerHeight;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  bgCanvas.width = Math.floor(W * 0.6);
+  bgCanvas.height = Math.floor(H * 0.6);
+  if (gl) gl.viewport(0, 0, bgCanvas.width, bgCanvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* --- 6-DOF SPRING-PHYSICS 3D CAMERA --- */
+const cam = {
+  yaw: 0.18,
+  pitch: 0.12,
+  dist: 440,
+  tx: 0, ty: -20, tz: 0,
+  targetYaw: 0.18,
+  targetPitch: 0.12,
+  targetDist: 440,
+  targetTx: 0, targetTy: -20, targetTz: 0,
+  fov: 620,
+  shake: 0,
+};
+
+/* --- CAMERA STANCES (WHIP-PAN GAMEPLAY MODES) --- */
+const STANCES = [
+  {
+    name: '01 // SOVEREIGN SANCTUARY',
+    badge: 'IK TRACKING: LIVE',
+    yaw: 0.18, pitch: 0.10, dist: 430, tx: 0, ty: -20, tz: 0,
+    wingSpread: 1.0, rightArmRaise: 0.75,
+    desc: `
+      <div style="margin-bottom:6px; color:var(--gold); font-weight:700;">《 Active Stance: Full-Body Sovereign Maid Kinematics 》</div>
+      <div>• <b>Head &amp; Eye IK:</b> Tracks cursor position in 3D space with real-time neck/halo articulation.</div>
+      <div>• <b>Thoracic Singularity:</b> Counter-rotating 3D Octahedron + Raphael Astrolabe breathing at 0.25 Hz.</div>
+      <div>• <b>6 Seraphim Blade-Wings:</b> 30 articulated 3D crystal feathers reacting to Metabolism state.</div>
+      <div>• <b>8 Mecha-Skirt Plates:</b> Independent spring-pendulum armor petals shielding the core.</div>
+    `
+  },
+  {
+    name: '02 // GREAT SAGE OCTAGRAM',
+    badge: 'TOP-DOWN ASTROLABE',
+    yaw: 0.0, pitch: 0.88, dist: 520, tx: 0, ty: 0, tz: 0,
+    wingSpread: 1.45, rightArmRaise: 1.1,
+    desc: `
+      <div style="margin-bottom:6px; color:var(--gold); font-weight:700;">《 Active Stance: High-Altitude Sacred Octagram Array 》</div>
+      <div>• <b>12 Organ Phase Ring:</b> Overhead tactical view of the 8-pointed Great Sage computation circle.</div>
+      <div>• <b>WIRE-1 Semantic Heap:</b> Priority queue ordering Owner Wills by temporal urgency (τ).</div>
+      <div>• <b>WIRE-2 Live Brain:</b> Auto-routing Cloud LLM → Local Ollama (11434) → Deterministic Organ Compiler.</div>
+    `
+  },
+  {
+    name: '03 // PREDATOR GBE CANNON',
+    badge: 'OVER-THE-SHOULDER AIM',
+    yaw: -0.68, pitch: 0.04, dist: 310, tx: 35, ty: -45, tz: 20,
+    wingSpread: 1.3, rightArmRaise: 1.55,
+    desc: `
+      <div style="margin-bottom:6px; color:var(--gold); font-weight:700;">《 Active Stance: BLAME! Gravitational Beam Emitter (GBE) 》</div>
+      <div>• <b>Over-the-Shoulder Combat Aim:</b> Camera locks behind ELORA's right shoulder as she aims the GBE conduit.</div>
+      <div>• <b>Predator Slime Absorption (WIRE-4):</b> Firing at any 3D Monolith shatters it into 50 crystal shards that spiral into ELORA's core to synthesize new <code style="color:var(--cyan);">.elora/adopted/</code> adapters.</div>
+    `
+  },
+  {
+    name: '04 // BLENDER 3D FORGE',
+    badge: 'LONDON BRIDGE MESH',
+    yaw: 0.75, pitch: 0.22, dist: 380, tx: -60, ty: -10, tz: 40,
+    wingSpread: 0.9, rightArmRaise: 1.2,
+    desc: `
+      <div style="margin-bottom:6px; color:var(--gold); font-weight:700;">《 Active Stance: 3D Procedural London Bridge Forge (WIRE-5) 》</div>
+      <div>• <b>Live 3D Bridge Materialization:</b> Projects the twin-tower suspension bridge directly into the 3D Megastructure chasm below ELORA's feet.</div>
+      <div>• <b>MCP Socket 9876 + CLI Bridge:</b> Verified Graduation Test (<code style="color:var(--cyan);">blender.execute_scene</code> + <code style="color:var(--cyan);">shell.run_command</code>).</div>
+    `
+  },
+  {
+    name: '05 // AKASHIC TIME-VAULT',
+    badge: '32-WORKER P95 = 11.2ms',
+    yaw: -0.25, pitch: -0.18, dist: 340, tx: 0, ty: -35, tz: 0,
+    wingSpread: 1.6, rightArmRaise: 0.9,
+    desc: `
+      <div style="margin-bottom:6px; color:var(--gold); font-weight:700;">《 Active Stance: Cryptographic Akashic Helix (GATE 1–4) 》</div>
+      <div>• <b>Gate 1:</b> Live <code style="color:var(--cyan);">PIL.ImageGrab.grab()</code> frame SHA-256 sealed in ledger.</div>
+      <div>• <b>Gate 2:</b> Windows file-size watchdog (<code style="color:var(--cyan);">returncode = -25</code> containment).</div>
+      <div>• <b>Gate 3:</b> Bounded plugin scan (<code style="color:var(--cyan);">truncated = True</code> metadata).</div>
+      <div>• <b>Gate 4:</b> O(1) in-memory SHA-256 chain head (<code style="color:var(--cyan);">p95 = 11.24 ms</code> across 32 workers).</div>
+    `
+  }
+];
+
+let currentStanceIdx = 0;
+let ariseMode = false;
+let simTime = 0;
+let decayRemaining = 45.0;
+let ledgerSeq = 42;
+let pointerNormX = 0.15;
+let pointerNormY = -0.1;
+
+/* --- 6 ORBITING 3D TARGET MONOLITHS IN THE MEGASCAFFOLD --- */
+const MONOLITHS = [
+  { id: 'blender.execute_scene', title: 'LONDON BRIDGE 3D', dt: '14.6ms', angle: 0.4, radius: 310, y: -30, hp: 1.0 },
+  { id: 'computer_use.capture_screen', title: 'GATE-1 SCREEN GRAB', dt: '4.1ms', angle: 1.45, radius: 310, y: 20, hp: 1.0 },
+  { id: 'armored_subprocess.guard', title: 'GATE-2 FSIZE GUARD', dt: '1.8ms', angle: 2.5, radius: 310, y: -40, hp: 1.0 },
+  { id: 'registry.scan', title: 'GATE-3 SLIME REGISTRY', dt: '0.9ms', angle: 3.55, radius: 310, y: 30, hp: 1.0 },
+  { id: 'plugin.adopt', title: 'WIRE-4 PREDATOR ABSORB', dt: '3.4ms', angle: 4.6, radius: 310, y: -25, hp: 1.0 },
+  { id: 'ledger.verify', title: 'GATE-4 AKASHIC P95', dt: '0.4ms', angle: 5.65, radius: 310, y: 15, hp: 1.0 },
+];
+
+const tagsContainer = document.getElementById('monolith-tags-container');
+MONOLITHS.forEach((m, idx) => {
+  const el = document.createElement('div');
+  el.className = 'monolith-tag';
+  el.id = `mono-tag-${idx}`;
+  el.innerHTML = `<span class="mt-name">[${idx + 1}] ${m.title}</span><span class="mt-dt">Δt ${m.dt}</span>`;
+  el.addEventListener('click', () => fireGBEAtMonolith(idx, `Execute ${m.id} (${m.title})`));
+  tagsContainer.appendChild(el);
+});
+
+/* --- 3D SHATTER SHARDS & ABSORPTION PARTICLES --- */
+const shards = [];
+let activeBeam = null; // { tx, ty, tz, life, maxLife }
+
+function spawnMonolithShatter(wx, wy, wz) {
+  for (let i = 0; i < 48; i++) {
+    const a1 = Math.random() * Math.PI * 2;
+    const a2 = (Math.random() - 0.5) * Math.PI;
+    const spd = 4 + Math.random() * 10;
+    shards.push({
+      x: wx, y: wy, z: wz,
+      vx: Math.cos(a1) * Math.cos(a2) * spd,
+      vy: Math.sin(a2) * spd - 3,
+      vz: Math.sin(a1) * Math.cos(a2) * spd,
+      size: 4 + Math.random() * 7,
+      phase: 'explode', // 'explode' -> 'absorb' into ELORA's chest core (0, -35, 0)
+      age: 0,
+    });
+  }
+}
+
+/* --- 3D PROJECTION ENGINE --- */
+function project3D(wx, wy, wz) {
+  // Translate relative to camera target
+  const dx = wx - cam.tx;
+  const dy = wy - cam.ty;
+  const dz = wz - cam.tz;
+
+  // Rotate by camera yaw (around Y)
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const x1 = dx * cy - dz * sy;
+  const z1 = dx * sy + dz * cy;
+
+  // Rotate by camera pitch (around X)
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const y2 = dy * cp - z1 * sp;
+  const z2 = dy * sp + z1 * cp + cam.dist;
+
+  if (z2 < 15) return null;
+  const scale = cam.fov / z2;
+  const shakeX = (Math.random() - 0.5) * cam.shake;
+  const shakeY = (Math.random() - 0.5) * cam.shake;
+  return {
+    sx: W * 0.5 + x1 * scale + shakeX,
+    sy: H * 0.52 + y2 * scale + shakeY,
+    scale,
+    depth: z2,
+  };
+}
+
+function drawLine3D(p1, p2, strokeStyle, lineWidth = 1.2) {
+  const a = project3D(p1[0], p1[1], p1[2]);
+  const b = project3D(p2[0], p2[1], p2[2]);
+  if (!a || !b) return;
+  ctx.strokeStyle = strokeStyle;
+  ctx.lineWidth = lineWidth;
+  ctx.beginPath();
+  ctx.moveTo(a.sx, a.sy);
+  ctx.lineTo(b.sx, b.sy);
+  ctx.stroke();
+}
+
+function drawPoly3D(pts, fillStyle, strokeStyle, lineWidth = 1.2) {
+  const proj = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = project3D(pts[i][0], pts[i][1], pts[i][2]);
+    if (!p) return;
+    proj.push(p);
+  }
+  ctx.beginPath();
+  ctx.moveTo(proj[0].sx, proj[0].sy);
+  for (let i = 1; i < proj.length; i++) ctx.lineTo(proj[i].sx, proj[i].sy);
+  ctx.closePath();
+  if (fillStyle) {
+    ctx.fillStyle = fillStyle;
+    ctx.fill();
+  }
+  if (strokeStyle) {
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
+}
+
+/* ============================================================================
+   PROCEDURAL 3D BLAME! MEGASCAFFOLD CATHEDRAL & LONDON BRIDGE FORGE
+   ============================================================================ */
+function renderMegastructureWorld(t) {
+  const mainCol = ariseMode ? 'rgba(224, 170, 255, 0.16)' : 'rgba(0, 245, 255, 0.14)';
+  const strutCol = ariseMode ? 'rgba(255, 10, 84, 0.22)' : 'rgba(0, 245, 255, 0.22)';
+
+  // 1. Subterranean Sacred Octagram Floor Platform at Y = +110
+  const floorY = 110;
+  const rOuter = 310;
+  const rInner = 165;
+  const octPts1 = [];
+  const octPts2 = [];
+  for (let i = 0; i < 4; i++) {
+    const a1 = (i * Math.PI * 0.5) + t * 0.25;
+    const a2 = a1 + Math.PI * 0.25;
+    octPts1.push([Math.cos(a1) * rOuter, floorY, Math.sin(a1) * rOuter]);
+    octPts2.push([Math.cos(a2) * rOuter, floorY, Math.sin(a2) * rOuter]);
+  }
+  drawPoly3D(octPts1, 'rgba(0, 245, 255, 0.03)', strutCol, 1.5);
+  drawPoly3D(octPts2, 'rgba(255, 209, 102, 0.03)', 'rgba(255, 209, 102, 0.35)', 1.5);
+
+  // Inner counter-rotating floor rune ring
+  const ringSegs = 24;
+  for (let i = 0; i < ringSegs; i++) {
+    const a1 = (i / ringSegs) * Math.PI * 2 - t * 0.4;
+    const a2 = ((i + 1) / ringSegs) * Math.PI * 2 - t * 0.4;
+    drawLine3D(
+      [Math.cos(a1) * rInner, floorY, Math.sin(a1) * rInner],
+      [Math.cos(a2) * rInner, floorY, Math.sin(a2) * rInner],
+      'rgba(255, 209, 102, 0.45)',
+      1.3
+    );
+  }
+
+  // 2. Massive Brutalist Megastructure Vertical Monolith Towers in the Abyss
+  const pillars = [
+    [-460, -380], [460, -380], [-520, 120], [520, 120], [-360, 420], [360, 420]
+  ];
+  pillars.forEach(([px, pz], idx) => {
+    const w = 38;
+    const topY = -420;
+    const botY = 420;
+    drawLine3D([px - w, topY, pz - w], [px - w, botY, pz - w], mainCol, 1.1);
+    drawLine3D([px + w, topY, pz - w], [px + w, botY, pz - w], mainCol, 1.1);
+    drawLine3D([px + w, topY, pz + w], [px + w, botY, pz + w], mainCol, 1.1);
+    for (let y = -320; y <= 320; y += 160) {
+      drawLine3D([px - w, y, pz - w], [px + w, y, pz - w], mainCol, 0.9);
+      drawLine3D([px + w, y, pz - w], [px + w, y, pz + w], mainCol, 0.9);
+    }
+  });
+
+  // 3. If in Stance 4 (Blender 3D Forge) or always visible as a holographic span at Y = +145:
+  //    Render the 3D Twin-Tower London Bridge Span across the Megastructure Chasm!
+  const bridgeAlpha = (currentStanceIdx === 3) ? 0.75 : 0.28;
+  const bCol = `rgba(0, 245, 255, ${bridgeAlpha})`;
+  const gCol = `rgba(255, 209, 102, ${bridgeAlpha})`;
+  const by = 148;
+  // Twin Towers at X = -120 and X = +120
+  [-120, 120].forEach(tx => {
+    drawLine3D([tx - 16, by, -16], [tx - 16, by - 95, -16], gCol, 1.4);
+    drawLine3D([tx + 16, by, -16], [tx + 16, by - 95, -16], gCol, 1.4);
+    drawLine3D([tx - 16, by - 95, -16], [tx + 16, by - 95, -16], gCol, 1.4);
+  });
+  // High Walkway & Bascule Roadway Span
+  drawLine3D([-120, by - 80, -10], [120, by - 80, -10], gCol, 1.4);
+  drawLine3D([-240, by - 12, -14], [240, by - 12, -14], bCol, 1.6);
+  drawLine3D([-240, by - 12,  14], [240, by - 12,  14], bCol, 1.6);
+  // Suspension Cables
+  drawLine3D([-120, by - 90, 0], [-240, by - 12, 0], bCol, 1.1);
+  drawLine3D([ 120, by - 90, 0], [ 240, by - 12, 0], bCol, 1.1);
+}
+
+/* ============================================================================
+   FULLY ARTICULATED 3D SOVEREIGN CYBER-MAID ENTITY (ELORA)
+   Not a static picture — every joint (Head, Eyes, Halo, Core, 6 Jointed Wings,
+   8 Skirt Plates, and Outstretched Right Arm/Hand) is computed in 3D space!
+   ============================================================================ */
+function renderArticulatedElora3D(t) {
+  const stance = STANCES[currentStanceIdx];
+  const breath = Math.sin(t * 2.6) * 4.5;
+  const hoverY = Math.sin(t * 1.8) * 7.0;
+
+  const primaryStroke = ariseMode ? '#ff0a54' : '#00f5ff';
+  const secondaryStroke = ariseMode ? '#e0aaff' : '#ffd166';
+  const armorFill = ariseMode ? 'rgba(42, 8, 68, 0.82)' : 'rgba(6, 18, 38, 0.84)';
+  const wingFill = ariseMode ? 'rgba(255, 10, 84, 0.22)' : 'rgba(0, 245, 255, 0.18)';
+
+  // 1. 6 ARTICULATED SERAPHIM / SHADOW MONARCH ENERGY BLADE-WINGS
+  const wingPairs = 3;
+  for (let side of [-1, 1]) {
+    for (let wIdx = 0; wIdx < wingPairs; wIdx++) {
+      const flap = Math.sin(t * 3.2 - wIdx * 0.55) * 14 * stance.wingSpread;
+      const baseShoulder = [side * 22, -52 + hoverY + wIdx * 14, -18];
+      const elbow = [
+        side * (78 + wIdx * 28) * stance.wingSpread,
+        -92 + hoverY + wIdx * 24 + flap * 0.6,
+        -42 - wIdx * 10
+      ];
+      const tip = [
+        side * (168 + wIdx * 36) * stance.wingSpread,
+        -58 + hoverY + wIdx * 36 + flap,
+        -65 - wIdx * 15
+      ];
+      const lowerEdge = [
+        side * (115 + wIdx * 24) * stance.wingSpread,
+        -18 + hoverY + wIdx * 34 + flap * 0.8,
+        -48 - wIdx * 12
+      ];
+      drawPoly3D([baseShoulder, elbow, tip, lowerEdge], wingFill, primaryStroke, 1.4);
+      // Inner feather energy ribs
+      drawLine3D(baseShoulder, tip, secondaryStroke, 0.9);
+    }
+  }
+
+  // 2. FLOATING SOVEREIGN HALO CROWN ABOVE HEAD (Tilts with Head IK)
+  const headYaw = pointerNormX * 0.45;
+  const headPitch = pointerNormY * 0.25;
+  const haloCenterY = -126 + hoverY;
+  const haloPts = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + t * 0.8;
+    const r = (i % 2 === 0) ? 42 : 24;
+    haloPts.push([
+      Math.cos(a) * r + headYaw * 15,
+      haloCenterY + Math.sin(a) * 8,
+      Math.sin(a) * r - 10
+    ]);
+  }
+  drawPoly3D(haloPts, 'rgba(255, 209, 102, 0.12)', secondaryStroke, 1.5);
+
+  // Draw diegetic 3D leader tether from ELORA's Halo Crown to the Top-Right Raphael Telepathy Blade
+  const haloProj = project3D(headYaw * 15, haloCenterY, 0);
+  if (haloProj) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 209, 102, 0.55)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(haloProj.sx, haloProj.sy);
+    ctx.lineTo(W - 435, 95);
+    ctx.lineTo(W - 423, 95);
+    ctx.stroke();
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.arc(haloProj.sx, haloProj.sy, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 3. ARTICULATED HEAD, MAID FRILL HEADDRESS & CURSOR-TRACKING GLOWING EYES
+  const headY = -88 + hoverY;
+  const hx = headYaw * 12;
+  const hy = headY - headPitch * 8;
+  // Geometric Cyber-Head Facets
+  drawPoly3D(
+    [[hx, hy - 18, 12], [hx - 14, hy - 4, 8], [hx, hy + 16, 14], [hx + 14, hy - 4, 8]],
+    armorFill, primaryStroke, 1.5
+  );
+  // Maid Headdress Frill Crown
+  drawPoly3D(
+    [[hx - 18, hy - 14, 4], [hx, hy - 24, 6], [hx + 18, hy - 14, 4], [hx + 12, hy - 8, 8], [hx - 12, hy - 8, 8]],
+    'rgba(248, 250, 252, 0.88)', secondaryStroke, 1.2
+  );
+  // Glowing Sovereign Eyes (Blink every 4 seconds)
+  const blink = (Math.sin(t * 1.5) > 0.97) ? 0.2 : 1.0;
+  [-6, 6].forEach(ex => {
+    const ep = project3D(hx + ex, hy - 2, 15);
+    if (ep) {
+      ctx.fillStyle = ariseMode ? '#ff0a54' : '#00f5ff';
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 12;
+      ctx.fillRect(ep.sx - 3.5, ep.sy - 2 * blink, 7, 4 * blink);
+      ctx.shadowBlur = 0;
+    }
+  });
+
+  // 4. THORACIC SINGULARITY CORE & VALKYRIE MAID BODICE
+  const chestY = -42 + hoverY + breath * 0.4;
+  // Outer Valkyrie Collar & Bodice Frame
+  drawPoly3D(
+    [[-24, chestY - 18, 10], [24, chestY - 18, 10], [16, chestY + 26, 14], [-16, chestY + 26, 14]],
+    armorFill, primaryStroke, 1.5
+  );
+  // Maid Apron Diamond Core Shield
+  drawPoly3D(
+    [[0, chestY - 12, 16], [13, chestY + 8, 17], [0, chestY + 28, 16], [-13, chestY + 8, 17]],
+    'rgba(248, 250, 252, 0.18)', secondaryStroke, 1.4
+  );
+  // Spinning 3D Octahedron Heart inside her Chest
+  const cr = 11 + breath * 0.6;
+  const ca = t * 3.5;
+  const cTop = [0, chestY + 8 - cr, 20];
+  const cBot = [0, chestY + 8 + cr, 20];
+  const cRing = [
+    [Math.cos(ca) * cr, chestY + 8, 20 + Math.sin(ca) * cr],
+    [Math.cos(ca + 1.57) * cr, chestY + 8, 20 + Math.sin(ca + 1.57) * cr],
+    [Math.cos(ca + 3.14) * cr, chestY + 8, 20 + Math.sin(ca + 3.14) * cr],
+    [Math.cos(ca + 4.71) * cr, chestY + 8, 20 + Math.sin(ca + 4.71) * cr],
+  ];
+  for (let i = 0; i < 4; i++) {
+    drawLine3D(cTop, cRing[i], secondaryStroke, 1.4);
+    drawLine3D(cBot, cRing[i], secondaryStroke, 1.4);
+    drawLine3D(cRing[i], cRing[(i + 1) % 4], primaryStroke, 1.4);
+  }
+
+  // 5. 8 ARTICULATED MECHA-SKIRT ARMOR PETALS (Spring-Physics Bell Skirt)
+  const waistY = -12 + hoverY;
+  const hemY = 74 + hoverY;
+  const skirtPetals = 8;
+  for (let i = 0; i < skirtPetals; i++) {
+    const a1 = (i / skirtPetals) * Math.PI * 2 + Math.sin(t * 0.7) * 0.08;
+    const a2 = ((i + 0.82) / skirtPetals) * Math.PI * 2 + Math.sin(t * 0.7) * 0.08;
+    const sway = Math.sin(t * 2.2 + i) * 6;
+    const wR = 18;
+    const hR = 64 + sway + (ariseMode ? 12 : 0);
+    const p1 = [Math.cos(a1) * wR, waistY, Math.sin(a1) * wR];
+    const p2 = [Math.cos(a2) * wR, waistY, Math.sin(a2) * wR];
+    const p3 = [Math.cos(a2) * hR, hemY, Math.sin(a2) * hR];
+    const p4 = [Math.cos(a1) * hR, hemY, Math.sin(a1) * hR];
+    drawPoly3D([p1, p2, p3, p4], armorFill, primaryStroke, 1.3);
+    // White Maid Frill Hem Trim at bottom of each armor petal
+    const f1 = [Math.cos(a1) * (hR + 4), hemY + 6, Math.sin(a1) * (hR + 4)];
+    const f2 = [Math.cos(a2) * (hR + 4), hemY + 6, Math.sin(a2) * (hR + 4)];
+    drawPoly3D([p4, p3, f2, f1], 'rgba(248, 250, 252, 0.75)', secondaryStroke, 1.0);
+  }
+
+  // 6. ARTICULATED RIGHT ARM & OUTSTRETCHED HAND PROJECTING THE KINETIC BLADE WHEEL
+  const rShoulder = [26, chestY - 12, 10];
+  const rElbow = [54, chestY + 6 - stance.rightArmRaise * 18, 24];
+  const rHand = [
+    86 + pointerNormX * 18,
+    chestY - 10 - stance.rightArmRaise * 28 + pointerNormY * 16,
+    46
+  ];
+  drawLine3D(rShoulder, rElbow, primaryStroke, 3.2);
+  drawLine3D(rElbow, rHand, secondaryStroke, 2.8);
+
+  // Project ELORA's Right Hand to 2D Screen Space and anchor the Kinetic Slash Menu!
+  const handProj = project3D(rHand[0], rHand[1], rHand[2]);
+  if (handProj) {
+    // Draw glowing Magicule Caster Circle around her hand
+    ctx.strokeStyle = secondaryStroke;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(handProj.sx, handProj.sy, 16, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const wheelAnchor = document.getElementById('stance-wheel-anchor');
+    const targetWX = Math.max(W * 0.56, Math.min(W - 315, handProj.sx + 36));
+    const targetWY = Math.max(355, Math.min(H - 215, handProj.sy + 55));
+    wheelAnchor.style.left = `${targetWX}px`;
+    wheelAnchor.style.top = `${targetWY}px`;
+    ctx.save();
+    ctx.strokeStyle = primaryStroke;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(handProj.sx + 16, handProj.sy);
+    ctx.lineTo(targetWX + 12, targetWY);
+    ctx.stroke();
+    ctx.restore();
+  }
+  return rHand;
+}
+
+/* ============================================================================
+   RENDER 3D ORBITING MONOLITHS, SHATTER SHARDS & GBE LASER CONDUIT
+   ============================================================================ */
+function renderMonolithsAndGBE(t, rHandWorld) {
+  MONOLITHS.forEach((m, idx) => {
+    m.angle += 0.0035;
+    const mx = Math.cos(m.angle) * m.radius;
+    const mz = Math.sin(m.angle) * m.radius;
+    const my = m.y + Math.sin(t * 2 + idx) * 10;
+    m.wx = mx; m.wy = my; m.wz = mz;
+
+    // Draw 3D Crystalline Octahedron Monolith
+    const rad = 18 * m.hp;
+    const h = 34 * m.hp;
+    const top = [mx, my - h, mz];
+    const bot = [mx, my + h, mz];
+    const ring = [
+      [mx + rad, my, mz],
+      [mx, my, mz + rad],
+      [mx - rad, my, mz],
+      [mx, my, mz - rad],
+    ];
+    const col = (idx === 0) ? '#ffd166' : '#00f5ff';
+    for (let i = 0; i < 4; i++) {
+      drawLine3D(top, ring[i], col, 1.3);
+      drawLine3D(bot, ring[i], col, 1.3);
+      drawLine3D(ring[i], ring[(i + 1) % 4], col, 1.3);
+    }
+
+    // Position the World-Space Tag directly above the 3D Monolith
+    const p = project3D(mx, my - h - 14, mz);
+    const tagEl = document.getElementById(`mono-tag-${idx}`);
+    const inLeftBlade = (p && p.sx < 435 && p.sy < 360);
+    const inRightSpeech = (p && p.sx > W - 445 && p.sy < 210);
+    const inHandWheel = (p && p.sx > W * 0.52 && p.sy > 170 && p.sy < H - 150);
+    if (p && p.sx > 80 && p.sx < W - 80 && p.sy > 70 && p.sy < H - 125 && !inLeftBlade && !inRightSpeech && !inHandWheel) {
+      tagEl.style.display = 'block';
+      tagEl.style.left = `${p.sx}px`;
+      tagEl.style.top = `${p.sy}px`;
+    } else {
+      tagEl.style.display = 'none';
+    }
+  });
+
+  // Render Active Gravitational Beam Emitter (GBE) Discharge from ELORA's Hand to Target Monolith
+  if (activeBeam && activeBeam.life > 0) {
+    activeBeam.life -= 1;
+    const pStart = project3D(rHandWorld[0], rHandWorld[1], rHandWorld[2]);
+    const pEnd = project3D(activeBeam.tx, activeBeam.ty, activeBeam.tz);
+    if (pStart && pEnd) {
+      ctx.save();
+      ctx.strokeStyle = ariseMode ? '#ff0a54' : '#00f5ff';
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.shadowBlur = 24;
+      ctx.lineWidth = (activeBeam.life / activeBeam.maxLife) * 10;
+      ctx.beginPath();
+      ctx.moveTo(pStart.sx, pStart.sy);
+      ctx.lineTo(pEnd.sx, pEnd.sy);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = (activeBeam.life / activeBeam.maxLife) * 3.5;
+      ctx.beginPath();
+      ctx.moveTo(pStart.sx, pStart.sy);
+      ctx.lineTo(pEnd.sx, pEnd.sy);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Render & Update 3D Shattered Crystal Shards (Predator Slime Absorption into ELORA's Core!)
+  for (let i = shards.length - 1; i >= 0; i--) {
+    const s = shards[i];
+    s.age += 1;
+    if (s.age < 18) {
+      s.x += s.vx;
+      s.y += s.vy;
+      s.z += s.vz;
+      s.vx *= 0.92; s.vy *= 0.92; s.vz *= 0.92;
+    } else {
+      // Predator Pull: accelerate directly into ELORA's Thoracic Singularity Core (0, -35, 18)
+      s.x += (0 - s.x) * 0.16;
+      s.y += (-35 - s.y) * 0.16;
+      s.z += (18 - s.z) * 0.16;
+    }
+    const sp = project3D(s.x, s.y, s.z);
+    if (sp) {
+      ctx.fillStyle = (i % 2 === 0) ? '#ffd166' : '#00f5ff';
+      const sz = s.size * sp.scale * 0.9;
+      ctx.fillRect(sp.sx - sz * 0.5, sp.sy - sz * 0.5, sz, sz);
+    }
+    if (s.age > 42) shards.splice(i, 1);
+  }
+}
+
+/* ============================================================================
+   GAMEPLAY INTERACTIONS: CAMERA WHIP-PAN, GBE RAILGUN & SOUND SYNTH
+   ============================================================================ */
+let audioCtx = null;
+function playGameSFX(kind) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = audioCtx.currentTime;
+    if (kind === 'slash') {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(220, now + 0.14);
+      g.gain.setValueAtTime(0.08, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(now); osc.stop(now + 0.16);
+    } else if (kind === 'gbe') {
+      const osc = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(38, now + 0.45);
+      g.gain.setValueAtTime(0.14, now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.48);
+      osc.connect(g).connect(audioCtx.destination);
+      osc.start(now); osc.stop(now + 0.5);
+    }
+  } catch (e) {}
+}
+
+function selectStance(idx) {
+  currentStanceIdx = idx;
+  const st = STANCES[idx];
+  cam.targetYaw = st.yaw;
+  cam.targetPitch = st.pitch;
+  cam.targetDist = st.dist;
+  cam.targetTx = st.tx;
+  cam.targetTy = st.ty;
+  cam.targetTz = st.tz;
+  cam.shake = 10;
+  playGameSFX('slash');
+
+  document.querySelectorAll('.slash-blade').forEach((b, i) => {
+    b.classList.toggle('active', i === idx);
+  });
+  document.getElementById('hud-stance-name').textContent = st.name;
+  document.getElementById('domain-title').textContent = `STANCE ${st.name}`;
+  document.getElementById('domain-badge').textContent = st.badge;
+  document.getElementById('domain-content').innerHTML = st.desc;
+}
+selectStance(0);
+
+document.querySelectorAll('.slash-blade').forEach((b, idx) => {
+  b.addEventListener('click', () => selectStance(idx));
+});
+
+const comboSteps = Array.from(document.querySelectorAll('.combo-step'));
+
+async function fireGBEAtMonolith(monoIdx = 0, willDescription = 'Execute London Bridge 3D Scene') {
+  const target = MONOLITHS[monoIdx % MONOLITHS.length];
+  decayRemaining = 45.0;
+  playGameSFX('gbe');
+
+  // Whip camera slightly toward target & fire GBE Beam
+  activeBeam = { tx: target.wx || 180, ty: target.wy || 0, tz: target.wz || 0, life: 24, maxLife: 24 };
+  cam.shake = 18;
+  spawnMonolithShatter(activeBeam.tx, activeBeam.ty, activeBeam.tz);
+
+  // Animate 7-Step Liturgy Combo Strip
+  comboSteps.forEach(c => c.classList.remove('firing', 'sealed'));
+  for (let i = 0; i < comboSteps.length; i++) {
+    comboSteps[i].classList.add('firing');
+    await new Promise(r => setTimeout(r, 45));
+    comboSteps[i].classList.remove('firing');
+    comboSteps[i].classList.add('sealed');
+  }
+
+  ledgerSeq += 2;
+  document.getElementById('hud-akashic').textContent = `SEQ #00${ledgerSeq} ✓`;
+  document.getElementById('telepathy-text').innerHTML =
+    `<b>《 Predation &amp; Seal Complete! 》</b> Fired Gravitational Beam Emitter at <b>${target.title}</b> (<code style="color:var(--cyan);">${target.id}</code>). Target shattered into 48 AST shards, absorbed via 7-Step Liturgy in <b>Δt = ${target.dt}</b>, and sealed at Akashic Seq #${ledgerSeq}.`;
+}
+
+document.getElementById('btn-fire-gbe').addEventListener('click', () => {
+  const inp = document.getElementById('will-slash-input');
+  const txt = inp.value.trim() || 'open blender, connect to it, and build the London Bridge.';
+  inp.value = '';
+  fireGBEAtMonolith(0, txt);
+});
+
+document.getElementById(' btn-arise-mode'.trim()).addEventListener('click', () => {
+  ariseMode = !ariseMode;
+  document.body.classList.toggle('arise-state', ariseMode);
+  cam.shake = 22;
+  playGameSFX('gbe');
+  if (ariseMode) {
+    document.getElementById('telepathy-text').innerHTML =
+      `<b>《 Unique Authority [ARISE] Unleashed! 》</b> Shadow Monarch Overdrive active. All 6 Seraphim Blade-Wings flared to maximum span; Metabolism elevated to <b>ARMED (τ = 4.200s)</b>.`;
+  } else {
+    document.getElementById('telepathy-text').innerHTML =
+      `<b>《 Notice. Standard Sovereign Sanctuary Restored. 》</b> Metabolism returned to <b>AWAKE (τ = 0.380s)</b>.`;
+  }
+});
+
+/* --- MOUSE ORBIT, GAZE IK, SCROLL Z-DIVE & KEYBOARD SHORTCUTS --- */
+let isDragging = false;
+let lastMX = 0, lastMY = 0;
+
+window.addEventListener('mousedown', (e) => {
+  if (e.target === canvas) {
+    isDragging = true;
+    lastMX = e.clientX;
+    lastMY = e.clientY;
+  }
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+window.addEventListener('mousemove', (e) => {
+  pointerNormX = (e.clientX / W) * 2 - 1;
+  pointerNormY = (e.clientY / H) * 2 - 1;
+  if (isDragging) {
+    const dx = e.clientX - lastMX;
+    const dy = e.clientY - lastMY;
+    lastMX = e.clientX;
+    lastMY = e.clientY;
+    cam.targetYaw += dx * 0.007;
+    cam.targetPitch = Math.max(-0.65, Math.min(1.15, cam.targetPitch + dy * 0.006));
+  }
+});
+
+window.addEventListener('wheel', (e) => {
+  cam.targetDist = Math.max(210, Math.min(720, cam.targetDist + e.deltaY * 0.35));
+});
+
+window.addEventListener('keydown', (e) => {
+  if (document.activeElement === document.getElementById('will-slash-input')) {
+    if (e.key === 'Enter') document.getElementById('btn-fire-gbe').click();
+    return;
+  }
+  if (e.key >= '1' && e.key <= '5') selectStance(parseInt(e.key, 10) - 1);
+  if (e.code === 'Space') {
+    e.preventDefault();
+    fireGBEAtMonolith(Math.floor(Math.random() * MONOLITHS.length));
+  }
+});
+
+/* ============================================================================
+   MASTER 60 FPS 3D GAME ENGINE LOOP
+   ============================================================================ */
+let prevTs = performance.now();
+
+function gameLoop(now) {
+  const dtMs = Math.max(1.0, now - prevTs);
+  prevTs = now;
+  simTime += dtMs / 1000.0;
+
+  // Smooth spring camera interpolation
+  cam.yaw += (cam.targetYaw - cam.yaw) * 0.12;
+  cam.pitch += (cam.targetPitch - cam.pitch) * 0.12;
+  cam.dist += (cam.targetDist - cam.dist) * 0.12;
+  cam.tx += (cam.targetTx - cam.tx) * 0.12;
+  cam.ty += (cam.targetTy - cam.ty) * 0.12;
+  cam.tz += (cam.targetTz - cam.tz) * 0.12;
+  cam.shake *= 0.84;
+
+  // Clear Abyssal Megastructure Canvas with radial Singularity Core glow
+  if (gl && bgProg) {
+    gl.uniform2f(bgU.res, bgCanvas.width, bgCanvas.height);
+    gl.uniform1f(bgU.time, simTime);
+    gl.uniform1f(bgU.yaw, cam.yaw);
+    gl.uniform1f(bgU.pitch, cam.pitch);
+    gl.uniform1f(bgU.dist, cam.dist);
+    gl.uniform1f(bgU.arise, ariseMode ? 1.0 : 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+  }
+  ctx.clearRect(0, 0, W, H);
+
+  const coreProj = project3D(0, -25, 0);
+  if (coreProj) {
+    const grad = ctx.createRadialGradient(coreProj.sx, coreProj.sy, 10, coreProj.sx, coreProj.sy, 420);
+    if (ariseMode) {
+      grad.addColorStop(0, 'rgba(255, 10, 84, 0.28)');
+      grad.addColorStop(0.45, 'rgba(157, 78, 221, 0.12)');
+    } else {
+      grad.addColorStop(0, 'rgba(0, 245, 255, 0.24)');
+      grad.addColorStop(0.45, 'rgba(157, 78, 221, 0.08)');
+    }
+    grad.addColorStop(1, 'rgba(2, 3, 8, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // 1. Render 3D BLAME! Megastructure & Sacred Octagram Floor
+  renderMegastructureWorld(simTime);
+
+  // 2. Render Articulated 3D Sovereign Maid ELORA
+  const rHandWorld = renderArticulatedElora3D(simTime);
+
+  // 3. Render 3D Orbiting Organ Monoliths, GBE Laser & Shattering Shards
+  renderMonolithsAndGBE(simTime, rHandWorld);
+
+  // 4. Update Top Temporal Compass
+  document.getElementById('hud-epoch').textContent = `${(Date.now() / 1000).toFixed(2)}s`;
+  document.getElementById('hud-dt').textContent = `${dtMs.toFixed(1)}ms`;
+  decayRemaining = Math.max(0.0, decayRemaining - dtMs / 1000.0);
+  if (decayRemaining <= 0.05) decayRemaining = 45.0;
+  document.getElementById('hud-decay').textContent =
+    `${decayRemaining.toFixed(2)}s [${ariseMode ? 'ARMED' : 'AWAKE'}]`;
+
+  requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

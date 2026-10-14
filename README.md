@@ -149,6 +149,8 @@ ELORA provides a unified, multi-dashboard spatial interface accessible via any m
 │ [Chronos]    │ 4D Spacetime Void HUD & Raymarched Megastructure SDF    │
 │ [Omega]      │ Omega Singularity OS: WebGL2 Manifold & Tri-Cameral Mind │
 │ [Cinema]     │ Living Multiverse Cinema OS: Cinematic Canvas Projections│
+│ [Omni]       │ Omni-World Autonomous Mission & Zero-Restart AST OS      │
+│ [Origin]     │ Origin 6-DOF Spatial 3D Game Engine & Procedural Maid    │
 └──────────────┴─────────────────────────────────────────────────────────┘
 ```
 
@@ -156,7 +158,9 @@ ELORA provides a unified, multi-dashboard spatial interface accessible via any m
 2. **Chronos-Void 4D Spacetime HUD (`/chronos.html` or `/chronos/`)**: High-frequency temporal telemetry stream (`elora.chronos.v7.2`), relativistic clock synchronization, and a raymarched BLAME! Megastructure SDF canvas.
 3. **Omega Singularity OS (`/omega.html`)**: Autonomous sovereign consciousness manifold. Visualizes the Tri-Cameral Liturgy (Perception, Deliberation, Will) over an interactive WebGL2 particle field.
 4. **Living Multiverse Cinema OS (`/cinema.html`)**: Cinematic spatial environment projecting live audio, video, and memory graph visualizers.
-5. **Chronos 8-Module Stack (`/chronos/index.html`)**: Decoupled production stack separating spacetime state, telemetry, graphics, and input handlers.
+5. **Omni-World Autonomous Mission & Self-Coding OS (`/omni.html`)**: Features the Multi-World Portal Multiplexer, live browser/desktop UIA operator (`ELORA_HAND`), self-healing mutation DAG, and built-in Self-Coding AST Forge for zero-restart live DOM patching.
+6. **Origin 6-DOF 3D Spatial Game Engine (`/origin.html`)**: Full 360° 3D orbit camera, procedurally articulated 3D Sovereign Maid ELORA (cursor-tracking IK head/eyes, breathing heart, 8 spring-physics skirt plates, 6 jointed wings), 5 whip-pan camera stances, and interactive monolith-shattering physics.
+7. **Chronos 8-Module Stack (`/chronos/index.html`)**: Decoupled production stack separating spacetime state, telemetry, graphics, and input handlers.
 
 ---
 
@@ -276,6 +280,12 @@ python -m elora.dashboard.server --announce
 
 # Start the FastMCP Universal Skills Server
 python tools/fastmcp_universal_skills_server.py
+
+# Start the Zero-Restart Hot-Swap & Self-Healing Daemon
+python elora_hot_reload_daemon.py
+
+# Or run the all-in-one Master Installer & Verifier
+python 00_MASTER_INSTALL_AND_LAUNCH.py --install-all --verify
 ```
 
 ### 6. Accessing the Spatial Dashboards
@@ -284,6 +294,8 @@ Open any of the following URLs in your browser:
 - **Chronos-Void 4D Spacetime HUD**: [http://127.0.0.1:8765/chronos.html](http://127.0.0.1:8765/chronos.html) (or `/chronos/`)
 - **Omega Singularity OS**: [http://127.0.0.1:8765/omega.html](http://127.0.0.1:8765/omega.html)
 - **Living Multiverse Cinema OS**: [http://127.0.0.1:8765/cinema.html](http://127.0.0.1:8765/cinema.html)
+- **Omni-World Engine**: [http://127.0.0.1:8765/omni.html](http://127.0.0.1:8765/omni.html)
+- **Origin Spatial 3D Engine**: [http://127.0.0.1:8765/origin.html](http://127.0.0.1:8765/origin.html)
 
 ### 7. Native Desktop Shell (Tauri)
 ```bash
@@ -298,9 +310,10 @@ cargo tauri build
 
 ```text
 ELORA-Workspace/
-├── docs/                   # The Book of ELORA PDF, text treatise, and architecture blueprints
+├── docs/                   # The Book of ELORA PDF, text treatise, full edition MD, and blueprints
+│   └── assets/             # Keyframes, engine preview renders, and visual benchmarks
 ├── elora/
-│   ├── core/               # Broker, metabolism, awakening daemon, FastMCP server, WASM, VirtIO
+│   ├── core/               # Broker, metabolism, awakening daemon, FastMCP server, hot_reload, WASM
 │   ├── dashboard/          # Localhost HTTP API & static dashboard file server (server.py)
 │   ├── organs/             # Akashic cryptographic ledger and organ adapters
 │   └── slime/              # Hands, computer use, voice, generation, and browser organs
@@ -310,6 +323,8 @@ ELORA-Workspace/
 │   ├── chronos.html        # Chronos-Void 4D Spacetime HUD
 │   ├── omega.html          # Omega Singularity OS WebGL2 manifold
 │   ├── cinema.html         # Living Multiverse Cinema OS viewport
+│   ├── omni.html           # Omni-World Autonomous Mission & Zero-Restart AST OS
+│   ├── origin.html         # Origin 6-DOF Spatial 3D Game Engine
 │   ├── chronos/            # Decoupled 8-module Chronos production stack
 │   ├── app.js              # Console state machine, DOM rendering, and view switching
 │   ├── styles.css          # Glassmorphic, spatial UI theme
@@ -319,8 +334,10 @@ ELORA-Workspace/
 ├── tools/                  # Universal FastMCP server, test scripts, and build utilities
 │   └── tests/              # 286 unit and integration tests
 ├── vault/                  # Content-addressed skill specifications and compiled WASM
+├── 00_MASTER_INSTALL_AND_LAUNCH.py # One-command master installer, verifier, and UI launcher
 ├── awaken_elora.py         # Resident awakening engine and Practical Audit Release Gates runner
-├── deploy_chronos_stack.py # Chronos production stack deployment script
+├── deploy_chronos_production_stack.py # Chronos production stack deployment script
+├── elora_hot_reload_daemon.py # Zero-restart AST hot-swap & self-healing daemon
 ├── run.py                  # CLI entrypoint (--check, --smoke, --resident, --verify-audit)
 ├── SUMMARY.md              # Historical session and audit documentation
 └── README.md               # Master system blueprint (this document)

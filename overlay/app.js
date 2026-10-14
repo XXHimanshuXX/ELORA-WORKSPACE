@@ -234,6 +234,8 @@ const VIEW_TITLES = {
   chronos: ['Chronos Spacetime', '4D Spacetime Organism HUD & Raymarched BLAME! Megastructure SDF.'],
   omega: ['Omega Singularity', 'Autonomous Sovereign Mind, WebGL2 Manifold & Tri-Cameral Liturgy.'],
   cinema: ['Multiverse Cinema', 'Cinematic Living Mind Spatial Multiverse Environment.'],
+  omni: ['Omni-World Engine', 'Multi-World Autonomous Mission & Zero-Restart AST Self-Coding OS.'],
+  origin: ['Origin Spatial 3D', '6-DOF Spatial 3D Engine, Procedural Sovereign Maid & GBE Physics.'],
 };
 
 /* ── navigation ────────────────────────────────────────────────────────── */

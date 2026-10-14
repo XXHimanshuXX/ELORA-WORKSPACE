@@ -48,6 +48,8 @@
     <g id="i-chronos"><polygon points="12,2 15,9 22,12 15,15 12,22 9,15 2,12 9,9"/><circle cx="12" cy="12" r="3"/></g>
     <g id="i-omega"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l5 5"/></g>
     <g id="i-cinema"><rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 9h20M2 15h20"/></g>
+    <g id="i-omni"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v18M3 12h18"/></g>
+    <g id="i-origin"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/><path d="M12 2v20M2 8.5l20 7M2 15.5l20-7"/></g>
   </defs>
 </svg>
 
@@ -92,6 +94,12 @@
       <li><button type="button" class="rail__item" data-nav="cinema" data-ring="1" data-deg="10">
         <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cinema"/></svg>
         <span>Cinema</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="omni" data-ring="3" data-deg="130">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-omni"/></svg>
+        <span>Omni</span></button></li>
+      <li><button type="button" class="rail__item" data-nav="origin" data-ring="2" data-deg="210">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-origin"/></svg>
+        <span>Origin</span></button></li>
     </ul>
 
     <div class="rail__foot">
@@ -157,6 +165,20 @@
           <a href="cinema.html" target="_blank" rel="noopener" class="evolved-launch-link">Launch Fullscreen</a>
         </div>
         <iframe src="cinema.html" class="evolved-iframe" title="Living Multiverse Cinema OS"></iframe>
+      </section>
+      <section class="view" data-view="omni" tabindex="-1" hidden>
+        <div class="evolved-frame-bar">
+          <span>OMNI-WORLD AUTONOMOUS MISSION & ZERO-RESTART OS</span>
+          <a href="omni.html" target="_blank" rel="noopener" class="evolved-launch-link">Launch Fullscreen</a>
+        </div>
+        <iframe src="omni.html" class="evolved-iframe" title="Omni-World Engine"></iframe>
+      </section>
+      <section class="view" data-view="origin" tabindex="-1" hidden>
+        <div class="evolved-frame-bar">
+          <span>ORIGIN 6-DOF 3D SPATIAL GAME ENGINE</span>
+          <a href="origin.html" target="_blank" rel="noopener" class="evolved-launch-link">Launch Fullscreen</a>
+        </div>
+        <iframe src="origin.html" class="evolved-iframe" title="Origin Spatial Engine"></iframe>
       </section>
     </div>
   </main>

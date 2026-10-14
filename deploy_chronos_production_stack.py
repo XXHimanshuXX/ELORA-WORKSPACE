@@ -50,6 +50,11 @@ def deploy_stack(root_dir: pathlib.Path = ROOT_DIR, modular: bool = True, force_
             dest_rel = rel_path
         target = root_dir / dest_rel
         target.parent.mkdir(parents=True, exist_ok=True)
+        if dest_rel == "elora/overlay_bridge.py" and target.exists():
+            existing_txt = target.read_text(encoding="utf-8")
+            if "class ChronosOverlayBridge" in existing_txt and "def emit_ripple" in existing_txt:
+                deployed.append({"file": dest_rel, "bytes": len(existing_txt.encode("utf-8"))})
+                continue
         if target.exists():
             backup_target = backup_dir / dest_rel.replace("/", "__")
             shutil.copy2(target, backup_target)

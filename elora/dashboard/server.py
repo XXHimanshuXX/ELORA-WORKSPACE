@@ -1817,6 +1817,8 @@ class Handler(BaseHTTPRequestHandler):
                         {"id": "chronos", "name": "Chronos-Void 4D Spacetime HUD", "file": "chronos.html", "url": "/chronos.html"},
                         {"id": "omega", "name": "Omega Singularity OS", "file": "omega.html", "url": "/omega.html"},
                         {"id": "cinema", "name": "Living Multiverse Cinema OS", "file": "cinema.html", "url": "/cinema.html"},
+                        {"id": "omni", "name": "Omni-World Engine", "file": "omni.html", "url": "/omni.html"},
+                        {"id": "origin", "name": "Origin Spatial 3D Engine", "file": "origin.html", "url": "/origin.html"},
                         {"id": "chronos_modular", "name": "Chronos 8-Module Stack", "file": "chronos/index.html", "url": "/chronos/index.html"}
                     ]
                 })
